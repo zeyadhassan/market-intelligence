@@ -395,6 +395,66 @@ def patterns_explain(
         print(f"  {k}: {v}")  # noqa: T201
 
 
+@app.command("research")
+def research(
+    signal_id: Annotated[str, typer.Option(help="Signal id to research.")],
+    as_of: Annotated[str, typer.Option(help="ISO date for the temporal pin.")],
+    group: Annotated[str, typer.Option()] = "fi_gcc_public",
+    principal: Annotated[str, typer.Option()] = "cli.user",
+    side: Annotated[str, typer.Option()] = "public",
+) -> None:
+    """Research a fired signal into a validated Opportunity.
+
+    No live reasoning model is configured in this scaffold; the command runs
+    signal intake, graph hydration, and precedent retrieval, then reports.
+    Wire a ReasoningModel to complete hypothesis scoring.
+    """
+    from fi_intel.governance.audit import PostgresAuditLog
+    from fi_intel.graph.client import GraphClient
+    from fi_intel.graph.registry import PatternRegistry
+    from fi_intel.retrieval.chunking import HashingEmbedder
+    from fi_intel.retrieval.corpus import CorpusSearch
+    from fi_intel.retrieval.entitlement import Principal, Side
+    from fi_intel.retrieval.service import RetrievalService
+    from fi_intel.retrieval.store import PostgresCorpusStore
+    from fi_intel.tools.research_tools import ResearchTools, ToolContext
+
+    new_run_id()
+    settings = Settings()
+    as_of_dt = datetime.fromisoformat(as_of).replace(tzinfo=UTC)
+    caller = Principal(principal_id=principal, entitlement_group=group, side=Side(side))
+
+    async def _run() -> None:
+        store = PostgresCorpusStore(settings.postgres_dsn)
+        audit = PostgresAuditLog(settings.postgres_dsn)
+        client = GraphClient(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
+        try:
+            await client.migrate()
+            registry = PatternRegistry(client)
+            signal = await registry.explain(signal_id)
+            if signal is None:
+                print(f"no signal {signal_id!r}; run 'fi-intel patterns run' first")  # noqa: T201
+                return
+            embedder = HashingEmbedder()
+            await store.index_chunks(embedder)
+            retrieval = RetrievalService(CorpusSearch(store, embedder), audit, new_run_id())
+            ctx = ToolContext(principal=caller, as_of=as_of_dt)
+            tools = ResearchTools(retrieval, client, registry, ctx)
+            profile = await tools.entity_profile(signal.entity_key)
+            evidence = await tools.corpus_search(signal.entity_name, entity_lei=signal.entity_key)
+            print(f"signal: {signal.pattern} on {signal.entity_name}")  # noqa: T201
+            print(f"graph assertions: {profile['assertion_count']}")  # noqa: T201
+            print(f"corpus evidence: {len(evidence)}")  # noqa: T201
+            if not evidence and profile["assertion_count"] == 0:
+                print("outcome: insufficient evidence")  # noqa: T201
+        finally:
+            await store.close()
+            await audit.close()
+            await client.close()
+
+    asyncio.run(_run())
+
+
 @app.command("version")
 def version() -> None:
     """Print version and active configuration summary."""

@@ -44,7 +44,7 @@ fi-intel migrate  # apply graph schema migrations
 | 5 | Bi-temporal graph writer | ✅ Done (live-verified against Neo4j 5) |
 | 6 | Constrained event extraction | ✅ Done (stub-model tests live-verified; real LLM extractor not yet wired) |
 | 7 | Pattern query library | ✅ Done (5 detectors; all fire for Gulf Meridian, zero for the decoy; live-verified) |
-| 8 | Fork the agent | ⬜ Not started |
+| 8 | Fork the agent | ✅ Done (Tavily/native search deleted; tools+evidence validation live-verified; no live reasoning LLM wired) |
 | 9 | Brief compiler | ⬜ Not started |
 | 10 | Backtest harness | ⬜ Not started |
 
