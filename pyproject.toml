@@ -43,7 +43,9 @@ fi_intel = ["synth/data/*.json"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+# evals/ ships real tests (e.g. the backtest leakage gate); they are part of
+# the default suite, not optional extras.
+testpaths = ["tests", "evals"]
 
 [tool.ruff]
 target-version = "py311"
