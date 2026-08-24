@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fi-intel"
+version = "0.1.0"
+description = "Market intelligence platform for the Financial Institutions unit"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "httpx>=0.26",
+    "tenacity>=8.2",
+    "structlog>=24.1",
+    "typer>=0.9",
+    "langgraph>=0.2",
+    "asyncpg>=0.29",
+    "neo4j>=5.16",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.3",
+    "mypy>=1.8",
+]
+
+[project.scripts]
+fi-intel = "fi_intel.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["fi_intel*"]
+
+[tool.setuptools.package-data]
+fi_intel = ["synth/data/*.json"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "ASYNC", "S", "C90", "T20"]
+
+[tool.ruff.lint.per-file-ignores]
+# print() is allowed only in the CLI entry point (CLAUDE.md coding standards)
+"fi_intel/cli.py" = ["T20"]
+# evals are standalone CLI-like harnesses, allowed to print reports
+"evals/**" = ["T20"]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+strict = true
+packages = ["fi_intel"]

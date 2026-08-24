@@ -1,0 +1,45 @@
+{
+  "episodes": [
+    {
+      "episode_id": "gulf_meridian_dcm",
+      "entity_lei": "213800GMBQPSC000000001",
+      "entity_names": ["Gulf Meridian Bank", "Gulf Meridian Bank Q.P.S.C.", "Gulf Meridian"],
+      "is_decoy": false,
+      "outcome": {
+        "type": "mandate_announced",
+        "date": "2024-07-10",
+        "doc_id": "SW-2024-0008"
+      },
+      "expected_signals": [
+        {
+          "pattern": "negative_rating_action_with_capital_decline",
+          "fires_by": "2024-03-01",
+          "evidence_docs": ["SW-2024-0001", "SW-2024-0004"]
+        },
+        {
+          "pattern": "leadership_change_treasury",
+          "fires_by": "2024-04-15",
+          "evidence_docs": ["SW-2024-0005"]
+        },
+        {
+          "pattern": "board_approved_issuance_programme",
+          "fires_by": "2024-05-01",
+          "evidence_docs": ["SW-2024-0006"]
+        },
+        {
+          "pattern": "maturity_wall_no_refi",
+          "fires_by": "2024-06-01",
+          "evidence_docs": ["SW-2024-0007"]
+        }
+      ]
+    },
+    {
+      "episode_id": "steady_state_decoy",
+      "entity_lei": "213800NHB00000000002",
+      "entity_names": ["Northern Harbour Bank"],
+      "is_decoy": true,
+      "outcome": null,
+      "expected_signals": []
+    }
+  ]
+}

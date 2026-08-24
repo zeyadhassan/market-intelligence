@@ -1,0 +1,106 @@
+"""Append-only assertion writer.
+
+Two operations exist and only two:
+
+- write(assertion): MERGE by deterministic assertion_id. Writing the same
+  claim from the same evidence twice is a no-op (idempotent).
+- correct(old, new, corrected_at): writes `new` and marks `old` superseded
+  via a SUPERSEDES edge plus `superseded_at` on the old node. The old
+  assertion remains queryable at as-of dates before the correction.
+
+`s superseded_at` transition (null → timestamp) is the only state change
+permitted anywhere in the graph. No other field is ever updated; nothing
+is deleted.
+"""
+
+import json
+from datetime import datetime
+
+from fi_intel.graph.client import GraphClient
+from fi_intel.logging import get_logger
+from fi_intel.ontology.schema import Assertion
+
+
+class AssertionWriter:
+    def __init__(self, client: GraphClient) -> None:
+        self._client = client
+        self._log = get_logger(component="graph.writer")
+
+    async def write(self, assertion: Assertion) -> str:
+        """Persist an assertion; returns its deterministic id. Idempotent."""
+        for ref in (assertion.subject, assertion.object):
+            await self._client.upsert_entity(ref)
+        assertion_id = assertion.assertion_id()
+        async with self._client._driver.session() as session:  # noqa: SLF001
+            await session.run(
+                """
+                MATCH (s:Entity {node_type: $s_type, key: $s_key})
+                MATCH (o:Entity {node_type: $o_type, key: $o_key})
+                MERGE (a:Assertion {assertion_id: $assertion_id})
+                ON CREATE SET
+                    a.predicate = $predicate,
+                    a.source_doc_id = $source_doc_id,
+                    a.snippet_start = $snippet_start,
+                    a.snippet_end = $snippet_end,
+                    a.extractor_version = $extractor_version,
+                    a.confidence = $confidence,
+                    a.valid_from = datetime($valid_from),
+                    a.valid_to = $valid_to,
+                    a.recorded_at = datetime($recorded_at),
+                    a.properties_json = $properties_json,
+                    a.superseded_at = null
+                MERGE (a)-[:SUBJECT]->(s)
+                MERGE (a)-[:OBJECT]->(o)
+                """,
+                s_type=str(assertion.subject.node_type),
+                s_key=assertion.subject.key,
+                o_type=str(assertion.object.node_type),
+                o_key=assertion.object.key,
+                assertion_id=assertion_id,
+                predicate=str(assertion.predicate),
+                source_doc_id=assertion.source_doc_id,
+                snippet_start=assertion.snippet_offset[0],
+                snippet_end=assertion.snippet_offset[1],
+                extractor_version=assertion.extractor_version,
+                confidence=assertion.confidence,
+                valid_from=assertion.valid_from.isoformat(),
+                valid_to=assertion.valid_to.isoformat() if assertion.valid_to else None,
+                recorded_at=assertion.recorded_at.isoformat(),
+                # Neo4j properties must be primitives or arrays; the
+                # assertion's extra properties travel as a JSON document.
+                properties_json=json.dumps(assertion.properties),
+            )
+        self._log.info(
+            "graph.assertion_written",
+            assertion_id=assertion_id,
+            predicate=str(assertion.predicate),
+        )
+        return assertion_id
+
+    async def correct(
+        self, old: Assertion, new: Assertion, corrected_at: datetime
+    ) -> str:
+        """Supersede `old` with `new`. Both remain in the graph; the old one
+        stays visible to as-of reads before `corrected_at`."""
+        new_id = await self.write(new)
+        old_id = old.assertion_id()
+        async with self._client._driver.session() as session:  # noqa: SLF001
+            result = await session.run(
+                """
+                MATCH (old:Assertion {assertion_id: $old_id})
+                MATCH (new:Assertion {assertion_id: $new_id})
+                SET old.superseded_at = datetime($corrected_at)
+                MERGE (old)-[:SUPERSEDES]->(new)
+                RETURN old.assertion_id AS id
+                """,
+                old_id=old_id,
+                new_id=new_id,
+                corrected_at=corrected_at.isoformat(),
+            )
+            if await result.single() is None:
+                msg = f"cannot supersede unknown assertion {old_id}"
+                raise ValueError(msg)
+        self._log.info(
+            "graph.assertion_superseded", old_id=old_id, new_id=new_id
+        )
+        return new_id

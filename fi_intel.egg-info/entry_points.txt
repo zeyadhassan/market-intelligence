@@ -1,0 +1,2 @@
+[console_scripts]
+fi-intel = fi_intel.cli:app
