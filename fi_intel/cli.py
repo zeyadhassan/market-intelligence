@@ -455,6 +455,75 @@ def research(
     asyncio.run(_run())
 
 
+@app.command("brief")
+def brief(
+    as_of: Annotated[str, typer.Option(help="ISO date; the temporal pin.")],
+    desk: Annotated[str, typer.Option(help="Desk id, e.g. fi_gcc.")],
+    out: Annotated[str, typer.Option(help="Output HTML path.")],
+    group: Annotated[str, typer.Option()] = "fi_gcc_public",
+    budget: Annotated[float, typer.Option(min=1.0)] = 1000.0,
+) -> None:
+    """Compile the daily brief and write static HTML."""
+    from fi_intel.agents.brief import BriefCompiler, BudgetExceededError
+    from fi_intel.agents.opportunity_research import OpportunityResearcher
+    from fi_intel.agents.render import render_html
+    from fi_intel.governance.audit import PostgresAuditLog
+    from fi_intel.graph.client import GraphClient
+    from fi_intel.graph.registry import PatternRegistry
+    from fi_intel.retrieval.chunking import HashingEmbedder
+    from fi_intel.retrieval.corpus import CorpusSearch
+    from fi_intel.retrieval.entitlement import Principal, Side
+    from fi_intel.retrieval.service import RetrievalService
+    from fi_intel.retrieval.store import PostgresCorpusStore
+    from fi_intel.tools.research_tools import ResearchTools, ToolContext
+
+    new_run_id()
+    settings = Settings()
+    as_of_dt = datetime.fromisoformat(as_of).replace(tzinfo=UTC)
+    caller = Principal(principal_id="cli.user", entitlement_group=group, side=Side.PUBLIC)
+
+    from fi_intel.agents.opportunity_research import ResearchRequest, ResearchResponse
+
+    class _StubModel:
+        async def research(self, request: ResearchRequest) -> ResearchResponse:
+            return ResearchResponse(
+                title=f"Opportunity: {request.signal_pattern}",
+                summary="Stub summary (no live reasoning model wired).",
+                falsifier="See desk review.",
+                evidence_indices=[0, 1],
+            )
+
+    async def _run() -> str:
+        store = PostgresCorpusStore(settings.postgres_dsn)
+        audit = PostgresAuditLog(settings.postgres_dsn)
+        client = GraphClient(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
+        try:
+            await client.migrate()
+            registry = PatternRegistry(client)
+            embedder = HashingEmbedder()
+            await store.index_chunks(embedder)
+            retrieval = RetrievalService(CorpusSearch(store, embedder), audit, new_run_id())
+            ctx = ToolContext(principal=caller, as_of=as_of_dt)
+            tools = ResearchTools(retrieval, client, registry, ctx)
+            researcher = OpportunityResearcher(tools, _StubModel())
+            compiler = BriefCompiler(registry, tools, researcher, budget_ceiling=budget)
+            result = await compiler.compile(as_of_dt, desk=desk)
+            return render_html(result)
+        finally:
+            await store.close()
+            await audit.close()
+            await client.close()
+
+    try:
+        html = asyncio.run(_run())
+    except BudgetExceededError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    from pathlib import Path
+
+    Path(out).write_text(html, encoding="utf-8")
+    print(f"brief written to {out}")  # noqa: T201
+
+
 @app.command("version")
 def version() -> None:
     """Print version and active configuration summary."""
