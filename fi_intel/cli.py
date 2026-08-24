@@ -524,6 +524,54 @@ def brief(
     print(f"brief written to {out}")  # noqa: T201
 
 
+@app.command("backtest")
+def backtest(
+    from_date: Annotated[str, typer.Option("--from", help="ISO start date.")],
+    to_date: Annotated[str, typer.Option("--to", help="ISO end date.")],
+    step: Annotated[str, typer.Option(help="Step, e.g. 7d.")] = "7d",
+) -> None:
+    """Measure lead time against the outcome ledger."""
+    from evals.backtest import Backtester, BacktestResult, Outcome
+    from fi_intel.graph.client import GraphClient
+    from fi_intel.graph.registry import PatternRegistry
+    from fi_intel.synth.episodes import GULF_MERIDIAN_LEI
+
+    new_run_id()
+    settings = Settings()
+    start = datetime.fromisoformat(from_date).date()
+    end = datetime.fromisoformat(to_date).date()
+    step_days = int(step.rstrip("d"))
+
+    mandate = Outcome(
+        outcome_id="mandate:gm-2024-07-10",
+        entity_key=GULF_MERIDIAN_LEI,
+        outcome_date=datetime(2024, 7, 10).date(),
+        kind="mandate_announced",
+    )
+
+    async def _run() -> BacktestResult:
+        client = GraphClient(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
+        try:
+            await client.migrate()
+            return await Backtester(client, PatternRegistry(client)).run(
+                start, end, step_days, outcomes=[mandate]
+            )
+        finally:
+            await client.close()
+
+    result = asyncio.run(_run())
+    print(  # noqa: T201
+        f"precision@10={result.precision_at_10}  recall={result.recall}  "
+        f"signals={result.total_signals}"
+    )
+    for a in result.attribution:
+        leads = a.lead_days
+        dist = f"min={leads[0]} median={leads[len(leads)//2]} max={leads[-1]}" if leads else "n/a"
+        print(  # noqa: T201
+            f"  {a.pattern:<40} fired={a.fired} preceded={a.preceded_outcome} lead({dist})d"
+        )
+
+
 @app.command("version")
 def version() -> None:
     """Print version and active configuration summary."""

@@ -36,7 +36,7 @@ dev = [
 fi-intel = "fi_intel.cli:app"
 
 [tool.setuptools.packages.find]
-include = ["fi_intel*"]
+include = ["fi_intel*", "evals*"]
 
 [tool.setuptools.package-data]
 fi_intel = ["synth/data/*.json"]
@@ -59,7 +59,7 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "ASYNC", "S", "C90", "T20"]
 # print() is allowed only in the CLI entry point (CLAUDE.md coding standards)
 "fi_intel/cli.py" = ["T20"]
 # evals are standalone CLI-like harnesses, allowed to print reports
-"evals/**" = ["T20"]
+"evals/**" = ["T20", "S101"]
 "tests/**" = ["S101"]
 
 [tool.mypy]

@@ -45,8 +45,10 @@ fi-intel migrate  # apply graph schema migrations
 | 6 | Constrained event extraction | ✅ Done (stub-model tests live-verified; real LLM extractor not yet wired) |
 | 7 | Pattern query library | ✅ Done (5 detectors; all fire for Gulf Meridian, zero for the decoy; live-verified) |
 | 8 | Fork the agent | ✅ Done (Tavily/native search deleted; tools+evidence validation live-verified; no live reasoning LLM wired) |
-| 9 | Brief compiler | ⬜ Not started |
-| 10 | Backtest harness | ⬜ Not started |
+| 9 | Brief compiler | ✅ Done (tiered routing, budget abort, decoy-day no-padding; live-verified + browser-rendered) |
+| 10 | Backtest harness | ✅ Done (leakage gate, per-pattern attribution, distribution, reproducible; live-verified) |
+
+All ten milestones complete.
 
 ## Synthetic corpus
 
