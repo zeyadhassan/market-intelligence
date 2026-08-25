@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
+from fi_intel.sources.adapters.rss import fed_press_releases_fixture, sec_edgar_8k_fixture
 from fi_intel.sources.base import FetchCursor, SourceAdapter
 from fi_intel.sources.canonical import CanonicalDocument
 from fi_intel.sources.fixture import synthetic_wire
@@ -17,6 +18,8 @@ from fi_intel.sources.vendor_stub import VendorStubAdapter
 ADAPTERS_UNDER_TEST: list[tuple[str, object]] = [
     ("synthetic_wire", synthetic_wire),
     ("vendor_stub", VendorStubAdapter),
+    ("sec_edgar_8k_fixture", sec_edgar_8k_fixture),
+    ("fed_press_releases_fixture", fed_press_releases_fixture),
 ]
 
 

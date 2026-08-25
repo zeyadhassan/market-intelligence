@@ -26,6 +26,17 @@ VALUES ('synthetic_wire', 'Synthetic wire (test corpus)', 'test', 'public'),
        ('synthetic_wire_private', 'Synthetic wire, private side (test corpus)',
         'test_private', 'private');
 
+-- Open-web sources (fi_intel/sources/adapters/rss.py): freely published
+-- government feeds, not licensed vendor content. licence_group is
+-- deliberately distinct from any vendor group so the registry and audit
+-- trail never conflate the two; licensed=TRUE (the column default) because
+-- these ARE the sources this desk is approved to use, just not paid ones.
+INSERT INTO source_registry (source_id, display_name, licence_group, barrier_side)
+VALUES ('sec_edgar_8k', 'SEC EDGAR - recent 8-K filings (open web)',
+        'open_web_public', 'public'),
+       ('fed_press_releases', 'Federal Reserve press releases (open web)',
+        'open_web_public', 'public');
+
 -- Entitlement groups and the sources each may read. Retrieval joins this
 -- table; there is no application-level bypass.
 CREATE TABLE entitlement_grant (
@@ -40,7 +51,11 @@ INSERT INTO entitlement_grant (entitlement_group, source_id) VALUES
     ('fi_gcc_private', 'synthetic_wire_private'),
     ('test',           'synthetic_wire'),
     ('test_private',   'synthetic_wire'),
-    ('test_private',   'synthetic_wire_private');
+    ('test_private',   'synthetic_wire_private'),
+    ('open_web_public', 'sec_edgar_8k'),
+    ('open_web_public', 'fed_press_releases'),
+    ('fi_gcc_public',   'sec_edgar_8k'),
+    ('fi_gcc_public',   'fed_press_releases');
 
 -- ---------------------------------------------------------------------------
 -- Canonical documents. No vendor field names may appear here (invariant 1).

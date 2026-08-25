@@ -20,3 +20,15 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = "fi_intel"  # noqa: S105
     log_level: str = "INFO"
+
+    # Open-web RSS/Atom sources (fi_intel/sources/adapters/rss.py). SEC.gov
+    # rejects unidentified traffic with 403; the User-Agent must name an
+    # organization and contact per SEC's fair-access policy. The default is
+    # a deliberately unusable placeholder, not a real contact, so demo runs
+    # fail loudly instead of impersonating whoever happens to run this repo.
+    rss_user_agent: str = "market-intelligence-demo set-FI_INTEL_RSS_USER_AGENT@example.invalid"
+    sec_edgar_feed_url: str = (
+        "https://www.sec.gov/cgi-bin/browse-edgar"
+        "?action=getcurrent&type=8-K&company=&dateb=&owner=include&count=100&output=atom"
+    )
+    fed_press_feed_url: str = "https://www.federalreserve.gov/feeds/press_all.xml"

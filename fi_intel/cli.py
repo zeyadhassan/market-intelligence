@@ -23,6 +23,10 @@ from fi_intel.sources.fixture import synthetic_wire
 
 app = typer.Typer(name="fi-intel", help="FI market intelligence platform.", no_args_is_help=True)
 
+# Open-web sources (not licensed vendor feeds; see deploy/init.sql
+# licence_group='open_web_public' and fi_intel/sources/adapters/rss.py).
+_OPEN_WEB_SOURCES = ("sec_edgar_8k", "fed_press_releases")
+
 
 def _resolve_adapter(source: str) -> SourceAdapter:
     if source == "synthetic_wire":
@@ -31,6 +35,10 @@ def _resolve_adapter(source: str) -> SourceAdapter:
         from fi_intel.sources.fixture import synthetic_wire_private
 
         return synthetic_wire_private()
+    if source in _OPEN_WEB_SOURCES:
+        from fi_intel.sources.adapters.rss import fed_press_releases, sec_edgar_8k
+
+        return sec_edgar_8k() if source == "sec_edgar_8k" else fed_press_releases()
     raise typer.BadParameter(f"unknown source {source!r}")
 
 
@@ -46,8 +54,9 @@ app.add_typer(sources_app, name="sources")
 @sources_app.command("list")
 def sources_list() -> None:
     """List registered source adapters."""
-    adapter = synthetic_wire()
-    print(f"{adapter.source_id}\tfixture")  # noqa: T201
+    print(f"{synthetic_wire().source_id}\tfixture")  # noqa: T201
+    for source_id in _OPEN_WEB_SOURCES:
+        print(f"{source_id}\topen_web")  # noqa: T201
 
 
 @sources_app.command("peek")

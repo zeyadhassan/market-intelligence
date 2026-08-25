@@ -39,7 +39,7 @@ fi-intel = "fi_intel.cli:app"
 include = ["fi_intel*", "evals*"]
 
 [tool.setuptools.package-data]
-fi_intel = ["synth/data/*.json"]
+fi_intel = ["synth/data/*.json", "synth/data/*.xml"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
