@@ -118,8 +118,9 @@ class Configuration(BaseModel):
         }
     )
     # Model Configuration
+    # Default model for summarisation – using the internal OSS model.
     summarization_model: str = Field(
-        default="openai:gpt-4.1-mini",
+        default="openai:gpt-oss-120b",
         metadata={
             "x_oap_ui_config": {
                 "type": "text",
@@ -150,8 +151,9 @@ class Configuration(BaseModel):
             }
         }
     )
+    # Default model for research – using the internal OSS model.
     research_model: str = Field(
-        default="openai:gpt-4.1",
+        default="openai:gpt-oss-120b",
         metadata={
             "x_oap_ui_config": {
                 "type": "text",
@@ -159,6 +161,18 @@ class Configuration(BaseModel):
                 "description": "Model for conducting research. NOTE: Make sure your Researcher Model supports the selected search API."
             }
         }
+            # Custom OSS model (e.g., gpt-oss-120b) that can be used as a drop‑in replacement for any of the OpenAI models.
+            # Set via the environment variable CUSTOM_OSS_MODEL if you want to override the default.
+            custom_oss_model: str = Field(
+                default="openai:gpt-oss-120b",
+                metadata={
+                    "x_oap_ui_config": {
+                        "type": "text",
+                        "default": "openai:gpt-oss-120b",
+                        "description": "Identifier for the custom OSS model hosted on the internal server."
+                    }
+                }
+            )
     )
     research_model_max_tokens: int = Field(
         default=10000,
@@ -170,8 +184,9 @@ class Configuration(BaseModel):
             }
         }
     )
+    # Default model for compression – using the internal OSS model.
     compression_model: str = Field(
-        default="openai:gpt-4.1",
+        default="openai:gpt-oss-120b",
         metadata={
             "x_oap_ui_config": {
                 "type": "text",
@@ -190,8 +205,9 @@ class Configuration(BaseModel):
             }
         }
     )
+    # Default model for final report generation – using the internal OSS model.
     final_report_model: str = Field(
-        default="openai:gpt-4.1",
+        default="openai:gpt-oss-120b",
         metadata={
             "x_oap_ui_config": {
                 "type": "text",
@@ -211,6 +227,29 @@ class Configuration(BaseModel):
         }
     )
     # MCP server configuration
+    # OpenAI‑compatible endpoint for the internal MCP server (if used).
+    openai_api_base: str = Field(
+        default="https://cbq2-svd-dsgpu2.cbq.com.qa:8443/v1",
+        metadata={
+            "x_oap_ui_config": {
+                "type": "text",
+                "default": "https://cbq2-svd-dsgpu2.cbq.com.qa:8443/v1",
+                "description": "Base URL for OpenAI‑compatible API (used when model provider is OpenAI)."
+            }
+        }
+    )
+    # Optional API key for the internal server – can be left empty if the server does not require auth.
+    openai_api_key: Optional[str] = Field(
+        default=None,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "text",
+                "default": "",
+                "description": "API key for the OpenAI‑compatible endpoint, if required."
+            }
+        }
+    )
+
     mcp_config: Optional[MCPConfig] = Field(
         default=None,
         optional=True,

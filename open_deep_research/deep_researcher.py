@@ -19,6 +19,8 @@ from langgraph.types import Command
 from open_deep_research.configuration import (
     Configuration,
 )
+import os
+import os
 from open_deep_research.prompts import (
     clarify_with_user_instructions,
     compress_research_simple_human_message,
@@ -70,6 +72,11 @@ async def clarify_with_user(state: AgentState, config: RunnableConfig) -> Comman
     """
     # Step 1: Check if clarification is enabled in configuration
     configurable = Configuration.from_runnable_config(config)
+    # Ensure the OpenAI compatible base URL and optional API key are available to LangChain via env vars.
+    if not os.getenv("OPENAI_API_BASE") and getattr(configurable, "openai_api_base", None):
+        os.environ["OPENAI_API_BASE"] = configurable.openai_api_base
+    if not os.getenv("OPENAI_API_KEY") and getattr(configurable, "openai_api_key", None):
+        os.environ["OPENAI_API_KEY"] = configurable.openai_api_key
     if not configurable.allow_clarification:
         # Skip clarification step and proceed directly to research
         return Command(goto="write_research_brief")

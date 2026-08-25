@@ -6,3 +6,5 @@ __pycache__/
 .mypy_cache/
 .brief*.html
 docker-compose.override.yml
+BUILD_PROMPTS.md
+fi_intel/llm_config.json
