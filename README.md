@@ -34,4 +34,5 @@ is completed. Synthetic fixtures remain regression-only throughout.
 ## Verification
 
 Run `pytest`, `ruff check .`, and `mypy fi_intel`. PostgreSQL/pgvector and Neo4j are required for the
-complete suite; CI sets `FI_INTEL_REQUIRE_INFRA=true` so missing-infrastructure skips fail the build.
+complete suite. Set `FI_INTEL_REQUIRE_INFRA=true` for a full local integration run so missing-service
+skips fail the command.
