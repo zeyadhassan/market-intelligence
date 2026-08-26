@@ -4,7 +4,7 @@ Deterministic plane. Resumability comes from a single rule: the cursor is
 committed in the same transaction as the batch that produced it, so the
 cursor can never disagree with the data.
 
-Failures are loud (invariant 9). A malformed document aborts the run, the
+Malformed documents abort the run, the
 offending batch rolls back, and the error names the doc_id. Already
 committed batches stay committed — that is what the cursor is for, not a
 partial-commit bug.
@@ -66,14 +66,16 @@ class IngestPipeline:
         batch_dupes: list[DuplicateVerdict] = []
         batches = 0
         last_doc: CanonicalDocument | None = None
+        pending_cursor_items = 0
 
         async def flush() -> None:
-            nonlocal batches, persisted
-            if last_doc is None or (not batch and not batch_dupes):
+            nonlocal batches, pending_cursor_items, persisted
+            if last_doc is None or pending_cursor_items == 0:
                 return
             await self._store.commit_batch(batch, batch_dupes, adapter.cursor_for(last_doc))
             persisted += len(batch)
             batches += 1
+            pending_cursor_items = 0
             batch.clear()
             batch_dupes.clear()
 
@@ -82,6 +84,7 @@ class IngestPipeline:
         stream: AsyncIterator[CanonicalDocument] = adapter.fetch(cursor)  # type: ignore[assignment]
         async for doc in stream:
             fetched += 1
+            pending_cursor_items += 1
             verdict = self._dedupe.classify(doc)
             if verdict is None:
                 exact_dupes += 1
@@ -91,7 +94,7 @@ class IngestPipeline:
             else:
                 batch.append(verdict)
             last_doc = doc
-            if len(batch) + len(batch_dupes) >= self._batch_size:
+            if pending_cursor_items >= self._batch_size:
                 await flush()
                 log.info("ingest.batch", batches=batches, fetched=fetched)
 

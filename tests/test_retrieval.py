@@ -14,13 +14,20 @@ Hybrid must beat both baselines on mean reciprocal rank across the set.
 """
 
 from datetime import UTC, datetime
+from typing import Any
 
 from fi_intel.governance.audit import InMemoryAuditLog
+from fi_intel.ingest.pipeline import IngestPipeline
+from fi_intel.ingest.resolve import EntityResolver, InMemoryResolutionStore
+from fi_intel.ingest.store import InMemoryDocumentStore
 from fi_intel.retrieval.chunking import HashingEmbedder
 from fi_intel.retrieval.corpus import CorpusSearch
 from fi_intel.retrieval.entitlement import Principal, Side
 from fi_intel.retrieval.service import RetrievalService
 from fi_intel.retrieval.store import InMemoryCorpusStore
+from fi_intel.sources.adapters.gleif import gleif_fixture
+from fi_intel.sources.base import FetchCursor
+from fi_intel.sources.canonical import CanonicalDocument, DocumentClass
 from fi_intel.sources.fixture import synthetic_wire
 
 PRINCIPAL = Principal(principal_id="eval", entitlement_group="test", side=Side.PUBLIC)
@@ -47,10 +54,19 @@ LABELLED_SET = [
 
 
 async def _service() -> RetrievalService:
+    documents = [document async for document in synthetic_wire().fetch()]
+    resolution_store = InMemoryResolutionStore()
+    await resolution_store.load_reference(
+        [document async for document in gleif_fixture().fetch()]
+    )
+    resolver = EntityResolver(resolution_store)
+    for document in documents:
+        await resolver.resolve_document(document, recorded_at=document.recorded_at)
     store = InMemoryCorpusStore(HashingEmbedder())
     store.register_source("synthetic_wire")
     store.grant("test", "synthetic_wire")
-    store.add_documents([d async for d in synthetic_wire().fetch()])
+    store.add_documents(documents)
+    store.add_entity_links(await resolution_store.document_entity_links())
     return RetrievalService(
         CorpusSearch(store, HashingEmbedder()), InMemoryAuditLog(), run_id="eval"
     )
@@ -91,10 +107,8 @@ async def test_hybrid_beats_either_baseline() -> None:
     # Hybrid must beat BM25-only (the CET1 query: BM25 rank 4, hybrid
     # fuses the vector leg's rank 1). The vector-only baseline wins this
     # particular set outright — the corpus is tiny and the hashing
-    # embedder is deliberately weak; the milestone's "report all three
-    # numbers" requirement exists precisely so this is visible rather
-    # than tuned away. On a real corpus with a licensed embedder the
-    # balance shifts; the harness is what matters here.
+    # embedder is deliberately weak. Report all three scores so the
+    # comparison stays visible rather than being tuned away.
     assert scores["hybrid"] > scores["bm25"], scores
     assert scores["hybrid"] >= scores["bm25"], scores
 
@@ -116,6 +130,65 @@ async def test_entity_filter_narrows_to_one_entity() -> None:
     results = await service.search("bank results", PRINCIPAL, entity_lei=NORTHERN_HARBOUR_LEI)
     assert results
     assert all(r.doc.identifiers.get("lei") == NORTHERN_HARBOUR_LEI for r in results)
+
+
+class _SingleDocumentAdapter:
+    def __init__(self, document: CanonicalDocument) -> None:
+        self.document = document
+
+    @property
+    def source_id(self) -> str:
+        return self.document.source_id
+
+    async def fetch(self, cursor: FetchCursor | None = None) -> Any:
+        if cursor is None:
+            yield self.document
+
+    def cursor_for(self, doc: CanonicalDocument) -> FetchCursor:
+        return FetchCursor(source_id=self.source_id, position="1", updated_at=doc.recorded_at)
+
+
+async def test_resolved_entity_link_scopes_document_without_source_identifier() -> None:
+    from fi_intel.synth.episodes import GULF_MERIDIAN_LEI
+
+    document = CanonicalDocument(
+        doc_id="unidentified-filing",
+        source_id="linkage_test",
+        published_at=datetime(2024, 5, 1, tzinfo=UTC),
+        recorded_at=datetime(2024, 5, 1, 1, tzinfo=UTC),
+        title="Gulf Meridian capital plan",
+        body="Gulf Meridian Bank Q.P.S.C. approved a new capital plan.",
+        document_class=DocumentClass.FILING,
+        mentioned_names=("Gulf Meridian Bank Q.P.S.C.",),
+        identifiers={},
+    )
+    document_store = InMemoryDocumentStore()
+    await IngestPipeline(document_store).run(_SingleDocumentAdapter(document))
+    (persisted,) = await document_store.load_documents(document.source_id)
+
+    resolution_store = InMemoryResolutionStore()
+    await resolution_store.load_reference(
+        [reference async for reference in gleif_fixture().fetch()]
+    )
+    await EntityResolver(resolution_store).resolve_document(
+        persisted, recorded_at=persisted.recorded_at
+    )
+
+    embedder = HashingEmbedder()
+    corpus_store = InMemoryCorpusStore(embedder)
+    corpus_store.register_source(document.source_id)
+    corpus_store.grant("test", document.source_id)
+    corpus_store.add_documents([persisted])
+    corpus_store.add_entity_links(await resolution_store.document_entity_links())
+    results = await CorpusSearch(corpus_store, embedder).search(
+        "capital plan",
+        PRINCIPAL,
+        as_of=persisted.recorded_at,
+        entity_lei=GULF_MERIDIAN_LEI,
+    )
+
+    assert persisted.identifiers == {}
+    assert [result.doc.doc_id for result in results] == [persisted.doc_id]
 
 
 async def test_recency_weighting_prefers_recent_among_equals() -> None:

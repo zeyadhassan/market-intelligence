@@ -1,19 +1,11 @@
 """Open-web RSS/Atom adapters: SEC EDGAR 8-K filings, Fed press releases.
 
-These are registered sources like any other (invariant 2: nothing reaches
-the open internet outside an adapter), but they are *not* licensed vendor
-content — they are freely published government feeds. That distinction is
-carried in the source registry, not in this code: both sources are
-registered with ``licence_group='open_web_public'`` (see deploy/init.sql),
-never conflated with a paid wire in provenance or audit trails.
+These freely published government feeds are registered separately from
+licensed vendor content. Their source registry entries use
+``licence_group='open_web_public'`` (see deploy/init.sql).
 
-Parsing is stdlib-only (xml.etree + email.utils) rather than a feed-parsing
-library such as feedparser, per CLAUDE.md's stack discipline (adding a
-dependency not already in pyproject.toml needs sign-off, which was sought
-and declined in favour of stdlib). Both feeds are well-formed RSS 2.0 /
-Atom, verified against live samples; the two files in
-fi_intel/synth/data/*_sample.xml are real captures used as network-free
-fixtures for tests, not synthetic data.
+Parsing uses xml.etree and email.utils. The samples in
+fi_intel/synth/data/*_sample.xml provide network-free fixtures.
 
 SEC.gov rejects requests with no identifying User-Agent (403), per its fair
 access policy: https://www.sec.gov/search-filings/edgar-search-assistance.
@@ -56,9 +48,8 @@ FetchPageFn = Callable[[], Awaitable[str]]
 class MalformedFeedError(ValueError):
     """A feed entry could not be mapped to CanonicalDocument.
 
-    Raised rather than skipped, for the same reason as
-    fixture.MalformedFixtureError: silent data loss in the corpus corrupts
-    every backtest that spans the gap (invariant 9).
+    Raised rather than skipped because silent data loss would corrupt
+    backtests that span the gap.
     """
 
 
@@ -173,7 +164,10 @@ def _parse_fed_rss(xml_text: str, source_id: str, fetch_time: datetime) -> list[
 
 
 def fed_press_releases(settings: Settings | None = None) -> FeedAdapter:
-    """Real, network-backed Fed press-release adapter."""
+    """Legacy summary-only adapter retained for the v1 SourceAdapter path.
+
+    Production raw-first ingestion uses ``government.fed_press_full_content``.
+    """
     active = settings or Settings()
 
     async def fetch_page() -> str:
@@ -276,7 +270,10 @@ def _parse_sec_edgar_atom(
 
 
 def sec_edgar_8k(settings: Settings | None = None) -> FeedAdapter:
-    """Real, network-backed SEC EDGAR "current 8-K filings" adapter."""
+    """Legacy summary-only adapter retained for the v1 SourceAdapter path.
+
+    Production raw-first ingestion uses ``government.sec_edgar_full_content``.
+    """
     active = settings or Settings()
 
     async def fetch_page() -> str:

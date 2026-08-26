@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from fi_intel.governance.audit import AccessEvent, AuditLog
 from fi_intel.retrieval.corpus import CorpusSearch, ScoredChunk
 from fi_intel.retrieval.entitlement import Principal
+from fi_intel.sources.canonical import CanonicalDocument
 
 
 class RetrievalService:
@@ -41,8 +42,50 @@ class RetrievalService:
                     entitlement_group=principal.entitlement_group,
                     source_id=result.doc.source_id,
                     doc_id=result.doc.doc_id,
+                    result_count=len(results),
+                    accessed_at=datetime.now(tz=UTC),
+                )
+            )
+        if not events:
+            events.append(
+                AccessEvent(
+                    run_id=self._run_id,
+                    principal=principal.principal_id,
+                    entitlement_group=principal.entitlement_group,
+                    operation="retrieval",
+                    result_count=0,
                     accessed_at=datetime.now(tz=UTC),
                 )
             )
         await self._audit.record(events)
         return results
+
+    async def resolve_span(
+        self,
+        principal: Principal,
+        source_id: str,
+        doc_id: str,
+        start: int,
+        end: int,
+        *,
+        as_of: datetime | None,
+    ) -> tuple[CanonicalDocument, str] | None:
+        """Resolve and audit one graph-backed evidence span."""
+        resolved = await self._search.resolve_span(
+            principal, source_id, doc_id, start, end, as_of
+        )
+        await self._audit.record(
+            [
+                AccessEvent(
+                    run_id=self._run_id,
+                    principal=principal.principal_id,
+                    entitlement_group=principal.entitlement_group,
+                    source_id=source_id if resolved is not None else None,
+                    doc_id=doc_id if resolved is not None else None,
+                    operation="evidence_resolve",
+                    result_count=int(resolved is not None),
+                    accessed_at=datetime.now(tz=UTC),
+                )
+            ]
+        )
+        return resolved

@@ -99,7 +99,7 @@
     "language": "en",
     "document_class": "news_wire",
     "barrier_side": "public",
-    "mentioned_names": ["Gulf Meridian Bank"],
+    "mentioned_names": ["Gulf Meridian"],
     "identifiers": {"lei": "213800GMBQPSC000000001", "isin": "XS0000000001"},
     "url": "https://fixtures.local/synthetic_wire/SW-2024-0007",
     "metadata": {"episode": "gulf_meridian_dcm"}

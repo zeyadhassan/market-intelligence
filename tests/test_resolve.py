@@ -6,6 +6,7 @@ be low — queue depth is visible, a false merge is not.
 """
 
 import os
+from datetime import UTC, datetime
 
 import pytest
 
@@ -13,12 +14,14 @@ from fi_intel.ingest.resolve import (
     FUZZY_AUTO_MERGE_THRESHOLD,
     EntityResolver,
     InMemoryResolutionStore,
+    ReferenceEntity,
     ResolutionStore,
     ResolverName,
     normalize_name,
     token_sort_ratio,
 )
 from fi_intel.sources.adapters.gleif import gleif_fixture
+from fi_intel.sources.canonical import CanonicalDocument, DocumentClass
 from fi_intel.sources.fixture import synthetic_wire
 from fi_intel.synth.episodes import (
     GULF_MERIDIAN_CAPITAL_LEI,
@@ -47,7 +50,7 @@ async def test_all_name_variants_collapse_to_one_lei() -> None:
 
 
 async def test_similar_named_different_institution_does_not_merge() -> None:
-    """The test that matters most in this milestone."""
+    """Similar names must not cause a false entity merge."""
     store = InMemoryResolutionStore()
     await _resolved(store)
     resolutions = await store.resolutions()
@@ -90,8 +93,7 @@ async def test_precision_on_labelled_set() -> None:
     precision = correct / len(resolutions)
     assert all(r.lei in expected for r in resolutions)
     assert precision > 0.98, f"precision {precision:.3f} below 0.98"
-    # Reported for the milestone record: precision on the labelled set.
-    # (structlog, not print — tests are not cli.py.)
+    # Record precision on the labelled set.
     from fi_intel.logging import get_logger
 
     get_logger(component="test.resolve").info(
@@ -126,7 +128,8 @@ async def test_unmatched_mention_queues_instead_of_guessing() -> None:
     assert len(queue) == 1
     assert queue[0].candidate_lei == GULF_MERIDIAN_LEI
     assert queue[0].best_score is not None
-    assert queue[0].best_score < FUZZY_AUTO_MERGE_THRESHOLD
+    assert queue[0].best_score < FUZZY_AUTO_MERGE_THRESHOLD / 100.0
+    assert 0.0 <= queue[0].best_score <= 1.0
 
 
 def test_threshold_separates_variants_from_trap() -> None:
@@ -139,6 +142,47 @@ def test_threshold_separates_variants_from_trap() -> None:
         normalize_name("Gulf Meridian Bank Q.P.S.C."),
     )
     assert variant > FUZZY_AUTO_MERGE_THRESHOLD > trap
+
+
+@pytest.mark.parametrize(
+    ("mention", "reference_name"),
+    [
+        ("Credit Suisse Group AG", "Credit Suisse AG"),
+        ("Meridian Group Holdings", "Meridian Group"),
+        ("Gulf Meridian Holdings", "Gulf Meridian Bank"),
+    ],
+)
+async def test_holdco_opco_pairs_always_queue(
+    mention: str, reference_name: str
+) -> None:
+    store = InMemoryResolutionStore()
+    store._reference["TRAP-LEI"] = ReferenceEntity(  # noqa: SLF001
+        lei="TRAP-LEI",
+        legal_name=reference_name,
+        jurisdiction="GB",
+        sector="financial_services",
+    )
+    document = CanonicalDocument(
+        doc_id="family-form-trap",
+        source_id="resolution-test",
+        published_at=datetime(2024, 1, 1, tzinfo=UTC),
+        recorded_at=datetime(2024, 1, 1, 1, tzinfo=UTC),
+        title=mention,
+        body=f"{mention} published an update.",
+        document_class=DocumentClass.NEWS_WIRE,
+        mentioned_names=(mention,),
+    )
+
+    await EntityResolver(store).resolve_document(document, recorded_at=document.recorded_at)
+
+    assert await store.resolutions() == []
+    (queued,) = await store.queue()
+    assert queued.candidate_lei == "TRAP-LEI"
+
+
+def test_normalization_preserves_family_and_single_letter_identity_tokens() -> None:
+    assert normalize_name("Credit Suisse Group AG") != normalize_name("Credit Suisse AG")
+    assert normalize_name("Q Bank Q.P.S.C.") == "q bank"
 
 
 PG_DSN = os.environ.get("FI_INTEL_TEST_PG_DSN")
@@ -154,6 +198,7 @@ async def test_postgres_resolution_store_matches_in_memory() -> None:
     try:
         pool = await pg._get_pool()  # noqa: SLF001
         async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM document_entity_link")
             await conn.execute("DELETE FROM entity_resolution")
             await conn.execute("DELETE FROM resolution_queue")
             await conn.execute("DELETE FROM entity_parent")

@@ -1,7 +1,7 @@
 """Assertion model — the atom of the knowledge graph.
 
-Every graph write is an Assertion (invariant 4): a predicate between two
-entity keys carrying provenance and both time axes. Assertions are
+Every graph write is an Assertion: a predicate between two entity keys
+carrying provenance and both time axes. Assertions are
 append-only; corrections create a new assertion that supersedes the old.
 Nothing is mutated or deleted.
 
@@ -11,16 +11,18 @@ no-op, not a duplicate.
 """
 
 import hashlib
+import json
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from fi_intel.ontology.vocab import EdgeType, NodeType
+from fi_intel.sources.canonical import BarrierSide
 
 
 class EntityRef(BaseModel):
     """A node endpoint. `key` is the stable entity key: an LEI for
-    organizations (from M3 resolution), or a deterministic key for
+    organizations, or a deterministic key for
     instruments/events (e.g. ISIN, or `event:<slug>`)."""
 
     model_config = ConfigDict(frozen=True)
@@ -39,14 +41,17 @@ class Assertion(BaseModel):
     subject: EntityRef
     object: EntityRef
 
-    # Provenance (invariant 4 — minimum set, all required).
+    # Minimum provenance fields required for every assertion.
+    source_id: str = Field(min_length=1)
     source_doc_id: str = Field(min_length=1)
+    barrier_side: BarrierSide
+    policy_version: str = Field(min_length=1)
     snippet_offset: tuple[int, int]
     extractor_version: str = Field(min_length=1)
     confidence: float = Field(ge=0.0, le=1.0)
 
     # Both time axes: when the fact is true in the world, and when the
-    # system learned it. Backtests pin on recorded_at (invariant 10).
+    # system learned it. Backtests pin on recorded_at.
     valid_from: datetime
     valid_to: datetime | None = None
     recorded_at: datetime
@@ -60,7 +65,12 @@ class Assertion(BaseModel):
                 str(self.predicate),
                 self.subject.node_type + ":" + self.subject.key,
                 self.object.node_type + ":" + self.object.key,
+                self.source_id,
                 self.source_doc_id,
+                str(self.barrier_side),
+                self.policy_version,
+                self.extractor_version,
+                json.dumps(self.properties, sort_keys=True, separators=(",", ":")),
                 f"{self.snippet_offset[0]}:{self.snippet_offset[1]}",
                 self.valid_from.isoformat(),
             ]

@@ -1,8 +1,7 @@
 """Contract tests for source adapters.
 
-Every adapter — including future vendor adapters — must pass this module
-unmodified (CLAUDE.md testing requirements). Add the adapter to
-ADAPTERS_UNDER_TEST; do not edit the tests to fit the adapter.
+Every adapter must pass this module unmodified. Add new adapters to
+ADAPTERS_UNDER_TEST.
 """
 
 from collections.abc import AsyncIterator

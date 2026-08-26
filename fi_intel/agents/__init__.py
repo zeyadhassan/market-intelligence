@@ -1,1 +1,1 @@
-"""Agent layer: triage, opportunity research, brief (per milestone)."""
+"""Agent layer for triage, opportunity research, and brief generation."""

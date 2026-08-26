@@ -14,7 +14,7 @@ ahead of the data (gap) or behind it (duplicate work).
 """
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 import asyncpg
@@ -95,12 +95,8 @@ class InMemoryDocumentStore:
                 source_id=sid,
                 document_count=sum(1 for s, _ in self._docs if s == sid),
                 duplicate_count=sum(1 for s, _ in self._dupes if s == sid),
-                cursor_position=(
-                    self._cursors[sid].position if sid in self._cursors else None
-                ),
-                cursor_updated_at=(
-                    self._cursors[sid].updated_at if sid in self._cursors else None
-                ),
+                cursor_position=(self._cursors[sid].position if sid in self._cursors else None),
+                cursor_updated_at=(self._cursors[sid].updated_at if sid in self._cursors else None),
             )
             for sid in sorted(source_ids)
         ]
@@ -183,9 +179,7 @@ class PostgresDocumentStore:
                     verdict.similarity,
                     "shingle_jaccard",
                 )
-            await conn.execute(
-                _UPSERT_CURSOR, cursor.source_id, cursor.position, cursor.updated_at
-            )
+            await conn.execute(_UPSERT_CURSOR, cursor.source_id, cursor.position, cursor.updated_at)
 
     async def load_cursor(self, source_id: str) -> FetchCursor | None:
         pool = await self._get_pool()
@@ -259,7 +253,3 @@ class PostgresDocumentStore:
         if self._pool is not None:
             await self._pool.close()
             self._pool = None
-
-
-def utcnow() -> datetime:
-    return datetime.now(tz=UTC)

@@ -1,4 +1,4 @@
-"""Temporal leakage tests (invariant 10) and required-field validation.
+"""Temporal leakage tests and required-field validation.
 
 The leakage test is the one that matters: an assertion recorded at T+1
 must be invisible to an as-of read at T. A backtest that can see the
@@ -11,10 +11,12 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
+from fi_intel.governance.policy import trusted_test_access
 from fi_intel.graph.client import GraphClient
 from fi_intel.graph.writer import AssertionWriter
 from fi_intel.ontology.schema import Assertion, EntityRef
 from fi_intel.ontology.vocab import EdgeType, NodeType
+from fi_intel.sources.canonical import BarrierSide
 
 NEO4J_URI = os.environ.get("FI_INTEL_TEST_NEO4J_URI")
 
@@ -24,6 +26,7 @@ ORG = EntityRef(
 RATING = EntityRef(node_type=NodeType.RATING, key="rating:gm-a-minus", display_name="A- rating")
 
 T = datetime(2024, 3, 1, 0, tzinfo=UTC)
+ACCESS = trusted_test_access("synthetic_wire")
 
 
 def _kwargs(**overrides: object) -> dict:
@@ -31,7 +34,10 @@ def _kwargs(**overrides: object) -> dict:
         "predicate": EdgeType.RATING_ACTION_ON,
         "subject": RATING,
         "object": ORG,
+        "source_id": "synthetic_wire",
         "source_doc_id": "SW-2024-0001",
+        "barrier_side": BarrierSide.PUBLIC,
+        "policy_version": "test-policy-v1",
         "snippet_offset": (0, 20),
         "extractor_version": "test-1.0",
         "confidence": 0.9,
@@ -42,11 +48,16 @@ def _kwargs(**overrides: object) -> dict:
     return base
 
 
-# --- Required-field validation: each missing field must raise (M5 criterion 4) ---
+# --- Required-field validation ---
 
-def test_missing_source_doc_id_raises() -> None:
+
+@pytest.mark.parametrize(
+    "field",
+    ["source_id", "source_doc_id", "barrier_side", "policy_version"],
+)
+def test_missing_provenance_field_raises(field: str) -> None:
     kwargs = _kwargs()
-    del kwargs["source_doc_id"]
+    del kwargs[field]
     with pytest.raises(ValidationError):
         Assertion(**kwargs)
 
@@ -70,7 +81,31 @@ def test_empty_source_doc_id_raises() -> None:
         Assertion(**_kwargs(source_doc_id=""))
 
 
+def test_barrier_reclassification_creates_a_distinct_assertion_identity() -> None:
+    public = Assertion(**_kwargs())
+    private = Assertion(
+        **_kwargs(
+            barrier_side=BarrierSide.PRIVATE,
+            policy_version="test-policy-v2",
+        )
+    )
+    assert public.assertion_id() != private.assertion_id()
+
+
+def test_typed_fact_change_creates_a_distinct_assertion_identity() -> None:
+    stable = Assertion(**_kwargs(properties={"direction": "flat"}))
+    declining = Assertion(**_kwargs(properties={"direction": "down"}))
+    assert stable.assertion_id() != declining.assertion_id()
+
+
+def test_extractor_version_creates_a_distinct_assertion_identity() -> None:
+    stable = Assertion(**_kwargs())
+    upgraded = stable.model_copy(update={"extractor_version": "test-2.0"})
+    assert stable.assertion_id() != upgraded.assertion_id()
+
+
 # --- Leakage: as-of reads cannot see the future (live Neo4j) ---
+
 
 @pytest.fixture
 async def graph():
@@ -98,16 +133,18 @@ async def test_assertion_recorded_after_cutoff_is_invisible(graph: GraphClient) 
     await writer.write(before)
     await writer.write(after)
 
-    visible_at_t = await graph.read_assertions(as_of=T)
+    visible_at_t = await graph.read_assertions(as_of=T, access=ACCESS)
     assert len(visible_at_t) == 1
     assert visible_at_t[0]["a"]["source_doc_id"] == "SW-2024-0001"
 
     # Full history at T also excludes the future assertion.
-    history_at_t = await graph.read_all_assertions_including_superseded(as_of=T)
+    history_at_t = await graph.read_all_assertions_including_superseded(as_of=T, access=ACCESS)
     assert len(history_at_t) == 1
 
     # At T+1 both are visible.
-    visible_later = await graph.read_assertions(as_of=datetime(2024, 3, 2, 1, tzinfo=UTC))
+    visible_later = await graph.read_assertions(
+        as_of=datetime(2024, 3, 2, 1, tzinfo=UTC), access=ACCESS
+    )
     assert len(visible_later) == 2
 
 
@@ -124,6 +161,6 @@ async def test_subject_filter_keeps_temporal_pin(graph: GraphClient) -> None:
             )
         )
     )
-    rows = await graph.read_assertions(as_of=T, subject_key=RATING.key)
+    rows = await graph.read_assertions(as_of=T, access=ACCESS, subject_key=RATING.key)
     assert len(rows) == 1
     assert rows[0]["a"]["source_doc_id"] == "SW-2024-0001"

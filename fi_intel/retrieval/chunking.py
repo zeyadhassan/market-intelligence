@@ -1,25 +1,22 @@
-"""Document chunking and deterministic local embeddings.
+"""Document chunking and embedding interfaces.
 
-The default embedder is a hashing trick over token unigrams+bigrams: no
-network, no model download, fully reproducible — which is what tests and
-backtests need. A licensed embedding service slots in behind the Embedder
-protocol as a config change; nothing downstream changes.
-
-Chunk offsets are character offsets into the source document body, because
-evidence citations (invariant 7) resolve to document + character span.
+Chunk offsets use the source text coordinate space so evidence citations
+resolve to document character spans. HashingEmbedder provides a deterministic
+fallback for tests and unconfigured environments.
 """
 
 import hashlib
 import math
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
-from fi_intel.sources.canonical import CanonicalDocument
+from fi_intel.sources.canonical import CanonicalDocument, document_text
 
 EMBEDDING_DIM = 1024  # matches deploy/init.sql document_chunk.embedding
 CHUNK_SIZE = 512
 CHUNK_OVERLAP = 64
+CHUNKER_VERSION = f"char-window-v1:{CHUNK_SIZE}:{CHUNK_OVERLAP}"
 
 
 class Chunk(BaseModel):
@@ -37,7 +34,7 @@ def chunk_document(
     doc: CanonicalDocument, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP
 ) -> list[Chunk]:
     """Split title+body into overlapping character windows on word boundaries."""
-    text = doc.title + "\n" + doc.body
+    text = document_text(doc)
     chunks: list[Chunk] = []
     start = 0
     index = 0
@@ -70,13 +67,20 @@ class Embedder(Protocol):
     @property
     def dim(self) -> int: ...
 
-    def embed(self, text: str) -> list[float]: ...
+    @property
+    def model_version(self) -> str:
+        """Identify the model version that produced these vectors."""
+        ...
+
+    async def embed_batch(
+        self, texts: list[str], *, kind: Literal["document", "query"] = "document"
+    ) -> list[list[float]]:
+        """Embed a batch of documents or queries."""
+        ...
 
 
 class HashingEmbedder:
-    """Deterministic local embedder. Semantic signal comes from token
-    n-gram overlap in a hashed space — enough for hybrid retrieval to be
-    meaningfully different from pure BM25 on morphological variants."""
+    """Deterministic local embedder based on hashed token n-grams."""
 
     def __init__(self, dim: int = EMBEDDING_DIM) -> None:
         self._dim = dim
@@ -85,7 +89,11 @@ class HashingEmbedder:
     def dim(self) -> int:
         return self._dim
 
-    def embed(self, text: str) -> list[float]:
+    @property
+    def model_version(self) -> str:
+        return "hashing-v1"
+
+    def _embed_one(self, text: str) -> list[float]:
         vec = [0.0] * self._dim
         tokens = text.lower().split()
         features = tokens + [f"{a} {b}" for a, b in zip(tokens, tokens[1:], strict=False)]
@@ -98,6 +106,12 @@ class HashingEmbedder:
         if norm > 0:
             vec = [v / norm for v in vec]
         return vec
+
+    async def embed_batch(
+        self, texts: list[str], *, kind: Literal["document", "query"] = "document"
+    ) -> list[list[float]]:
+        del kind  # symmetric by construction; no query/document distinction to make
+        return [self._embed_one(t) for t in texts]
 
 
 def cosine(a: list[float], b: list[float]) -> float:

@@ -1,5 +1,5 @@
 -- fi_intel evidence store. Postgres 16 + pgvector + pg_trgm.
--- Entitlement filtering is enforced here, in the data layer (invariant 3):
+-- Entitlement filtering is enforced here, in the data layer:
 -- every retrieval query joins source_registry and filters by the caller's
 -- entitlement group and barrier side. There is no prompt-level control.
 
@@ -29,13 +29,15 @@ VALUES ('synthetic_wire', 'Synthetic wire (test corpus)', 'test', 'public'),
 -- Open-web sources (fi_intel/sources/adapters/rss.py): freely published
 -- government feeds, not licensed vendor content. licence_group is
 -- deliberately distinct from any vendor group so the registry and audit
--- trail never conflate the two; licensed=TRUE (the column default) because
--- these ARE the sources this desk is approved to use, just not paid ones.
-INSERT INTO source_registry (source_id, display_name, licence_group, barrier_side)
+-- trail never conflates the two. They are disabled until explicitly placed
+-- in a desk coverage universe; registration is not activation.
+INSERT INTO source_registry (
+    source_id, display_name, licence_group, barrier_side, licensed
+)
 VALUES ('sec_edgar_8k', 'SEC EDGAR - recent 8-K filings (open web)',
-        'open_web_public', 'public'),
+        'open_web_public', 'public', FALSE),
        ('fed_press_releases', 'Federal Reserve press releases (open web)',
-        'open_web_public', 'public');
+        'open_web_public', 'public', FALSE);
 
 -- Entitlement groups and the sources each may read. Retrieval joins this
 -- table; there is no application-level bypass.
@@ -53,12 +55,10 @@ INSERT INTO entitlement_grant (entitlement_group, source_id) VALUES
     ('test_private',   'synthetic_wire'),
     ('test_private',   'synthetic_wire_private'),
     ('open_web_public', 'sec_edgar_8k'),
-    ('open_web_public', 'fed_press_releases'),
-    ('fi_gcc_public',   'sec_edgar_8k'),
-    ('fi_gcc_public',   'fed_press_releases');
+    ('open_web_public', 'fed_press_releases');
 
 -- ---------------------------------------------------------------------------
--- Canonical documents. No vendor field names may appear here (invariant 1).
+-- Canonical documents. No vendor field names may appear here.
 -- ---------------------------------------------------------------------------
 CREATE TABLE document (
     doc_id           TEXT NOT NULL,
@@ -83,6 +83,7 @@ CREATE TABLE document (
 CREATE UNIQUE INDEX document_content_hash_key ON document (source_id, content_hash);
 CREATE INDEX document_recorded_at_idx ON document (recorded_at);
 CREATE INDEX document_title_trgm_idx ON document USING gin (title gin_trgm_ops);
+CREATE INDEX document_identifiers_lei_idx ON document ((identifiers ->> 'lei'));
 
 -- Near-duplicate linkage: same story carried by multiple wires.
 -- The duplicate side has NO foreign key to document: a near-duplicate is
@@ -111,7 +112,7 @@ CREATE TABLE ingest_cursor (
 );
 
 -- ---------------------------------------------------------------------------
--- Chunks + embeddings for hybrid retrieval (M4).
+-- Chunks and embeddings for hybrid retrieval.
 -- ---------------------------------------------------------------------------
 CREATE TABLE document_chunk (
     chunk_id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -121,7 +122,14 @@ CREATE TABLE document_chunk (
     char_start       INT NOT NULL,
     char_end         INT NOT NULL,
     text             TEXT NOT NULL,
+    search_vector    TSVECTOR GENERATED ALWAYS AS
+                     (to_tsvector('simple', coalesce(text, ''))) STORED,
     embedding        vector(1024),
+    -- Which embedder produced this row (mirrors EXTRACTOR_VERSION/
+    -- PROMPT_VERSION's discipline of never caching model output without
+    -- its version). Swapping embedders must be a tracked, deliberate
+    -- re-index, not a silent mix of incomparable vector spaces.
+    embed_model_version TEXT NOT NULL DEFAULT 'hashing-v1',
     recorded_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     FOREIGN KEY (source_id, doc_id) REFERENCES document (source_id, doc_id),
     UNIQUE (source_id, doc_id, chunk_index),
@@ -129,9 +137,24 @@ CREATE TABLE document_chunk (
 );
 CREATE INDEX document_chunk_embedding_idx
     ON document_chunk USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX document_chunk_search_vector_idx
+    ON document_chunk USING gin (search_vector);
+CREATE INDEX document_chunk_embed_version_idx
+    ON document_chunk (embed_model_version);
+
+-- Exactly one completed, homogeneous retrieval index is active. Search
+-- fails closed when its configured embedder/chunker does not match this row.
+CREATE TABLE retrieval_index_state (
+    index_name          TEXT PRIMARY KEY,
+    embed_model_version TEXT NOT NULL,
+    embedding_dim       INT NOT NULL CHECK (embedding_dim > 0),
+    chunker_version     TEXT NOT NULL,
+    status              TEXT NOT NULL CHECK (status IN ('building', 'ready', 'failed')),
+    indexed_at          TIMESTAMPTZ NOT NULL
+);
 
 -- ---------------------------------------------------------------------------
--- Entity resolution (M3). Every resolution records resolver and score;
+-- Entity resolution. Every resolution records resolver and score;
 -- borderline candidates queue for human review, never auto-merge.
 -- ---------------------------------------------------------------------------
 CREATE TABLE entity (
@@ -165,6 +188,21 @@ CREATE TABLE entity_resolution (
     resolved_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Source-asserted identifiers remain on document; resolved identity is a
+-- separate, provenanced, append-only link used by entity-scoped retrieval.
+CREATE TABLE document_entity_link (
+    document_entity_link_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    resolution_id    BIGINT NOT NULL UNIQUE REFERENCES entity_resolution (resolution_id),
+    source_id        TEXT NOT NULL,
+    doc_id           TEXT NOT NULL,
+    lei              TEXT NOT NULL REFERENCES entity (lei),
+    resolver         TEXT NOT NULL,
+    score            DOUBLE PRECISION NOT NULL CHECK (score BETWEEN 0 AND 1),
+    recorded_at      TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX document_entity_link_lookup_idx
+    ON document_entity_link (source_id, doc_id, lei, recorded_at);
+
 CREATE TABLE resolution_queue (
     queue_id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     source_id        TEXT NOT NULL,
@@ -179,7 +217,7 @@ CREATE TABLE resolution_queue (
 );
 
 -- ---------------------------------------------------------------------------
--- Extraction review queue (M6): out-of-vocabulary types are never
+-- Extraction review queue: out-of-vocabulary types are never
 -- auto-admitted to the T-Box.
 -- ---------------------------------------------------------------------------
 CREATE TABLE proposed_type (
@@ -197,15 +235,37 @@ CREATE TABLE proposed_type (
 );
 
 -- ---------------------------------------------------------------------------
--- Audit: every retrieval writes a row (invariant 3's evidence trail).
+-- Audit: every retrieval writes a row.
 -- ---------------------------------------------------------------------------
 CREATE TABLE access_log (
     access_id        BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     run_id           TEXT NOT NULL,
     principal        TEXT NOT NULL,
     entitlement_group TEXT NOT NULL,
-    source_id        TEXT NOT NULL,
-    doc_id           TEXT NOT NULL,
+    source_id        TEXT,
+    doc_id           TEXT,
+    operation        TEXT NOT NULL DEFAULT 'retrieval',
+    result_count     INT NOT NULL DEFAULT 1 CHECK (result_count >= 0),
     accessed_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX access_log_run_idx ON access_log (run_id);
+
+-- ---------------------------------------------------------------------------
+-- LLM call accounting: cost/latency visibility for real extraction and
+-- research model calls. NOT a compliance boundary like access_log above —
+-- see fi_intel/governance/model_usage.py for why writes here are
+-- best-effort rather than fail-closed.
+-- ---------------------------------------------------------------------------
+CREATE TABLE model_call_log (
+    call_id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    run_id           TEXT NOT NULL,
+    component        TEXT NOT NULL CHECK (component IN ('extract', 'research')),
+    model            TEXT NOT NULL,
+    input_tokens     INT NOT NULL,
+    output_tokens    INT NOT NULL,
+    cost_usd         DOUBLE PRECISION NOT NULL,
+    latency_ms       DOUBLE PRECISION NOT NULL,
+    subject_id       TEXT NOT NULL,          -- doc_id (extract) or signal_id (research)
+    recorded_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX model_call_log_run_idx ON model_call_log (run_id);

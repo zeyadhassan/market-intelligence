@@ -3,8 +3,9 @@
 Ranking pipeline, all of it deterministic and in code (business rules do
 not live in prompts):
   1. candidate generation: BM25 over chunk text, cosine over embeddings
-  2. reciprocal rank fusion of the two ranked lists
-  3. multiplicative recency weight: exponential decay with
+  2. per-leg relevance admission on normalized BM25 or cosine similarity
+  3. reciprocal rank fusion of the admitted ranked lists
+  4. multiplicative recency weight: exponential decay with
      RECENCY_HALF_LIFE_DAYS, measured against the labelled relevance set
      (tests/test_retrieval.py reports all three of BM25-only, vector-only,
      hybrid — tune against that set, never against a single query)
@@ -22,18 +23,24 @@ from pydantic import BaseModel, ConfigDict
 
 from fi_intel.retrieval.chunking import Chunk, Embedder, cosine
 from fi_intel.retrieval.entitlement import Principal
-from fi_intel.sources.canonical import CanonicalDocument
+from fi_intel.sources.canonical import CanonicalDocument, document_text
 
 RRF_K = 60  # standard RRF constant; rank fusion is insensitive near it
 RECENCY_HALF_LIFE_DAYS = 90.0
 #: Oldest documents keep this fraction of a fresh document's weight.
 RECENCY_FLOOR = 0.5
 DEFAULT_LIMIT = 10
+MIN_INDEXED_CANDIDATES = 50
+INDEXED_CANDIDATE_MULTIPLIER = 5
+MAX_INDEXED_CANDIDATES = 1000
 #: Chunks whose fused rank score falls below this fraction of the top
 #: result are noise, not weak matches. Without a floor, every query returns
 #: `limit` results regardless of relevance — which pressures the system to
-#: fill a page (invariant 8 applies to retrieval too).
-MIN_SCORE_FRACTION = 0.5
+#: fill a page with irrelevant matches.
+# Candidates clearing either active leg remain eligible before fusion, so
+# adding or removing a leg changes rank without changing admission by itself.
+MIN_NORMALIZED_BM25_SCORE = 0.10
+MIN_COSINE_SIMILARITY = 0.10
 
 
 class ScoredChunk(BaseModel):
@@ -44,6 +51,21 @@ class ScoredChunk(BaseModel):
     score: float
     bm25_rank: int | None
     vector_rank: int | None
+    bm25_score: float | None = None
+    vector_score: float | None = None
+
+
+class IndexedCandidate(BaseModel):
+    """One bounded SQL-generated candidate with per-leg ranks."""
+
+    model_config = ConfigDict(frozen=True)
+
+    chunk: Chunk
+    doc: CanonicalDocument
+    bm25_rank: int | None
+    vector_rank: int | None
+    bm25_score: float | None = None
+    vector_score: float | None = None
 
 
 @runtime_checkable
@@ -51,10 +73,47 @@ class CorpusStore(Protocol):
     """Candidate access with entitlement and as-of already applied."""
 
     async def candidates(
-        self, principal: Principal, as_of: datetime | None
+        self,
+        principal: Principal,
+        as_of: datetime | None,
+        entity_lei: str | None = None,
+        source_ids: set[str] | None = None,
     ) -> list[tuple[CanonicalDocument, list[Chunk], list[list[float]]]]:
         """(document, its chunks, chunk embeddings) the caller may see."""
         ...
+
+
+@runtime_checkable
+class IndexedCorpusStore(Protocol):
+    """Production candidate generation performed by database indexes."""
+
+    async def indexed_candidates(
+        self,
+        query: str,
+        query_embedding: list[float],
+        *,
+        embed_model_version: str,
+        embedding_dim: int,
+        principal: Principal,
+        as_of: datetime | None,
+        entity_lei: str | None,
+        source_ids: set[str] | None,
+        mode: str,
+        candidate_limit: int,
+    ) -> list[IndexedCandidate]: ...
+
+
+@runtime_checkable
+class SpanCorpusStore(Protocol):
+    """Resolve one entitled canonical document for citation validation."""
+
+    async def resolve_document(
+        self,
+        principal: Principal,
+        source_id: str,
+        doc_id: str,
+        as_of: datetime | None,
+    ) -> CanonicalDocument | None: ...
 
 
 def _tokenize(text: str) -> list[str]:
@@ -138,9 +197,39 @@ def recency_weight(published_at: datetime, as_of: datetime | None) -> float:
 
 
 class CorpusSearch:
-    def __init__(self, store: CorpusStore, embedder: Embedder) -> None:
+    def __init__(
+        self,
+        store: CorpusStore | IndexedCorpusStore,
+        embedder: Embedder,
+        *,
+        min_normalized_bm25_score: float = MIN_NORMALIZED_BM25_SCORE,
+        min_cosine_similarity: float = MIN_COSINE_SIMILARITY,
+    ) -> None:
         self._store = store
         self._embedder = embedder
+        self._min_normalized_bm25_score = min_normalized_bm25_score
+        self._min_cosine_similarity = min_cosine_similarity
+
+    async def resolve_span(
+        self,
+        principal: Principal,
+        source_id: str,
+        doc_id: str,
+        start: int,
+        end: int,
+        as_of: datetime | None,
+    ) -> tuple[CanonicalDocument, str] | None:
+        """Resolve an exact span through the same data-layer policy boundary."""
+        if not isinstance(self._store, SpanCorpusStore):
+            msg = "corpus store cannot resolve evidence spans"
+            raise TypeError(msg)
+        doc = await self._store.resolve_document(principal, source_id, doc_id, as_of)
+        if doc is None:
+            return None
+        text = document_text(doc)
+        if not 0 <= start < end <= len(text):
+            return None
+        return doc, text[start:end]
 
     async def search(
         self,
@@ -148,16 +237,58 @@ class CorpusSearch:
         principal: Principal,
         as_of: datetime | None = None,
         entity_lei: str | None = None,
+        source_ids: set[str] | None = None,
         limit: int = DEFAULT_LIMIT,
         mode: str = "hybrid",
     ) -> list[ScoredChunk]:
         if mode not in ("hybrid", "bm25", "vector"):
             msg = f"unknown search mode {mode!r}"
             raise ValueError(msg)
+        if limit < 1:
+            msg = "limit must be >= 1"
+            raise ValueError(msg)
 
-        candidates = await self._store.candidates(principal, as_of)
-        if entity_lei is not None:
-            candidates = [c for c in candidates if c[0].identifiers.get("lei") == entity_lei]
+        if isinstance(self._store, IndexedCorpusStore):
+            return await self._search_indexed(
+                query,
+                principal,
+                as_of,
+                entity_lei,
+                source_ids,
+                limit,
+                mode,
+            )
+
+        return await self._search_in_memory(
+            query,
+            principal,
+            as_of,
+            entity_lei,
+            source_ids,
+            limit,
+            mode,
+        )
+
+    async def _search_in_memory(
+        self,
+        query: str,
+        principal: Principal,
+        as_of: datetime | None,
+        entity_lei: str | None,
+        source_ids: set[str] | None,
+        limit: int,
+        mode: str,
+    ) -> list[ScoredChunk]:
+        if not isinstance(self._store, CorpusStore):
+            msg = "in-memory search requested for a non-exhaustive store"
+            raise TypeError(msg)
+
+        candidates = await self._store.candidates(
+            principal,
+            as_of,
+            entity_lei=entity_lei,
+            source_ids=source_ids,
+        )
 
         chunks: list[Chunk] = []
         docs: list[CanonicalDocument] = []
@@ -171,15 +302,20 @@ class CorpusSearch:
             return []
 
         bm25 = bm25_rank(query, chunks)
-        vector = vector_rank(self._embedder.embed(query), embeddings)
+        (query_embedding,) = await self._embedder.embed_batch([query], kind="query")
+        vector = vector_rank(query_embedding, embeddings)
 
         # Zero-signal chunks (no query term present, or no positive vector
         # similarity) are excluded from ranking entirely. Without this,
         # RRF hands every chunk a nonzero score and every query returns
-        # `limit` results regardless of relevance — pressure to fill a
-        # page, which invariant 8 forbids.
+        # `limit` results regardless of relevance.
         bm25_positive = [(pos, s) for pos, s in bm25 if s > 0.0]
         vector_positive = [(pos, s) for pos, s in vector if s > 0.0]
+        max_bm25 = max((score for _pos, score in bm25_positive), default=0.0)
+        bm25_scores = {
+            pos: score / max_bm25 for pos, score in bm25_positive if max_bm25 > 0.0
+        }
+        vector_scores = dict(vector_positive)
         bm25_ranks = _competition_ranks(bm25_positive)
         vector_ranks = _competition_ranks(vector_positive)
 
@@ -200,11 +336,100 @@ class CorpusSearch:
                 score=fused_score * recency_weight(docs[pos].published_at, as_of),
                 bm25_rank=rank_of.get(pos),
                 vector_rank=vrank_of.get(pos),
+                bm25_score=bm25_scores.get(pos),
+                vector_score=vector_scores.get(pos),
             )
             for pos, fused_score in fused.items()
+            if self._eligible(mode, bm25_scores.get(pos), vector_scores.get(pos))
         ]
         results.sort(key=lambda r: r.score, reverse=True)
-        if results:
-            floor = results[0].score * MIN_SCORE_FRACTION
-            results = [r for r in results if r.score >= floor]
         return results[:limit]
+
+    async def _search_indexed(
+        self,
+        query: str,
+        principal: Principal,
+        as_of: datetime | None,
+        entity_lei: str | None,
+        source_ids: set[str] | None,
+        limit: int,
+        mode: str,
+    ) -> list[ScoredChunk]:
+        if not isinstance(self._store, IndexedCorpusStore):
+            msg = "indexed search requested for a non-indexed store"
+            raise TypeError(msg)
+        (query_embedding,) = await self._embedder.embed_batch([query], kind="query")
+        candidate_limit = min(
+            MAX_INDEXED_CANDIDATES,
+            max(MIN_INDEXED_CANDIDATES, limit * INDEXED_CANDIDATE_MULTIPLIER),
+        )
+        indexed = await self._store.indexed_candidates(
+            query,
+            query_embedding,
+            embed_model_version=self._embedder.model_version,
+            embedding_dim=self._embedder.dim,
+            principal=principal,
+            as_of=as_of,
+            entity_lei=entity_lei,
+            source_ids=source_ids,
+            mode=mode,
+            candidate_limit=candidate_limit,
+        )
+        return self._rank_indexed(indexed, as_of, limit, mode)
+
+    def _rank_indexed(
+        self,
+        candidates: list[IndexedCandidate],
+        as_of: datetime | None,
+        limit: int,
+        mode: str,
+    ) -> list[ScoredChunk]:
+        results: list[ScoredChunk] = []
+        for candidate in candidates:
+            if not self._eligible(mode, candidate.bm25_score, candidate.vector_score):
+                continue
+            score = 0.0
+            if mode in {"hybrid", "bm25"} and candidate.bm25_rank is not None:
+                score += 1.0 / (RRF_K + candidate.bm25_rank)
+            if mode in {"hybrid", "vector"} and candidate.vector_rank is not None:
+                score += 1.0 / (RRF_K + candidate.vector_rank)
+            if score <= 0.0:
+                continue
+            results.append(
+                ScoredChunk(
+                    chunk=candidate.chunk,
+                    doc=candidate.doc,
+                    score=score * recency_weight(candidate.doc.published_at, as_of),
+                    bm25_rank=candidate.bm25_rank,
+                    vector_rank=candidate.vector_rank,
+                    bm25_score=candidate.bm25_score,
+                    vector_score=candidate.vector_score,
+                )
+            )
+        results.sort(
+            key=lambda result: (
+                -result.score,
+                result.doc.source_id,
+                result.doc.doc_id,
+                result.chunk.chunk_index,
+            )
+        )
+        return results[:limit]
+
+    def _eligible(
+        self,
+        mode: str,
+        bm25_score: float | None,
+        vector_score: float | None,
+    ) -> bool:
+        lexical = (
+            mode in {"hybrid", "bm25"}
+            and bm25_score is not None
+            and bm25_score >= self._min_normalized_bm25_score
+        )
+        semantic = (
+            mode in {"hybrid", "vector"}
+            and vector_score is not None
+            and vector_score >= self._min_cosine_similarity
+        )
+        return lexical or semantic

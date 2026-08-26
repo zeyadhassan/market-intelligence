@@ -8,8 +8,6 @@ private-side leak is a regulatory incident, not a bug.
 
 from datetime import UTC, datetime
 
-import pytest
-
 from fi_intel.governance.audit import InMemoryAuditLog
 from fi_intel.retrieval.chunking import HashingEmbedder
 from fi_intel.retrieval.corpus import CorpusSearch
@@ -145,18 +143,12 @@ async def test_every_retrieval_writes_access_log_rows() -> None:
 
 
 async def test_empty_result_still_auditable() -> None:
-    """A search returning nothing writes no rows but must not fail."""
+    """A zero-row probe is distinguishable in the compliance trail."""
     service, audit = await _service()
     results = await service.search("zzz-no-such-token-zzz", PUBLIC_PRINCIPAL)
     assert results == []
-    assert audit.events == []
-
-
-@pytest.mark.skipif(
-    __import__("os").environ.get("FI_INTEL_TEST_PG_DSN") is None,
-    reason="FI_INTEL_TEST_PG_DSN not set",
-)
-async def test_postgres_parity_with_in_memory() -> None:
-    """The SQL predicate and its in-memory port must agree exactly."""
-    # Implemented when a live database is available; mirrors
-    # tests/test_store_contract.py's pattern.
+    assert len(audit.events) == 1
+    assert audit.events[0].source_id is None
+    assert audit.events[0].doc_id is None
+    assert audit.events[0].result_count == 0
+    assert audit.events[0].operation == "retrieval"

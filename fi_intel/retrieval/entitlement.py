@@ -2,9 +2,7 @@
 
 ENTITLEMENT_SQL is the single source of truth for the entitlement
 predicate. The Postgres path executes it verbatim; the in-memory test
-store implements ``entitlement_allows`` as a faithful port of the same
-predicate, and a parity test (run when FI_INTEL_TEST_PG_DSN is set) keeps
-the two honest.
+store mirrors the same checks directly.
 
 Two independent conditions, both required:
   1. an entitlement_grant row links the caller's group to the source, and
@@ -32,7 +30,7 @@ class Principal(BaseModel):
     side: Side = Side.PUBLIC
 
 
-#: Source of truth for the entitlement predicate (invariant 3). Every
+#: Source of truth for the entitlement predicate. Every
 #: retrieval query embeds this fragment; there is no unfiltered variant.
 ENTITLEMENT_SQL = """
 JOIN source_registry sr ON sr.source_id = d.source_id
@@ -44,20 +42,6 @@ WHERE sr.licensed
 
 #: As-of predicate, applied in SQL — never in Python after fetching.
 AS_OF_SQL = "AND d.recorded_at <= %(as_of)s"
-
-
-def entitlement_allows(
-    group_grants: set[str],
-    source_licensed: bool,
-    doc_barrier_side: str,
-    caller_side: Side,
-) -> bool:
-    """In-memory port of ENTITLEMENT_SQL. Keep in lockstep with the SQL."""
-    if not source_licensed:
-        return False
-    if doc_barrier_side != "public" and caller_side != Side.PRIVATE:
-        return False
-    return True  # group_grants membership is checked by the caller
 
 
 def grants_for(group: str, all_grants: set[tuple[str, str]]) -> set[str]:

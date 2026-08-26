@@ -5,10 +5,15 @@ after N committed batches) rather than mocking the failure away — the
 pipeline's actual exception path is what must leave a resumable cursor.
 """
 
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+
 import pytest
 
 from fi_intel.ingest.pipeline import IngestPipeline
 from fi_intel.ingest.store import InMemoryDocumentStore
+from fi_intel.sources.base import FetchCursor
+from fi_intel.sources.canonical import CanonicalDocument, DocumentClass
 from fi_intel.sources.fixture import FixtureAdapter, synthetic_wire
 
 
@@ -27,6 +32,23 @@ class FailingStore:
 
     def __getattr__(self, name: str):  # noqa: ANN001, ANN204
         return getattr(self._inner, name)
+
+
+class _ExactReplayAdapter:
+    source_id = "replay"
+
+    def __init__(self, doc: CanonicalDocument) -> None:
+        self._doc = doc
+
+    async def fetch(
+        self, cursor: FetchCursor | None = None
+    ) -> AsyncIterator[CanonicalDocument]:
+        del cursor
+        yield self._doc
+
+    def cursor_for(self, doc: CanonicalDocument) -> FetchCursor:
+        assert doc is self._doc
+        return FetchCursor(source_id=self.source_id, position="2", updated_at=doc.recorded_at)
 
 
 async def test_ingesting_twice_produces_ten_documents_not_twenty() -> None:
@@ -102,3 +124,30 @@ async def test_status_reports_counts_and_cursor() -> None:
     assert status.duplicate_count == 1
     assert status.cursor_position == "12"
     assert status.cursor_updated_at is not None
+
+
+async def test_exact_duplicate_only_run_still_advances_cursor() -> None:
+    timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+    doc = CanonicalDocument(
+        source_id="replay",
+        doc_id="D-1",
+        published_at=timestamp,
+        recorded_at=timestamp,
+        title="Already stored",
+        body="Identical content replayed after a source watermark update.",
+        document_class=DocumentClass.NEWS_WIRE,
+    )
+    store = InMemoryDocumentStore()
+    await store.commit_batch(
+        [doc],
+        [],
+        FetchCursor(source_id="replay", position="1", updated_at=timestamp),
+    )
+
+    result = await IngestPipeline(store).run(_ExactReplayAdapter(doc))
+
+    assert result.fetched == 1
+    assert result.exact_duplicates == 1
+    assert result.persisted == 0
+    assert result.batches_committed == 1
+    assert result.final_cursor == "2"

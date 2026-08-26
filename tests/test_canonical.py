@@ -1,4 +1,4 @@
-"""Tests for the canonical boundary itself (invariant 1)."""
+"""Tests for the canonical document boundary."""
 
 from datetime import UTC, datetime
 

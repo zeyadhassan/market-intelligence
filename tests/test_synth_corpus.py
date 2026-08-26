@@ -1,7 +1,6 @@
 """Golden-path tests over the synthetic corpus.
 
-These pin the corpus contract that later milestones rely on: document
-counts, dedupe case structure, name variants, and the decoy's silence.
+These pin document counts, dedupe cases, name variants, and decoy behavior.
 """
 
 import json
@@ -25,9 +24,8 @@ async def _corpus() -> list:
 async def test_raw_records_dedupe_to_ten_unique_documents() -> None:
     docs = await _corpus()
     assert len(docs) == 12
-    # Exact dedupe (content hash) collapses the reprint pair 0001/0002,
-    # leaving 11. Near-duplicate detection (M2) then collapses 0003 into
-    # 0001, reaching the 10 unique documents the M2 criterion refers to.
+    # Exact dedupe collapses 0001/0002, leaving 11. Near-duplicate detection
+    # then collapses 0003 into 0001, leaving 10 unique documents.
     unique_hashes = {d.content_hash() for d in docs}
     assert len(unique_hashes) == 11
     near_dupes = [d for d in docs if d.metadata.get("dedupe_case") == "near_duplicate_wire"]

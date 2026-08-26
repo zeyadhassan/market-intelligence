@@ -9,36 +9,24 @@ nothing:
    auto-merge only above threshold AND with a unique best candidate
 4. queue for human review
 
-The model never merges entities on its own judgement (invariant 6). Every
-resolution records resolver and score; everything ambiguous queues. Low
-recall is a visible, fixable problem — a false merge is invisible and
-corrupts every downstream query about both entities.
-
-Threshold justification, measured on the synthetic corpus (token-sort
-ratio over normalized names, legal-suffix tokens stripped):
-  "Gulf Meridian"            vs legal name "Gulf Meridian Bank Q.P.S.C.": 83.9
-  "Gulf Meridian Bank"       vs legal name (normalized-name exact):      100.0
-  "Gulf Meridian Capital Partners" (the trap) vs Gulf Meridian Bank:      62.5
-  Trap vs its OWN legal name (normalized-name exact):                    100.0
-  "Northern Harbour Bank"    vs its own legal name (normalized exact):   100.0
-FUZZY_AUTO_MERGE_THRESHOLD = 80 sits above the trap's cross-entity score
-(62.5) and below every true-variant score (>= 83.9). Any change must be
-re-measured against BOTH the variant set and the trap — the trap test
-matters more.
+Every resolution records its resolver and score. Ambiguous matches are
+queued for review instead of merged automatically.
 """
 
 import re
 import unicodedata
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from fi_intel.logging import get_logger
 from fi_intel.sources.canonical import CanonicalDocument
 
+# Calibrated against the labelled variants and confusing-name cases in tests.
 FUZZY_AUTO_MERGE_THRESHOLD = 80.0
 
 # Legal suffixes carry no identity signal; stripping them is what lets
@@ -46,14 +34,20 @@ FUZZY_AUTO_MERGE_THRESHOLD = 80.0
 # Matching is done on whole tokens after punctuation removal, so "q.p.s.c."
 # becomes the tokens q, p, s, c — each listed individually below.
 _LEGAL_SUFFIX_TOKENS = {
-    "q", "p", "s", "c", "j", "l", "b", "k",  # fragments of Q.P.S.C. etc.
     "qpsc", "pjsc", "llc", "bsc", "ksc", "sa", "psc", "jsc",
     "plc", "ltd", "limited", "inc", "co", "company",
-    "group", "holding", "holdings",
 }
-
-_IDENTIFIER_SCHEMES = ("lei", "bic", "isin")
-
+_PUNCTUATED_LEGAL_SUFFIXES = {
+    ("q", "p", "s", "c"),
+    ("p", "j", "s", "c"),
+    ("l", "l", "c"),
+    ("b", "s", "c"),
+    ("k", "s", "c"),
+    ("p", "s", "c"),
+    ("j", "s", "c"),
+    ("s", "a"),
+}
+_CORPORATE_FAMILY_TOKENS = frozenset({"group", "holding", "holdings"})
 
 class ResolverName(StrEnum):
     EXACT_IDENTIFIER = "exact_identifier"
@@ -86,6 +80,20 @@ class Resolution(BaseModel):
     lei: str
     resolver: ResolverName
     score: float
+    recorded_at: AwareDatetime
+
+
+class DocumentEntityLink(BaseModel):
+    """A provenanced resolved identity for one document."""
+
+    model_config = ConfigDict(frozen=True)
+
+    source_id: str
+    doc_id: str
+    lei: str
+    resolver: ResolverName
+    score: float = Field(ge=0.0, le=1.0)
+    recorded_at: AwareDatetime
 
 
 class QueuedMention(BaseModel):
@@ -95,7 +103,7 @@ class QueuedMention(BaseModel):
     doc_id: str
     mention_text: str
     candidate_lei: str | None
-    best_score: float | None
+    best_score: float | None = Field(default=None, ge=0.0, le=1.0)
     reason: str
 
 
@@ -103,8 +111,24 @@ def normalize_name(name: str) -> str:
     """Lowercase, strip accents, punctuation, and legal-suffix tokens."""
     text = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
     text = re.sub(r"[^a-z0-9 ]", " ", text.lower())
-    tokens = [t for t in text.split() if t not in _LEGAL_SUFFIX_TOKENS]
+    tokens = text.split()
+    for suffix in sorted(_PUNCTUATED_LEGAL_SUFFIXES, key=len, reverse=True):
+        if tuple(tokens[-len(suffix) :]) == suffix:
+            tokens = tokens[: -len(suffix)]
+            break
+    while tokens and tokens[-1] in _LEGAL_SUFFIX_TOKENS:
+        tokens.pop()
     return " ".join(tokens)
+
+
+def _corporate_family_tokens(name: str) -> frozenset[str]:
+    text = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    tokens = set(re.sub(r"[^a-z0-9 ]", " ", text.lower()).split())
+    return frozenset(tokens & _CORPORATE_FAMILY_TOKENS)
+
+
+def _family_form_differs(left: str, right: str) -> bool:
+    return _corporate_family_tokens(left) != _corporate_family_tokens(right)
 
 
 def token_sort_ratio(a: str, b: str) -> float:
@@ -125,9 +149,15 @@ class ResolutionStore(Protocol):
 
     async def record_resolution(self, resolution: Resolution) -> None: ...
 
+    async def resolution_for(
+        self, source_id: str, doc_id: str, mention_text: str
+    ) -> Resolution | None: ...
+
     async def record_queued(self, queued: QueuedMention) -> None: ...
 
     async def resolutions(self) -> list[Resolution]: ...
+
+    async def document_entity_links(self) -> list[DocumentEntityLink]: ...
 
     async def queue(self) -> list[QueuedMention]: ...
 
@@ -140,6 +170,7 @@ class InMemoryResolutionStore:
     def __init__(self) -> None:
         self._reference: dict[str, ReferenceEntity] = {}
         self._resolutions: list[Resolution] = []
+        self._document_entity_links: list[DocumentEntityLink] = []
         self._queue: list[QueuedMention] = []
 
     async def load_reference(self, docs: list[CanonicalDocument]) -> None:
@@ -160,13 +191,45 @@ class InMemoryResolutionStore:
         return list(self._reference.values())
 
     async def record_resolution(self, resolution: Resolution) -> None:
-        self._resolutions.append(resolution)
+        existing = await self.resolution_for(
+            resolution.source_id, resolution.doc_id, resolution.mention_text
+        )
+        if existing is None:
+            self._resolutions.append(resolution)
+            self._document_entity_links.append(
+                DocumentEntityLink(
+                    source_id=resolution.source_id,
+                    doc_id=resolution.doc_id,
+                    lei=resolution.lei,
+                    resolver=resolution.resolver,
+                    score=resolution.score,
+                    recorded_at=resolution.recorded_at,
+                )
+            )
+
+    async def resolution_for(
+        self, source_id: str, doc_id: str, mention_text: str
+    ) -> Resolution | None:
+        normalized = normalize_name(mention_text)
+        return next(
+            (
+                resolution
+                for resolution in reversed(self._resolutions)
+                if resolution.source_id == source_id
+                and resolution.doc_id == doc_id
+                and normalize_name(resolution.mention_text) == normalized
+            ),
+            None,
+        )
 
     async def record_queued(self, queued: QueuedMention) -> None:
         self._queue.append(queued)
 
     async def resolutions(self) -> list[Resolution]:
         return list(self._resolutions)
+
+    async def document_entity_links(self) -> list[DocumentEntityLink]:
+        return list(self._document_entity_links)
 
     async def queue(self) -> list[QueuedMention]:
         return list(self._queue)
@@ -193,43 +256,97 @@ class EntityResolver:
         self._threshold = fuzzy_threshold
         self._log = get_logger(component="ingest.resolve")
 
-    async def resolve_document(self, doc: CanonicalDocument) -> None:
+    async def resolve_document(
+        self, doc: CanonicalDocument, *, recorded_at: datetime | None = None
+    ) -> None:
+        decision_at = recorded_at or datetime.now(tz=UTC)
         reference = await self._store.reference_entities()
         for mention in doc.mentioned_names:
-            resolution = self._exact_identifier(doc, mention)
-            if resolution is None:
-                resolution = self._normalized_name(doc, mention, reference)
-            if resolution is None:
-                resolution = await self._blocked_fuzzy(doc, mention, reference)
-            if resolution is not None:
-                await self._store.record_resolution(resolution)
-                self._log.info(
-                    "resolve.merged",
-                    doc_id=doc.doc_id,
-                    mention=mention,
-                    lei=resolution.lei,
-                    resolver=str(resolution.resolver),
-                    score=resolution.score,
-                )
+            await self._resolve_mention(doc, mention, reference, decision_at)
 
-    def _exact_identifier(self, doc: CanonicalDocument, mention: str) -> Resolution | None:
-        for scheme in _IDENTIFIER_SCHEMES:
-            if scheme in doc.identifiers:
-                return Resolution(
-                    source_id=doc.source_id,
-                    doc_id=doc.doc_id,
-                    mention_text=mention,
-                    lei=doc.identifiers[scheme],
-                    resolver=ResolverName.EXACT_IDENTIFIER,
-                    score=1.0,
-                )
-        return None
+    async def resolve_mention(
+        self,
+        doc: CanonicalDocument,
+        mention: str,
+        *,
+        recorded_at: datetime | None = None,
+    ) -> Resolution | None:
+        """Resolve one evidenced mention and persist the decision idempotently."""
+        existing = await self._store.resolution_for(doc.source_id, doc.doc_id, mention)
+        if existing is not None:
+            return existing
+        return await self._resolve_mention(
+            doc,
+            mention,
+            await self._store.reference_entities(),
+            recorded_at or datetime.now(tz=UTC),
+        )
+
+    async def _resolve_mention(
+        self,
+        doc: CanonicalDocument,
+        mention: str,
+        reference: list[ReferenceEntity],
+        recorded_at: datetime,
+    ) -> Resolution | None:
+        if not any(normalize_name(name) == normalize_name(mention) for name in doc.mentioned_names):
+            await self._queue(doc, mention, None, None, "mention not declared by document parser")
+            return None
+        resolution = self._exact_identifier(doc, mention, reference, recorded_at)
+        if resolution is None:
+            resolution = self._normalized_name(doc, mention, reference, recorded_at)
+        if resolution is None:
+            resolution = await self._blocked_fuzzy(doc, mention, reference, recorded_at)
+        if resolution is not None:
+            await self._store.record_resolution(resolution)
+            self._log.info(
+                "resolve.merged",
+                doc_id=doc.doc_id,
+                mention=mention,
+                lei=resolution.lei,
+                resolver=str(resolution.resolver),
+                score=resolution.score,
+            )
+        return resolution
+
+    def _exact_identifier(
+        self,
+        doc: CanonicalDocument,
+        mention: str,
+        reference: list[ReferenceEntity],
+        recorded_at: datetime,
+    ) -> Resolution | None:
+        lei = doc.identifiers.get("lei")
+        # A document-level identifier can safely resolve only a single parsed
+        # organization mention and only when it exists in the entity master.
+        if lei is None or len(doc.mentioned_names) != 1:
+            return None
+        if not any(entity.lei == lei for entity in reference):
+            return None
+        return Resolution(
+            source_id=doc.source_id,
+            doc_id=doc.doc_id,
+            mention_text=mention,
+            lei=lei,
+            resolver=ResolverName.EXACT_IDENTIFIER,
+            score=1.0,
+            recorded_at=recorded_at,
+        )
 
     def _normalized_name(
-        self, doc: CanonicalDocument, mention: str, reference: list[ReferenceEntity]
+        self,
+        doc: CanonicalDocument,
+        mention: str,
+        reference: list[ReferenceEntity],
+        recorded_at: datetime,
     ) -> Resolution | None:
         target = normalize_name(mention)
-        matches = [e for e in reference if e.normalized_name == target]
+        matches = [
+            entity
+            for entity in reference
+            if entity.normalized_name == target
+            and not _family_form_differs(mention, entity.legal_name)
+        ]
         if len(matches) == 1:
             return Resolution(
                 source_id=doc.source_id,
@@ -238,11 +355,16 @@ class EntityResolver:
                 lei=matches[0].lei,
                 resolver=ResolverName.NORMALIZED_NAME,
                 score=1.0,
+                recorded_at=recorded_at,
             )
         return None
 
     async def _blocked_fuzzy(
-        self, doc: CanonicalDocument, mention: str, reference: list[ReferenceEntity]
+        self,
+        doc: CanonicalDocument,
+        mention: str,
+        reference: list[ReferenceEntity],
+        recorded_at: datetime,
     ) -> Resolution | None:
         target = normalize_name(mention)
         scored = sorted(
@@ -261,11 +383,30 @@ class EntityResolver:
         best = candidates[0]
         tied = [c for c in candidates if c.score == best.score]
         if len(tied) > 1:
-            await self._queue(doc, mention, None, best.score, "ambiguous: tied candidates")
+            await self._queue(
+                doc,
+                mention,
+                None,
+                best.score / 100.0,
+                "ambiguous: tied candidates",
+            )
+            return None
+        if _family_form_differs(mention, best.entity.legal_name):
+            await self._queue(
+                doc,
+                mention,
+                best.entity.lei,
+                best.score / 100.0,
+                "corporate-family form differs",
+            )
             return None
         if best.score < self._threshold:
             await self._queue(
-                doc, mention, best.entity.lei, best.score, "below auto-merge threshold"
+                doc,
+                mention,
+                best.entity.lei,
+                best.score / 100.0,
+                "below auto-merge threshold",
             )
             return None
         return Resolution(
@@ -275,6 +416,7 @@ class EntityResolver:
             lei=best.entity.lei,
             resolver=ResolverName.BLOCKED_FUZZY,
             score=best.score / 100.0,
+            recorded_at=recorded_at,
         )
 
     async def _queue(

@@ -1,13 +1,13 @@
 """Postgres-backed ResolutionStore.
 
-Entities are keyed by LEI when known. Resolutions are append-only rows
-carrying resolver and score — invariant 6 makes both mandatory, and the
-schema enforces it (NOT NULL, score range CHECK).
+Entities are keyed by LEI when known. Resolutions are append-only rows;
+the schema requires a resolver and a bounded score.
 """
 
 import asyncpg
 
 from fi_intel.ingest.resolve import (
+    DocumentEntityLink,
     QueuedMention,
     ReferenceEntity,
     Resolution,
@@ -88,11 +88,17 @@ class PostgresResolutionStore:
             if row is None:
                 msg = f"resolution targets unknown LEI {resolution.lei!r}"
                 raise ValueError(msg)
-            await conn.execute(
+            resolution_id = await conn.fetchval(
                 """
                 INSERT INTO entity_resolution
-                    (entity_id, source_id, doc_id, mention_text, resolver, score)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                    (entity_id, source_id, doc_id, mention_text, resolver, score, resolved_at)
+                SELECT $1, $2, $3, $4, $5, $6, $7
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM entity_resolution
+                    WHERE source_id = $2 AND doc_id = $3
+                      AND lower(mention_text) = lower($4)
+                )
+                RETURNING resolution_id
                 """,
                 row["entity_id"],
                 resolution.source_id,
@@ -100,7 +106,66 @@ class PostgresResolutionStore:
                 resolution.mention_text,
                 str(resolution.resolver),
                 resolution.score,
+                resolution.recorded_at,
             )
+            if resolution_id is None:
+                resolution_id = await conn.fetchval(
+                    """
+                    SELECT resolution_id FROM entity_resolution
+                    WHERE source_id = $1 AND doc_id = $2
+                      AND lower(mention_text) = lower($3)
+                    ORDER BY resolution_id DESC LIMIT 1
+                    """,
+                    resolution.source_id,
+                    resolution.doc_id,
+                    resolution.mention_text,
+                )
+            await conn.execute(
+                """
+                INSERT INTO document_entity_link
+                    (resolution_id, source_id, doc_id, lei, resolver, score, recorded_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (resolution_id) DO NOTHING
+                """,
+                resolution_id,
+                resolution.source_id,
+                resolution.doc_id,
+                resolution.lei,
+                str(resolution.resolver),
+                resolution.score,
+                resolution.recorded_at,
+            )
+
+    async def resolution_for(
+        self, source_id: str, doc_id: str, mention_text: str
+    ) -> Resolution | None:
+        pool = await self._get_pool()
+        row = await pool.fetchrow(
+            """
+            SELECT r.source_id, r.doc_id, r.mention_text, e.lei,
+                   r.resolver, r.score, r.resolved_at
+            FROM entity_resolution r
+            JOIN entity e USING (entity_id)
+            WHERE r.source_id = $1 AND r.doc_id = $2
+              AND lower(r.mention_text) = lower($3)
+            ORDER BY r.resolution_id DESC
+            LIMIT 1
+            """,
+            source_id,
+            doc_id,
+            mention_text,
+        )
+        if row is None:
+            return None
+        return Resolution(
+            source_id=row["source_id"],
+            doc_id=row["doc_id"],
+            mention_text=row["mention_text"],
+            lei=row["lei"],
+            resolver=ResolverName(row["resolver"]),
+            score=row["score"],
+            recorded_at=row["resolved_at"],
+        )
 
     async def record_queued(self, queued: QueuedMention) -> None:
         pool = await self._get_pool()
@@ -128,7 +193,7 @@ class PostgresResolutionStore:
         rows = await pool.fetch(
             """
             SELECT r.source_id, r.doc_id, r.mention_text, e.lei,
-                   r.resolver, r.score
+                   r.resolver, r.score, r.resolved_at
             FROM entity_resolution r
             JOIN entity e USING (entity_id)
             ORDER BY r.resolution_id
@@ -142,6 +207,28 @@ class PostgresResolutionStore:
                 lei=row["lei"],
                 resolver=ResolverName(row["resolver"]),
                 score=row["score"],
+                recorded_at=row["resolved_at"],
+            )
+            for row in rows
+        ]
+
+    async def document_entity_links(self) -> list[DocumentEntityLink]:
+        pool = await self._get_pool()
+        rows = await pool.fetch(
+            """
+            SELECT source_id, doc_id, lei, resolver, score, recorded_at
+            FROM document_entity_link
+            ORDER BY document_entity_link_id
+            """
+        )
+        return [
+            DocumentEntityLink(
+                source_id=row["source_id"],
+                doc_id=row["doc_id"],
+                lei=row["lei"],
+                resolver=ResolverName(row["resolver"]),
+                score=row["score"],
+                recorded_at=row["recorded_at"],
             )
             for row in rows
         ]

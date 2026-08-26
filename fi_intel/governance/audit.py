@@ -1,6 +1,7 @@
-"""Access audit. Every retrieval writes access_log rows (invariant 3's
-evidence trail): who asked, under which entitlement group, which documents
-were returned, under which run.
+"""Access audit for document retrievals.
+
+Each record identifies the caller, entitlement group, returned documents,
+and run.
 
 The audit writer is fail-closed: if the audit write fails, the retrieval
 fails. An unaudited retrieval is worse than a failed one.
@@ -19,8 +20,10 @@ class AccessEvent(BaseModel):
     run_id: str
     principal: str
     entitlement_group: str
-    source_id: str
-    doc_id: str
+    source_id: str | None = None
+    doc_id: str | None = None
+    operation: str = "retrieval"
+    result_count: int = 1
     accessed_at: datetime
 
 
@@ -55,12 +58,21 @@ class PostgresAuditLog:
             await conn.executemany(
                 """
                 INSERT INTO access_log
-                    (run_id, principal, entitlement_group, source_id, doc_id, accessed_at)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                    (run_id, principal, entitlement_group, source_id, doc_id,
+                     operation, result_count, accessed_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 """,
                 [
-                    (e.run_id, e.principal, e.entitlement_group, e.source_id, e.doc_id,
-                     e.accessed_at)
+                    (
+                        e.run_id,
+                        e.principal,
+                        e.entitlement_group,
+                        e.source_id,
+                        e.doc_id,
+                        e.operation,
+                        e.result_count,
+                        e.accessed_at,
+                    )
                     for e in events
                 ],
             )

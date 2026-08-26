@@ -21,7 +21,7 @@ whether anyone reads the second daily brief.
 
 from dataclasses import dataclass
 
-from fi_intel.sources.canonical import CanonicalDocument
+from fi_intel.sources.canonical import CanonicalDocument, document_text
 
 NEAR_DUP_THRESHOLD = 0.55
 _SHINGLE_SIZE = 3
@@ -39,7 +39,7 @@ def _shingles(tokens: list[str], size: int = _SHINGLE_SIZE) -> frozenset[tuple[s
 
 
 def _doc_shingles(doc: CanonicalDocument) -> frozenset[tuple[str, ...]]:
-    return _shingles(_normalize(doc.title + "\n" + doc.body))
+    return _shingles(_normalize(document_text(doc)))
 
 
 def jaccard(a: frozenset[tuple[str, ...]], b: frozenset[tuple[str, ...]]) -> float:

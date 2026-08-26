@@ -17,8 +17,8 @@ from fi_intel.sources.canonical import CanonicalDocument
 class MalformedFixtureError(ValueError):
     """A fixture record failed to map to CanonicalDocument.
 
-    Raised rather than skipped: silent data loss in the corpus would
-    corrupt every backtest that spans the gap (invariant 9).
+    Raised rather than skipped because silent data loss would corrupt
+    backtests that span the gap.
     """
 
 

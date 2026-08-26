@@ -14,14 +14,20 @@ dependencies = [
     "tenacity>=8.2",
     "structlog>=24.1",
     "typer>=0.9",
-    "langgraph>=0.2",
-    "langchain>=0.3",
-    "langchain-core>=0.3",
-    "langchain-mcp-adapters>=0.1",
-    "mcp>=1.0",
-    "aiohttp>=3.9",
     "asyncpg>=0.29",
     "neo4j>=5.16",
+    # Real StructuredExtractor/ReasoningModel/Embedder adapters
+    # (fi_intel/ingest/extractors/, fi_intel/agents/reasoning/,
+    # fi_intel/retrieval/embedders/) — a thin client for any
+    # OpenAI-compatible endpoint (the on-prem gpt-oss-120b deployment in
+    # production; no cloud LLM provider is called anywhere in this repo).
+    "openai>=3.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "PyJWT[crypto]>=2.9",
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-http>=1.27",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +36,8 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.3",
     "mypy>=1.8",
+    # Tests import httpx2 directly to build OpenAI SDK mock transports.
+    "httpx2>=2.0",
 ]
 
 [project.scripts]
@@ -50,17 +58,14 @@ testpaths = ["tests", "evals"]
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-# The vendored upstream fork (open_deep_research/) tracks upstream and is not
-# held to our lint bar; we only modify three of its files minimally.
-exclude = ["open_deep_research"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "ASYNC", "S", "C90", "T20"]
 
 [tool.ruff.lint.per-file-ignores]
-# print() is allowed only in the CLI entry point (CLAUDE.md coding standards)
+# CLI commands may print user-facing output.
 "fi_intel/cli.py" = ["T20"]
-# evals are standalone CLI-like harnesses, allowed to print reports
+# Evaluation harnesses may print reports.
 "evals/**" = ["T20", "S101"]
 "tests/**" = ["S101"]
 
@@ -69,5 +74,3 @@ python_version = "3.11"
 ignore_missing_imports = true
 strict = true
 packages = ["fi_intel"]
-# Vendored upstream fork is excluded from type-checking.
-exclude = ["open_deep_research"]

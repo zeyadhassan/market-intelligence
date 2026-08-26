@@ -17,7 +17,7 @@ Ground truth is expressed as data so that backtests and negative tests
 assert against the same source.
 """
 
-from datetime import UTC, date, datetime
+from datetime import date
 
 from pydantic import BaseModel, ConfigDict
 
@@ -28,7 +28,7 @@ SIGNAL_DEADLINE_DAY = 205
 GULF_MERIDIAN_LEI = "213800GMBQPSC000000001"
 NORTHERN_HARBOUR_LEI = "213800NHB00000000002"
 
-#: Name variants that must all resolve to the Gulf Meridian LEI (M3).
+#: Name variants that must all resolve to the Gulf Meridian LEI.
 GULF_MERIDIAN_NAME_VARIANTS = (
     "Gulf Meridian Bank",
     "Gulf Meridian Bank Q.P.S.C.",
@@ -36,7 +36,7 @@ GULF_MERIDIAN_NAME_VARIANTS = (
 )
 
 #: A genuinely different institution with a confusingly similar name.
-#: Must never merge with Gulf Meridian (the M3 test that matters most).
+#: Must never merge with Gulf Meridian.
 GULF_MERIDIAN_CAPITAL_LEI = "213800GMCAPITAL000003"
 GULF_MERIDIAN_CAPITAL_NAME = "Gulf Meridian Capital Partners"
 
@@ -102,8 +102,3 @@ NORTHERN_HARBOUR = Episode(
     is_decoy=True,
     expected_signals=(),
 )
-
-
-def as_dt(d: date, hour: int = 8) -> datetime:
-    """Episode timestamps are fixed; tests must never depend on the wall clock."""
-    return datetime(d.year, d.month, d.day, hour, tzinfo=UTC)

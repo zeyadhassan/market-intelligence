@@ -1,9 +1,7 @@
 """The canonical document model — the single boundary between vendors and us.
 
 A new vendor must be expressible as a mapping into this model. If a vendor
-field does not map cleanly, the adapter raises rather than coercing: a
-silently coerced timestamp becomes a wrong valid_from, which becomes a
-wrong signal (see CLAUDE.md anti-patterns).
+field does not map cleanly, the adapter raises rather than coercing it.
 """
 
 import hashlib
@@ -26,12 +24,16 @@ class DocumentClass(StrEnum):
 class BarrierSide(StrEnum):
     """Which side of the information barrier the document may cross.
 
-    This is data, not a prompt instruction: entitlement filtering joins on
-    this column in the data layer (invariant 3).
+    Entitlement filtering joins on this column in the data layer.
     """
 
     PUBLIC = "public"
     PRIVATE = "private"
+
+
+def document_text(doc: "CanonicalDocument") -> str:
+    """Return the one canonical coordinate space used by hashes and spans."""
+    return f"{doc.title}\n{doc.body}"
 
 
 class CanonicalDocument(BaseModel):
@@ -61,7 +63,7 @@ class CanonicalDocument(BaseModel):
     identifiers: dict[str, str] = Field(default_factory=dict)
     url: str | None = None
     # Free-form, vendor-neutral metadata (e.g. {"wire": "reuters"} is fine;
-    # {"factiva_accn": "..."} is an invariant-1 leak and rejected below).
+    # {"factiva_accn": "..."} is rejected below).
     metadata: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("identifiers", "metadata")
@@ -92,5 +94,5 @@ class CanonicalDocument(BaseModel):
         Computed from normalized title + body only: two wires carrying the
         same story with different vendor envelopes hash identically.
         """
-        normalized = " ".join((self.title + "\n" + self.body).lower().split())
+        normalized = " ".join(document_text(self).lower().split())
         return hashlib.sha256(normalized.encode("utf-8")).hexdigest()

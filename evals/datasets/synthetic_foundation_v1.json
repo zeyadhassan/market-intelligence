@@ -1,0 +1,46 @@
+{
+  "dataset_id": "synthetic-foundation",
+  "version": "1.0.0",
+  "purpose": "Deterministic regression coverage for ingestion, entitlement, detection, and backtesting contracts",
+  "tier": "regression_fixture",
+  "schema_version": "synthetic-foundation-v1",
+  "annotation_guidelines_version": "fixture-v1",
+  "licence_class": "repository-test-data",
+  "data_owner": "engineering",
+  "evaluation_owner": "engineering",
+  "created_at": "2026-08-25T00:00:00Z",
+  "separation_axes": [],
+  "splits": [
+    {
+      "split_id": "regression",
+      "role": "test",
+      "files": [
+        {
+          "path": "fi_intel/synth/data/ground_truth.json",
+          "sha256": "8ddeb36a608172f55aa818f6cc629c00eaadb5636017f8c3069213602a82ecd0",
+          "records": 2
+        },
+        {
+          "path": "fi_intel/synth/data/synthetic_wire.json",
+          "sha256": "9c95bb00014c502001686202df3d60f2fb3917fec9d896692d0aa50415f14e57",
+          "records": 12
+        },
+        {
+          "path": "fi_intel/synth/data/synthetic_wire_private.json",
+          "sha256": "3155955e32db4b30f89d2fea9265dde5d7d7ab37f8ff89fc5a22ff79c89ef036",
+          "records": 1
+        }
+      ],
+      "time_start": "2024-01-01",
+      "time_end": "2024-12-31",
+      "entity_partition": [
+        "213800GMBQPSC000000001",
+        "213800NHB00000000002"
+      ],
+      "source_partition": [
+        "synthetic_wire",
+        "synthetic_wire_private"
+      ]
+    }
+  ]
+}

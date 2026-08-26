@@ -1,9 +1,9 @@
 """The source adapter protocol.
 
 Every licensed source — wires, filings, reference data like GLEIF — is a
-registered adapter. Reference data goes through the same boundary as news
-(invariant 2): nothing reaches the open internet outside an adapter, and
-adapters are the only place vendor semantics may live.
+registered adapter. Reference data goes through the same boundary as news:
+nothing reaches the open internet outside an adapter, and adapters are the
+only place vendor semantics may live.
 """
 
 from collections.abc import AsyncIterator

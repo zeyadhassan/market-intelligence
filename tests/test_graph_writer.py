@@ -10,10 +10,12 @@ from datetime import UTC, datetime
 
 import pytest
 
+from fi_intel.governance.policy import trusted_test_access
 from fi_intel.graph.client import GraphClient
 from fi_intel.graph.writer import AssertionWriter
 from fi_intel.ontology.schema import Assertion, EntityRef
 from fi_intel.ontology.vocab import EdgeType, NodeType
+from fi_intel.sources.canonical import BarrierSide
 
 NEO4J_URI = os.environ.get("FI_INTEL_TEST_NEO4J_URI")
 pytestmark = pytest.mark.skipif(NEO4J_URI is None, reason="FI_INTEL_TEST_NEO4J_URI not set")
@@ -23,15 +25,14 @@ GULF_MERIDIAN = EntityRef(
     key="213800GMBQPSC000000001",
     display_name="Gulf Meridian Bank Q.P.S.C.",
 )
-SUKUK = EntityRef(
-    node_type=NodeType.INSTRUMENT, key="XS0000000001", display_name="USD 500m sukuk"
-)
+SUKUK = EntityRef(node_type=NodeType.INSTRUMENT, key="XS0000000001", display_name="USD 500m sukuk")
 MATURITY_EVENT = EntityRef(
     node_type=NodeType.EVENT, key="event:sukuk-maturity-2025-05-14", display_name="Sukuk maturity"
 )
 
 T1 = datetime(2024, 5, 15, 8, tzinfo=UTC)
 T2 = datetime(2024, 5, 16, 8, tzinfo=UTC)
+ACCESS = trusted_test_access("synthetic_wire")
 
 
 def _assertion(recorded_at: datetime, doc_id: str = "SW-2024-0007", offset=(0, 40)) -> Assertion:
@@ -39,7 +40,10 @@ def _assertion(recorded_at: datetime, doc_id: str = "SW-2024-0007", offset=(0, 4
         predicate=EdgeType.MATURES_ON,
         subject=SUKUK,
         object=MATURITY_EVENT,
+        source_id="synthetic_wire",
         source_doc_id=doc_id,
+        barrier_side=BarrierSide.PUBLIC,
+        policy_version="test-policy-v1",
         snippet_offset=offset,
         extractor_version="test-1.0",
         confidence=0.95,
@@ -70,6 +74,35 @@ async def test_write_is_idempotent(graph: GraphClient) -> None:
     assert await graph.assertion_count() == 1
 
 
+async def test_reextraction_version_appends_and_supersedes_prior_model_output(
+    graph: GraphClient,
+) -> None:
+    writer = AssertionWriter(graph)
+    old = _assertion(T1)
+    old_id = await writer.write(old)
+    replacement = old.model_copy(
+        update={
+            "extractor_version": "test-2.0",
+            "confidence": 0.4,
+            "recorded_at": T2,
+        }
+    )
+
+    new_id = await writer.write(replacement)
+
+    assert new_id != old_id
+    history = await graph.read_all_assertions_including_superseded(as_of=T2, access=ACCESS)
+    assert {row["a"]["extractor_version"] for row in history} == {
+        "test-1.0",
+        "test-2.0",
+    }
+    visible_before = await graph.read_assertions(as_of=T1, access=ACCESS)
+    visible_after = await graph.read_assertions(as_of=T2, access=ACCESS)
+    assert {row["a"]["assertion_id"] for row in visible_before} == {old_id}
+    assert {row["a"]["assertion_id"] for row in visible_after} == {new_id}
+    assert visible_after[0]["a"]["confidence"] == 0.4
+
+
 async def test_correction_supersedes_and_preserves_history(graph: GraphClient) -> None:
     writer = AssertionWriter(graph)
     old = _assertion(T1)
@@ -84,7 +117,10 @@ async def test_correction_supersedes_and_preserves_history(graph: GraphClient) -
             key="event:sukuk-maturity-2025-05-15",
             display_name="Sukuk maturity (corrected)",
         ),
+        source_id="synthetic_wire",
         source_doc_id="SW-2024-0007",
+        barrier_side=BarrierSide.PUBLIC,
+        policy_version="test-policy-v1",
         snippet_offset=(0, 40),
         extractor_version="test-1.0",
         confidence=0.97,
@@ -96,15 +132,15 @@ async def test_correction_supersedes_and_preserves_history(graph: GraphClient) -
     assert new_id != old_id
 
     # Both remain queryable in full history.
-    all_rows = await graph.read_all_assertions_including_superseded(as_of=T2)
+    all_rows = await graph.read_all_assertions_including_superseded(as_of=T2, access=ACCESS)
     assert {r["a"]["assertion_id"] for r in all_rows} == {old_id, new_id}
 
     # At T1 (before the correction) the old assertion is the visible one.
-    visible_t1 = await graph.read_assertions(as_of=T1)
+    visible_t1 = await graph.read_assertions(as_of=T1, access=ACCESS)
     assert {r["a"]["assertion_id"] for r in visible_t1} == {old_id}
 
     # At T2 the new one is visible and the old is superseded.
-    visible_t2 = await graph.read_assertions(as_of=T2)
+    visible_t2 = await graph.read_assertions(as_of=T2, access=ACCESS)
     assert {r["a"]["assertion_id"] for r in visible_t2} == {new_id}
 
 

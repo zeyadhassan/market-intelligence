@@ -10,12 +10,15 @@ import pytest
 
 from fi_intel.agents.opportunity_research import (
     RESEARCH_PROMPT_VERSION,
+    EvidenceCitationError,
     OpportunityResearcher,
+    ResearchClaim,
     ResearchRequest,
     ResearchResponse,
 )
 from fi_intel.agents.validate import EvidenceValidationError, validate_opportunity
 from fi_intel.governance.audit import InMemoryAuditLog
+from fi_intel.governance.policy import trusted_test_access
 from fi_intel.graph.client import GraphClient
 from fi_intel.graph.registry import PatternRegistry
 from fi_intel.graph.writer import AssertionWriter
@@ -28,7 +31,7 @@ from fi_intel.retrieval.store import InMemoryCorpusStore
 from fi_intel.sources.fixture import synthetic_wire
 from fi_intel.synth.episodes import GULF_MERIDIAN_LEI
 from fi_intel.synth.graph_fixture import gulf_meridian_assertions
-from fi_intel.tools.evidence import Opportunity
+from fi_intel.tools.evidence import Opportunity, OpportunityClaim
 from fi_intel.tools.research_tools import ResearchTools, ToolContext
 
 NEO4J_URI = os.environ.get("FI_INTEL_TEST_NEO4J_URI")
@@ -36,6 +39,12 @@ pytestmark = pytest.mark.skipif(NEO4J_URI is None, reason="FI_INTEL_TEST_NEO4J_U
 
 AS_OF = datetime(2024, 6, 1, tzinfo=UTC)
 PRINCIPAL = Principal(principal_id="banker", entitlement_group="test", side=Side.PUBLIC)
+ACCESS = trusted_test_access(
+    "synthetic_wire",
+    principal_id=PRINCIPAL.principal_id,
+    entitlement_group=PRINCIPAL.entitlement_group,
+    side=PRINCIPAL.side,
+)
 
 
 class StubReasoningModel:
@@ -72,7 +81,7 @@ async def env():
         CorpusSearch(corpus, HashingEmbedder()), InMemoryAuditLog(), run_id="t"
     )
 
-    registry = PatternRegistry(client)
+    registry = PatternRegistry(client, access=ACCESS)
     ctx = ToolContext(principal=PRINCIPAL, as_of=AS_OF)
     tools = ResearchTools(retrieval, client, registry, ctx)
 
@@ -100,24 +109,32 @@ async def test_end_to_end_signal_produces_opportunity_with_resolvable_evidence(e
     model = StubReasoningModel(
         ResearchResponse(
             title="EMTN programme signals upcoming issuance",
-            summary="Board-approved programme indicates readiness to issue.",
             falsifier="Programme lapses without any mandate within two quarters.",
-            evidence_indices=[0, 1],
+            claims=[
+                ResearchClaim(
+                    text="Board-approved programme indicates readiness to issue.",
+                    evidence_indices=[0, 1],
+                    confidence=0.9,
+                )
+            ],
         )
     )
-    researcher = OpportunityResearcher(tools, model)
+    researcher = OpportunityResearcher(tools, model, doc_store)
     opportunity, cited = await researcher.research_signal(signal)
 
     # The request carries the versioned prompt and only-shown evidence.
     (request,) = model.requests
     assert request.prompt_version == RESEARCH_PROMPT_VERSION
     assert request.entity_name == signal.entity_name
-    assert len(request.evidence_excerpts) == len(cited) or len(request.evidence_excerpts) >= 0
+    assert request.signal_evidence == signal.evidence
+    assert request.profile_predicates
+    assert len(request.evidence_excerpts) >= len(cited) > 0
 
     # The opportunity cites real evidence that resolves against the corpus.
     assert not opportunity.insufficient_evidence
     assert opportunity.evidence_ids
-    validated = await validate_opportunity(opportunity, doc_store)
+    assert opportunity.claims[0].evidence_ids == opportunity.evidence_ids
+    validated = await validate_opportunity(opportunity, doc_store, cited)
     assert validated is opportunity
 
 
@@ -139,9 +156,9 @@ async def test_insufficient_evidence_signal_returns_nothing(env) -> None:
         evidence={},
     )
     model = StubReasoningModel(
-        ResearchResponse(title="x", summary="y", falsifier="z", evidence_indices=[])
+        ResearchResponse(title="x", claims=[], falsifier="z", insufficient_evidence=True)
     )
-    researcher = OpportunityResearcher(tools, model)
+    researcher = OpportunityResearcher(tools, model, doc_store)
     opportunity, cited = await researcher.research_signal(orphan)
 
     assert opportunity.insufficient_evidence
@@ -161,6 +178,13 @@ async def test_unresolvable_evidence_id_fails_validation(env) -> None:
         summary="Cites a document that does not exist.",
         falsifier="f",
         evidence_ids=["synthetic_wire/SW-9999-9999:0-10"],  # no such doc
+        claims=[
+            OpportunityClaim(
+                text="Cites a document that does not exist.",
+                evidence_ids=["synthetic_wire/SW-9999-9999:0-10"],
+                confidence=0.5,
+            )
+        ],
     )
     with pytest.raises(EvidenceValidationError, match="unresolvable evidence_id"):
         await validate_opportunity(bad, doc_store)
@@ -174,23 +198,45 @@ async def test_out_of_range_span_fails_validation(env) -> None:
         summary="Span beyond the document length.",
         falsifier="f",
         evidence_ids=["synthetic_wire/SW-2024-0001:0-999999"],
+        claims=[
+            OpportunityClaim(
+                text="Span beyond the document length.",
+                evidence_ids=["synthetic_wire/SW-2024-0001:0-999999"],
+                confidence=0.5,
+            )
+        ],
     )
     with pytest.raises(EvidenceValidationError, match="span out of range"):
         await validate_opportunity(bad, doc_store)
 
 
 async def test_model_cannot_cite_unshown_evidence(env) -> None:
-    """If the model cites an index beyond what it was shown, it is dropped."""
-    _, registry, tools, doc_store = env
+    """An out-of-bundle citation fails closed instead of being dropped."""
+    _, registry, tools, _ = env
     signals = await registry.run(AS_OF, enabled={"board_approved_issuance_programme"})
     signal = signals[0]
     model = StubReasoningModel(
         ResearchResponse(
-            title="t", summary="s", falsifier="f", evidence_indices=[0, 999]
+            title="t",
+            falsifier="f",
+            claims=[ResearchClaim(text="s", evidence_indices=[0, 999], confidence=0.5)],
         )
     )
-    researcher = OpportunityResearcher(tools, model)
-    opportunity, cited = await researcher.research_signal(signal)
-    # The out-of-range index 999 is dropped; only valid citations survive.
-    assert all(i < len(model.requests[0].evidence_excerpts) for i in range(len(cited)))
-    assert len(opportunity.evidence_ids) == len(cited)
+    researcher = OpportunityResearcher(tools, model, InMemoryDocumentStore())
+    with pytest.raises(EvidenceCitationError, match="invalid evidence indices"):
+        await researcher.research_signal(signal)
+
+
+async def test_model_cannot_use_negative_evidence_index(env) -> None:
+    _, registry, tools, _ = env
+    signals = await registry.run(AS_OF, enabled={"board_approved_issuance_programme"})
+    model = StubReasoningModel(
+        ResearchResponse(
+            title="t",
+            falsifier="f",
+            claims=[ResearchClaim(text="s", evidence_indices=[-1], confidence=0.5)],
+        )
+    )
+    researcher = OpportunityResearcher(tools, model, InMemoryDocumentStore())
+    with pytest.raises(EvidenceCitationError, match=r"invalid evidence indices \[-1\]"):
+        await researcher.research_signal(signals[0])

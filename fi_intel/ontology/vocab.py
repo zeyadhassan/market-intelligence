@@ -1,8 +1,8 @@
 """The closed T-Box vocabulary.
 
-Extraction (M6) selects node and edge types from these enums and only
-these. Anything the model wants to invent goes to a `proposed_type` review
-queue and is never auto-admitted (invariant 5). Adding a member here is a
+Extraction selects node and edge types from these enums. Any unknown type
+goes to a `proposed_type` review
+queue and is never auto-admitted. Adding a member here is a
 schema change: it requires a migration and a review, not just a commit.
 """
 

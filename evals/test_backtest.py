@@ -11,11 +11,13 @@ from datetime import UTC, date, datetime
 import pytest
 
 from evals.backtest import Backtester, LeakageError, Outcome
+from fi_intel.governance.policy import trusted_test_access
 from fi_intel.graph.client import GraphClient
 from fi_intel.graph.registry import PatternRegistry
 from fi_intel.graph.writer import AssertionWriter
 from fi_intel.ontology.schema import Assertion, EntityRef
 from fi_intel.ontology.vocab import EdgeType, NodeType
+from fi_intel.sources.canonical import BarrierSide
 from fi_intel.synth.episodes import GULF_MERIDIAN_LEI, NORTHERN_HARBOUR_LEI
 from fi_intel.synth.graph_fixture import (
     gulf_meridian_assertions,
@@ -24,6 +26,7 @@ from fi_intel.synth.graph_fixture import (
 
 NEO4J_URI = os.environ.get("FI_INTEL_TEST_NEO4J_URI")
 pytestmark = pytest.mark.skipif(NEO4J_URI is None, reason="FI_INTEL_TEST_NEO4J_URI not set")
+ACCESS = trusted_test_access("synthetic_wire")
 
 MANDATE = Outcome(
     outcome_id="mandate:gm-2024-07-10",
@@ -52,6 +55,13 @@ async def _seed(client: GraphClient) -> None:
         await writer.write(a)
 
 
+async def _signal_count(client: GraphClient) -> int:
+    async with client._driver.session() as session:  # noqa: SLF001
+        result = await session.run("MATCH (s:Signal) RETURN count(s) AS n")
+        row = await result.single()
+        return int(row["n"])
+
+
 def _span() -> tuple[date, date]:
     return date(2024, 2, 1), date(2024, 8, 1)
 
@@ -72,20 +82,23 @@ async def test_deliberate_leakage_attempt_fails_loudly(graph: GraphClient) -> No
         snippet_offset=(0, 40),
         extractor_version="fixture-1.0",
         confidence=1.0,
+        source_id="synthetic_wire",
+        barrier_side=BarrierSide.PUBLIC,
+        policy_version="fixture-policy-v1",
         valid_from=datetime(2024, 7, 10, tzinfo=UTC),
         recorded_at=datetime(2024, 7, 10, 9, tzinfo=UTC),
     )
     await AssertionWriter(graph).write(cheat)
 
-    registry = PatternRegistry(graph)
+    registry = PatternRegistry(graph, access=ACCESS)
     backtester = Backtester(graph, registry)
     cutoff = datetime(2024, 6, 1, tzinfo=UTC)
 
     # The future assertion must be invisible at the cutoff (query-level pin).
-    visible = await graph.read_assertions(as_of=cutoff)
-    assert all(
-        not str(r["a"].get("predicate", "")).startswith("MANDATE") for r in visible
-    ), "leakage: future assertion visible at cutoff"
+    visible = await graph.read_assertions(as_of=cutoff, access=ACCESS)
+    assert all(not str(r["a"].get("predicate", "")).startswith("MANDATE") for r in visible), (
+        "leakage: future assertion visible at cutoff"
+    )
 
     # And the harness pin-check passes for real evidence (no later-recorded
     # assertion is among the backtest's visible set at cutoff).
@@ -97,10 +110,16 @@ def test_pin_check_raises_on_future_recorded() -> None:
     from datetime import datetime as dt
 
     class FakeClient:
-        async def read_all_assertions_including_superseded(self, as_of: datetime) -> list:
+        async def read_all_assertions_including_superseded(
+            self,
+            as_of: datetime,
+            access: object,
+        ) -> list:
             return [{"a": {"recorded_at": dt(2024, 7, 1, tzinfo=UTC)}}]
 
-    backtester = Backtester(FakeClient(), PatternRegistry(FakeClient()))  # type: ignore[arg-type]
+    client = FakeClient()
+    registry = PatternRegistry(client, access=ACCESS)  # type: ignore[arg-type]
+    backtester = Backtester(client, registry)  # type: ignore[arg-type]
     with pytest.raises(LeakageError, match="leakage"):
         import asyncio
 
@@ -109,7 +128,7 @@ def test_pin_check_raises_on_future_recorded() -> None:
 
 async def test_per_pattern_attribution_and_distribution(graph: GraphClient) -> None:
     await _seed(graph)
-    registry = PatternRegistry(graph)
+    registry = PatternRegistry(graph, access=ACCESS)
     backtester = Backtester(graph, registry)
     start, end = _span()
     result = await backtester.run(start, end, step_days=7, outcomes=[MANDATE])
@@ -119,7 +138,11 @@ async def test_per_pattern_attribution_and_distribution(graph: GraphClient) -> N
     # set for this seeded episode is 4 unique (pattern, entity) signals.
     assert 0.0 <= result.precision_at_10 <= 1.0
     assert result.total_signals == 4
+    assert result.total_opportunities == 1
     assert result.recall > 0
+    # Evaluation executes pattern queries read-only and cannot contaminate
+    # the operational graph with historical Signal nodes.
+    assert await _signal_count(graph) == 0
 
     attribution = {a.pattern: a for a in result.attribution}
     # Detectors that precede the mandate earn their keep with a lead-time
@@ -137,21 +160,20 @@ async def test_per_pattern_attribution_and_distribution(graph: GraphClient) -> N
 
 async def test_decoy_signals_are_zero_so_false_positive_rate_is_zero(graph: GraphClient) -> None:
     await _seed(graph)
-    registry = PatternRegistry(graph)
+    registry = PatternRegistry(graph, access=ACCESS)
     backtester = Backtester(graph, registry)
     start, end = _span()
     result = await backtester.run(start, end, step_days=7, outcomes=[MANDATE])
     # Any Northern Harbour signal would be a false positive; there must be none.
-    decoy = [a for a in result.attribution if a.pattern and NORTHERN_HARBOUR_LEI in str(a)]
-    # Attribution is per-pattern; the decoy simply fires nothing (already
-    # guaranteed by M7 tests). Assert precision is not dragged by the decoy.
-    assert result.precision_at_10 > 0.5
-    assert decoy == []
+    predicted_entities = {prediction.entity_key for prediction in result.predictions}
+    assert NORTHERN_HARBOUR_LEI not in predicted_entities
+    assert GULF_MERIDIAN_LEI in predicted_entities
+    assert result.precision_at_10 == 1.0
 
 
 async def test_reproducible_same_inputs_same_numbers(graph: GraphClient) -> None:
     await _seed(graph)
-    registry = PatternRegistry(graph)
+    registry = PatternRegistry(graph, access=ACCESS)
     backtester = Backtester(graph, registry)
     start, end = _span()
     first = await backtester.run(start, end, step_days=7, outcomes=[MANDATE])
