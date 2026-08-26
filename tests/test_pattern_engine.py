@@ -12,7 +12,14 @@ from fi_intel.config import Settings
 from fi_intel.governance.policy import trusted_test_access
 from fi_intel.graph.client import GraphClient
 from fi_intel.graph.properties import TypedPropertyError, project_typed_properties
-from fi_intel.graph.queries import ALL_PATTERNS, PROGRAMME, Pattern, PatternDeploymentState
+from fi_intel.graph.queries import (
+    ALL_PATTERNS,
+    LEADERSHIP,
+    MATURITY_WALL,
+    PROGRAMME,
+    Pattern,
+    PatternDeploymentState,
+)
 from fi_intel.graph.registry import PatternRegistry
 from fi_intel.graph.signals import (
     SignalLifecycleSnapshot,
@@ -52,6 +59,7 @@ def _programme_row(
 def test_pattern_assets_have_complete_governed_metadata() -> None:
     for pattern in ALL_PATTERNS:
         assert pattern.version.count(".") == 2
+        assert pattern.precision_lineage == pattern.version.split(".", 1)[0]
         assert pattern.hypothesis
         assert pattern.eligible_outcome_kinds
         assert pattern.required_claim_types
@@ -76,12 +84,31 @@ def test_pattern_assets_have_complete_governed_metadata() -> None:
 
 def test_pattern_contract_rejects_json_substring_queries() -> None:
     payload = PROGRAMME.model_dump()
-    payload["cypher"] = PROGRAMME.cypher.replace(
+    payload["cypher_template"] = PROGRAMME.cypher_template.replace(
         "a.fact_status = 'approved'",
         "a.properties_json CONTAINS 'approved'",
     )
     with pytest.raises(ValidationError, match="typed assertion properties"):
         Pattern.model_validate(payload)
+
+
+def test_thresholds_and_currency_scope_are_rendered_from_metadata() -> None:
+    threshold = MATURITY_WALL.materiality_thresholds[0]
+    revised = MATURITY_WALL.model_copy(
+        update={
+            "materiality_thresholds": (
+                threshold.model_copy(update={"value": threshold.value + 50.0}),
+            ),
+            "allowed_currencies": ("USD", "SAR"),
+        }
+    )
+
+    assert "$materiality_threshold_0" in revised.cypher
+    assert "fact_amount_usd_mn >= 250.0" not in revised.cypher
+    assert revised.query_parameters["materiality_threshold_0"] == 300.0
+    assert "fact_currency IN $allowed_currencies" in revised.cypher
+    assert revised.query_parameters["allowed_currencies"] == ["usd", "sar"]
+    assert revised.cypher == MATURITY_WALL.cypher
 
 
 def test_typed_property_projection_is_explicit_and_strict() -> None:
@@ -223,9 +250,7 @@ def test_score_exposes_every_weighted_contribution() -> None:
     }
     assert score == pytest.approx(sum(item.weighted_value for item in contributions))
     assert all(item.explanation for item in contributions)
-    precision = next(
-        item for item in contributions if item.component == "historical_precision"
-    )
+    precision = next(item for item in contributions if item.component == "historical_precision")
     assert precision.raw_value == 0.8
     assert "30 authorized analyst outcomes" in precision.explanation
 
@@ -246,3 +271,49 @@ def test_score_exposes_every_weighted_contribution() -> None:
     assert sum(item.weighted_value for item in resolved_contributions) == pytest.approx(
         resolved_score
     )
+
+
+def test_material_maturity_outranks_routine_leadership_change() -> None:
+    common = {
+        "as_of": NOW,
+        "latest_recorded_at": NOW,
+        "evidence_confidence": 0.9,
+        "source_ids": ("wire",),
+        "lifecycle_state": SignalLifecycleState.NEW,
+    }
+    _, maturity_score, _ = score_signal(
+        MATURITY_WALL,
+        materiality_score=1.0,
+        assertion_ids=("maturity", "issue"),
+        **common,
+    )
+    _, leadership_score, _ = score_signal(
+        LEADERSHIP,
+        materiality_score=LEADERSHIP.default_materiality_score,
+        assertion_ids=("leadership",),
+        **common,
+    )
+
+    assert maturity_score > leadership_score
+    assert (maturity_score - leadership_score) * 100 >= (
+        MATURITY_WALL.priority - LEADERSHIP.priority
+    )
+
+
+def test_early_precision_feedback_contributes_proportionally() -> None:
+    _, _, contributions = score_signal(
+        PROGRAMME,
+        as_of=NOW,
+        latest_recorded_at=NOW,
+        materiality_score=1.0,
+        evidence_confidence=0.9,
+        assertion_ids=("a-1",),
+        source_ids=("wire",),
+        lifecycle_state=SignalLifecycleState.NEW,
+        historical_precision=5 / 7,
+        precision_samples=5,
+    )
+    precision = next(item for item in contributions if item.component == "historical_precision")
+
+    assert precision.weight == pytest.approx(0.15 * 5 / 30)
+    assert precision.weighted_value > 0.0

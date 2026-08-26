@@ -13,6 +13,7 @@ Every resolution records its resolver and score. Ambiguous matches are
 queued for review instead of merged automatically.
 """
 
+import math
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -26,16 +27,33 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from fi_intel.logging import get_logger
 from fi_intel.sources.canonical import CanonicalDocument
 
-# Calibrated against the labelled variants and confusing-name cases in tests.
+# Calibrated against the labelled GCC name set in ``tests/test_resolve.py``.
+# With the threshold unchanged, the three observed false-positive pairs score
+# 20--49 while the weakest accepted true variant scores 84.  Auto-merges also
+# require a five-point lead over the runner-up; lower-confidence cases remain
+# visible in the resolution queue.
 FUZZY_AUTO_MERGE_THRESHOLD = 80.0
+FUZZY_AUTO_MERGE_MARGIN = 5.0
 
 # Legal suffixes carry no identity signal; stripping them is what lets
 # "Gulf Meridian Bank Q.P.S.C." and "Gulf Meridian Bank" compare cleanly.
 # Matching is done on whole tokens after punctuation removal, so "q.p.s.c."
 # becomes the tokens q, p, s, c — each listed individually below.
 _LEGAL_SUFFIX_TOKENS = {
-    "qpsc", "pjsc", "llc", "bsc", "ksc", "sa", "psc", "jsc",
-    "plc", "ltd", "limited", "inc", "co", "company",
+    "qpsc",
+    "pjsc",
+    "llc",
+    "bsc",
+    "ksc",
+    "sa",
+    "psc",
+    "jsc",
+    "plc",
+    "ltd",
+    "limited",
+    "inc",
+    "co",
+    "company",
 }
 _PUNCTUATED_LEGAL_SUFFIXES = {
     ("q", "p", "s", "c"),
@@ -48,6 +66,7 @@ _PUNCTUATED_LEGAL_SUFFIXES = {
     ("s", "a"),
 }
 _CORPORATE_FAMILY_TOKENS = frozenset({"group", "holding", "holdings"})
+
 
 class ResolverName(StrEnum):
     EXACT_IDENTIFIER = "exact_identifier"
@@ -139,6 +158,54 @@ def token_sort_ratio(a: str, b: str) -> float:
     return 100.0 * SequenceMatcher(None, sa, sb).ratio()
 
 
+def name_token_idf(reference_names: list[str]) -> dict[str, float]:
+    """Return inverse-document-frequency weights for reference-name tokens.
+
+    Common institutional words such as ``bank`` and ``national`` carry little
+    identity evidence.  Rare tokens must agree before a fuzzy match can be
+    merged automatically.
+    """
+
+    documents = [set(normalize_name(name).split()) for name in reference_names]
+    total = len(documents)
+    frequency: dict[str, int] = {}
+    for tokens in documents:
+        for token in tokens:
+            frequency[token] = frequency.get(token, 0) + 1
+    return {
+        token: max(0.0, math.log((total + 1) / (count + 0.5))) for token, count in frequency.items()
+    }
+
+
+def weighted_token_ratio(
+    a: str,
+    b: str,
+    idf: dict[str, float],
+    default: float,
+) -> float:
+    """IDF-weighted Jaccard similarity over normalized name tokens, 0--100."""
+
+    left, right = set(a.split()), set(b.split())
+    if not left or not right:
+        return 0.0
+    union = sum(idf.get(token, default) for token in left | right)
+    if union <= 0.0:
+        return 0.0
+    intersection = sum(idf.get(token, default) for token in left & right)
+    return 100.0 * intersection / union
+
+
+def merge_score(
+    a: str,
+    b: str,
+    idf: dict[str, float],
+    default: float,
+) -> float:
+    """Require both character similarity and rare-token agreement."""
+
+    return min(token_sort_ratio(a, b), weighted_token_ratio(a, b, idf, default))
+
+
 @runtime_checkable
 class ResolutionStore(Protocol):
     """Persistence contract for reference data, resolutions, and the queue."""
@@ -223,7 +290,13 @@ class InMemoryResolutionStore:
         )
 
     async def record_queued(self, queued: QueuedMention) -> None:
-        self._queue.append(queued)
+        if not any(
+            item.source_id == queued.source_id
+            and item.doc_id == queued.doc_id
+            and normalize_name(item.mention_text) == normalize_name(queued.mention_text)
+            for item in self._queue
+        ):
+            self._queue.append(queued)
 
     async def resolutions(self) -> list[Resolution]:
         return list(self._resolutions)
@@ -367,10 +440,33 @@ class EntityResolver:
         recorded_at: datetime,
     ) -> Resolution | None:
         target = normalize_name(mention)
+        jurisdiction = str(doc.metadata.get("jurisdiction", "")).strip().casefold()
+        sector = str(doc.metadata.get("sector", "")).strip().casefold()
+        blocked = [
+            entity
+            for entity in reference
+            if (not jurisdiction or entity.jurisdiction.casefold() == jurisdiction)
+            and (not sector or entity.sector.casefold() == sector)
+        ]
+        if not blocked:
+            await self._queue(
+                doc,
+                mention,
+                None,
+                None,
+                "no reference candidate in jurisdiction/sector block",
+            )
+            return None
+
+        idf = name_token_idf([entity.legal_name for entity in blocked])
+        default_idf = math.log((len(blocked) + 1) / 0.5)
         scored = sorted(
             (
-                _Candidate(entity=e, score=token_sort_ratio(target, e.normalized_name))
-                for e in reference
+                _Candidate(
+                    entity=entity,
+                    score=merge_score(target, entity.normalized_name, idf, default_idf),
+                )
+                for entity in blocked
             ),
             key=lambda c: c.score,
             reverse=True,
@@ -381,16 +477,7 @@ class EntityResolver:
             return None
 
         best = candidates[0]
-        tied = [c for c in candidates if c.score == best.score]
-        if len(tied) > 1:
-            await self._queue(
-                doc,
-                mention,
-                None,
-                best.score / 100.0,
-                "ambiguous: tied candidates",
-            )
-            return None
+        runner_up = candidates[1] if len(candidates) > 1 else None
         if _family_form_differs(mention, best.entity.legal_name):
             await self._queue(
                 doc,
@@ -407,6 +494,15 @@ class EntityResolver:
                 best.entity.lei,
                 best.score / 100.0,
                 "below auto-merge threshold",
+            )
+            return None
+        if runner_up is not None and best.score - runner_up.score < FUZZY_AUTO_MERGE_MARGIN:
+            await self._queue(
+                doc,
+                mention,
+                None,
+                best.score / 100.0,
+                "ambiguous: best candidate lacks required score margin",
             )
             return None
         return Resolution(

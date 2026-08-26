@@ -28,10 +28,13 @@ def _render_empty(brief: Brief) -> str:
             "in the completed coverage window.</p>"
         )
     else:
-        parts.append(
-            "<p class='empty'>Brief incomplete: research capacity was exhausted "
-            "before all eligible signals were assessed.</p>"
-        )
+        reasons: list[str] = []
+        if brief.dark_detectors:
+            reasons.append("one or more detectors were gated by incomplete coverage")
+        if brief.deferred_signals:
+            reasons.append("research capacity was exhausted")
+        detail = " and ".join(reasons) or "coverage was incomplete"
+        parts.append(f"<p class='empty'>Brief incomplete: {detail}.</p>")
     if brief.abstained_signals:
         parts.append(
             f"<p class='meta'>Evidence-insufficient signals: {len(brief.abstained_signals)}.</p>"
@@ -40,6 +43,19 @@ def _render_empty(brief: Brief) -> str:
         parts.append(
             f"<p class='meta'>Signals deferred by capacity: {len(brief.deferred_signals)}.</p>"
         )
+    return "".join(parts)
+
+
+def _render_dark_detectors(brief: Brief) -> str:
+    if not brief.dark_detectors:
+        return ""
+    escape = html_mod.escape
+    parts = ["<section class='coverage-gaps'><h2>Detector coverage gaps</h2><ul>"]
+    for gap in brief.dark_detectors:
+        entity = f" for {escape(gap.entity_key)}" if gap.entity_key else ""
+        reasons = "; ".join(escape(reason) for reason in gap.reasons)
+        parts.append(f"<li><code>{escape(gap.pattern_name)}</code>{entity}: {reasons}</li>")
+    parts.append("</ul></section>")
     return "".join(parts)
 
 
@@ -100,12 +116,23 @@ def _render_funnel(brief: Brief) -> str:
         + len(brief.deferred_signals)
         + len(brief.unresearched_signals)
     )
+    scores = brief.triage_scores
+    if scores.signal_count:
+        distribution = (
+            f" Signal scores ranged {scores.minimum}-{scores.maximum} "
+            f"(median {scores.median:g}); threshold {scores.threshold}, "
+            f"at/above {scores.at_or_above_threshold}, below {scores.below_threshold}."
+        )
+    else:
+        distribution = f" No firing signal scores; triage threshold {scores.threshold}."
     return (
         "<p class='meta coverage-funnel'>"
         f"Coverage funnel: looked at {looked_at} situations; published {len(brief.items)}; "
         f"abstained for insufficient citable evidence {len(brief.abstained_signals)}; "
         f"deferred on capacity {len(brief.deferred_signals)}; "
-        f"below triage threshold {len(brief.unresearched_signals)}."
+        f"below triage threshold {len(brief.unresearched_signals)}; "
+        f"dark detectors {len(brief.dark_detectors)}."
+        f"{distribution}"
         "</p>"
     )
 
@@ -126,10 +153,18 @@ def render_html(brief: Brief) -> str:
     ]
 
     if brief.nothing_material or not brief.items:
-        parts.extend([_render_empty(brief), _render_funnel(brief), "</body></html>"])
+        parts.extend(
+            [
+                _render_empty(brief),
+                _render_dark_detectors(brief),
+                _render_funnel(brief),
+                "</body></html>",
+            ]
+        )
         return "".join(parts)
 
     parts.extend(_render_item(item) for item in brief.items)
+    parts.append(_render_dark_detectors(brief))
     parts.append(_render_funnel(brief))
     if brief.unresearched_signals or brief.deferred_signals or brief.abstained_signals:
         parts.append(

@@ -4,7 +4,7 @@ from datetime import datetime
 
 from fi_intel.governance.policy import GraphAccessContext
 from fi_intel.ingest.store import DocumentStore
-from fi_intel.sources.canonical import CanonicalDocument, document_text
+from fi_intel.sources.canonical import document_text
 from fi_intel.tools.evidence import EvidenceItem, Opportunity
 
 
@@ -59,15 +59,12 @@ async def _validate_resolvable(
     as_of: datetime | None,
     access: GraphAccessContext | None,
 ) -> None:
-    loaded: dict[str, list[CanonicalDocument]] = {}
     for evidence_id in evidence_ids:
         source_id, doc_id, start, end = EvidenceItem.parse_id(evidence_id)
         if access is not None and source_id not in access.allowed_source_ids:
             msg = f"evidence_id {evidence_id!r} is outside the caller's source grants"
             raise EvidenceValidationError(msg)
-        if source_id not in loaded:
-            loaded[source_id] = await store.load_documents(source_id)
-        doc = next((item for item in loaded[source_id] if item.doc_id == doc_id), None)
+        doc = await store.load_document(source_id, doc_id)
         if doc is None:
             msg = f"unresolvable evidence_id {evidence_id!r}: no such document"
             raise EvidenceValidationError(msg)

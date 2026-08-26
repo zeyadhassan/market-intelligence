@@ -27,6 +27,8 @@ from fi_intel.api.models import (
     EvidenceSpanView,
     FeedbackReceipt,
     FeedbackRequest,
+    ResultEvaluationReceipt,
+    ResultEvaluationRequest,
     ReviewDecisionRequest,
     ReviewReceipt,
     RunView,
@@ -34,8 +36,13 @@ from fi_intel.api.models import (
     SignalCloseReceipt,
     SignalCloseRequest,
     SignalView,
+    TopicResultsView,
+    TopicSubscriptionUpdate,
+    TopicSubscriptionView,
+    TopicTagView,
 )
-from fi_intel.api.service import AnalystService, ResourceNotFoundError
+from fi_intel.api.service import AnalystService, ResourceNotFoundError, StageOneService
+from fi_intel.api.stage_one_page import STAGE_ONE_CSS, STAGE_ONE_HTML, STAGE_ONE_JS
 from fi_intel.api.workbench import WORKBENCH_CSS, WORKBENCH_HTML, WORKBENCH_JS
 from fi_intel.logging import get_logger
 from fi_intel.telemetry import Telemetry
@@ -52,6 +59,8 @@ def create_app(  # noqa: C901 - route registration is intentionally centralized
     service: AnalystService,
     telemetry: Telemetry | None = None,
     *,
+    stage_one_service: StageOneService | None = None,
+    stage_one_html: str = STAGE_ONE_HTML,
     owns_telemetry: bool = False,
     owned_resources: tuple[_AsyncCloseable, ...] = (),
 ) -> FastAPI:
@@ -183,6 +192,22 @@ def create_app(  # noqa: C901 - route registration is intentionally centralized
     async def workbench_js() -> Response:
         return Response(WORKBENCH_JS, media_type="text/javascript")
 
+    if stage_one_service is not None:
+        stage_one = stage_one_service
+
+        @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+        @app.get("/stage-one", response_class=HTMLResponse, include_in_schema=False)
+        async def stage_one_page() -> str:
+            return stage_one_html
+
+        @app.get("/stage-one/assets/stage-one.css", include_in_schema=False)
+        async def stage_one_css() -> Response:
+            return Response(STAGE_ONE_CSS, media_type="text/css")
+
+        @app.get("/stage-one/assets/stage-one.js", include_in_schema=False)
+        async def stage_one_js() -> Response:
+            return Response(STAGE_ONE_JS, media_type="text/javascript")
+
     @app.get("/v1/session", response_model=SessionView)
     async def session(principal: principal_dependency) -> SessionView:
         return SessionView(
@@ -190,6 +215,49 @@ def create_app(  # noqa: C901 - route registration is intentionally centralized
             desks=tuple(sorted(principal.desks)),
             roles=tuple(sorted(principal.roles)),
         )
+
+    if stage_one_service is not None:
+
+        @app.get("/v1/topics", response_model=list[TopicTagView])
+        async def list_topics(principal: principal_dependency) -> list[TopicTagView]:
+            return await stage_one.list_topics(principal)
+
+        @app.get("/v1/subscriptions", response_model=list[TopicSubscriptionView])
+        async def list_subscriptions(
+            principal: principal_dependency,
+        ) -> list[TopicSubscriptionView]:
+            return await stage_one.list_subscriptions(principal)
+
+        @app.put(
+            "/v1/topics/{topic_id}/subscription",
+            response_model=TopicSubscriptionView,
+        )
+        async def update_subscription(
+            topic_id: str,
+            subscription: TopicSubscriptionUpdate,
+            principal: principal_dependency,
+        ) -> TopicSubscriptionView:
+            return await stage_one.update_subscription(principal, topic_id, subscription)
+
+        @app.get("/v1/topics/{topic_id}/results", response_model=TopicResultsView)
+        async def get_topic_results(
+            topic_id: str,
+            principal: principal_dependency,
+            refresh: Annotated[bool, Query()] = False,
+        ) -> TopicResultsView:
+            return await stage_one.get_topic_results(principal, topic_id, refresh=refresh)
+
+        @app.post(
+            "/v1/results/{result_id}/evaluation",
+            response_model=ResultEvaluationReceipt,
+            status_code=status.HTTP_201_CREATED,
+        )
+        async def evaluate_result(
+            result_id: str,
+            evaluation: ResultEvaluationRequest,
+            principal: principal_dependency,
+        ) -> ResultEvaluationReceipt:
+            return await stage_one.evaluate_result(principal, result_id, evaluation)
 
     @app.get("/v1/signals", response_model=list[SignalView])
     async def list_signals(

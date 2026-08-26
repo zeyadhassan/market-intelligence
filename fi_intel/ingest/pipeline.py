@@ -21,6 +21,7 @@ from fi_intel.sources.base import SourceAdapter
 from fi_intel.sources.canonical import CanonicalDocument
 
 DEFAULT_BATCH_SIZE = 5
+DEDUPE_LOOKBACK_DAYS = 7
 
 
 class IngestResult(BaseModel):
@@ -55,9 +56,13 @@ class IngestPipeline:
         log = self._log.bind(source_id=source_id)
 
         cursor = await self._store.load_cursor(source_id)
-        # Seed dedupe from what is already persisted so a resumed run
-        # classifies re-fetched documents identically to the first run.
-        self._dedupe.load(await self._store.load_documents(source_id))
+        # Same-story near duplicates cluster in time.  Keep the seed bounded
+        # as the historical corpus grows while retaining deterministic fixture
+        # replays by anchoring the window to the latest persisted document.
+        self._dedupe.load_hashes(await self._store.load_document_hashes(source_id))
+        self._dedupe.load(
+            await self._store.load_recent_documents(source_id, window_days=DEDUPE_LOOKBACK_DAYS)
+        )
         log.info("ingest.start", resumed_from=cursor.position if cursor else None)
 
         fetched = persisted = exact_dupes = 0

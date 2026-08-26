@@ -82,6 +82,7 @@ CREATE TABLE document (
 -- Exact dedupe is idempotent on content hash within a source.
 CREATE UNIQUE INDEX document_content_hash_key ON document (source_id, content_hash);
 CREATE INDEX document_recorded_at_idx ON document (recorded_at);
+CREATE INDEX document_source_published_at_idx ON document (source_id, published_at DESC);
 CREATE INDEX document_title_trgm_idx ON document USING gin (title gin_trgm_ops);
 CREATE INDEX document_identifiers_lei_idx ON document ((identifiers ->> 'lei'));
 
@@ -210,6 +211,7 @@ CREATE TABLE resolution_queue (
     mention_text     TEXT NOT NULL,
     candidate_entity_id BIGINT REFERENCES entity (entity_id),
     best_score       DOUBLE PRECISION CHECK (best_score BETWEEN 0 AND 1),
+    reason           TEXT NOT NULL,
     status           TEXT NOT NULL DEFAULT 'pending'
                      CHECK (status IN ('pending', 'approved', 'rejected')),
     queued_at        TIMESTAMPTZ NOT NULL DEFAULT now(),

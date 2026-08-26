@@ -41,9 +41,7 @@ class _Candidate:
 
     @property
     def confidence(self) -> float:
-        return sum(assertion.confidence for assertion in self.assertions) / len(
-            self.assertions
-        )
+        return sum(assertion.confidence for assertion in self.assertions) / len(self.assertions)
 
 
 def _typed(assertion: Assertion) -> dict[str, str | float | bool]:
@@ -80,6 +78,10 @@ def _threshold(pattern: Pattern, attribute: str) -> float:
     if match is None:
         raise RuntimeError(f"pattern {pattern.name!r} omits threshold {attribute!r}")
     return match.value
+
+
+def _currency_allowed(pattern: Pattern, currency: str) -> bool:
+    return currency.casefold() in {allowed.casefold() for allowed in pattern.allowed_currencies}
 
 
 class POCAssertionDetector:
@@ -183,9 +185,7 @@ class POCAssertionDetector:
             for metric in metrics:
                 if metric.subject.key != rating_org.key:
                     continue
-                decline = _number(_typed(metric), "prior") - _number(
-                    _typed(metric), "value"
-                )
+                decline = _number(_typed(metric), "prior") - _number(_typed(metric), "value")
                 if decline < threshold:
                     continue
                 if abs((metric.valid_from.date() - rating.valid_from.date()).days) > 120:
@@ -202,7 +202,7 @@ class POCAssertionDetector:
                             "metric_doc": metric.source_doc_id,
                         },
                         material_arguments={"rating_type": "outlook", "metric": "cet1"},
-                        materiality_score=min(1.0, decline / 2.0),
+                        materiality_score=min(1.0, decline / (threshold * 4.0)),
                     )
                 )
         return candidates
@@ -231,7 +231,7 @@ class POCAssertionDetector:
                     assertions=(assertion,),
                     evidence={"role": role, "doc": assertion.source_doc_id},
                     material_arguments={"role": role},
-                    materiality_score=1.0,
+                    materiality_score=pattern.default_materiality_score,
                 )
             )
         return candidates
@@ -247,12 +247,13 @@ class POCAssertionDetector:
         for assertion in assertions:
             properties = _typed(assertion)
             limit_usd_bn = _number(properties, "limit_usd_bn")
+            currency = _text(properties, "currency")
             if (
                 assertion.predicate is not EdgeType.PROGRAMME_APPROVED_BY
                 or not _fresh(assertion, pattern, as_of)
                 or assertion.object.node_type is not NodeType.ORGANIZATION
                 or limit_usd_bn < threshold
-                or _text(properties, "currency") != "usd"
+                or not _currency_allowed(pattern, currency)
                 or _text(properties, "status") != "approved"
                 or _flag(properties, "marketed")
             ):
@@ -264,14 +265,14 @@ class POCAssertionDetector:
                     assertions=(assertion,),
                     evidence={
                         "programme_key": assertion.subject.key,
-                        "currency": "usd",
+                        "currency": currency,
                         "doc": assertion.source_doc_id,
                     },
                     material_arguments={
                         "programme_key": assertion.subject.key,
-                        "currency": "usd",
+                        "currency": currency,
                     },
-                    materiality_score=min(1.0, limit_usd_bn / 1.5),
+                    materiality_score=min(1.0, limit_usd_bn / (threshold * 3.0)),
                 )
             )
         return candidates
@@ -322,12 +323,13 @@ class POCAssertionDetector:
         candidates: list[_Candidate] = []
         for event in assertions:
             properties = _typed(event)
+            currency = _text(properties, "currency")
             if (
                 event.predicate is not predicate
                 or not _fresh(event, pattern, as_of)
                 or event.subject.key in refinanced
                 or _number(properties, "amount_usd_mn") < threshold
-                or _text(properties, "currency") != "usd"
+                or not _currency_allowed(pattern, currency)
                 or (required_class is not None and _text(properties, "class") != required_class)
                 or event.valid_from < as_of
                 or event.valid_from > as_of + timedelta(days=pattern.prediction_horizon_days)
@@ -344,7 +346,7 @@ class POCAssertionDetector:
                 amount = _number(properties, "amount_usd_mn")
                 material_arguments = {
                     "instrument": event.subject.key,
-                    "currency": "usd",
+                    "currency": currency,
                 }
                 if required_class is not None:
                     material_arguments["instrument_class"] = required_class
@@ -359,7 +361,7 @@ class POCAssertionDetector:
                             "doc": event.source_doc_id,
                         },
                         material_arguments=material_arguments,
-                        materiality_score=min(1.0, amount / 500.0),
+                        materiality_score=min(1.0, amount / (threshold * 2.0)),
                     )
                 )
         return candidates
@@ -376,10 +378,7 @@ class POCAssertionDetector:
             sorted(assertion.assertion_id() for assertion in candidate.assertions)
         )
         refs = sorted(
-            {
-                (assertion.source_id, assertion.source_doc_id)
-                for assertion in candidate.assertions
-            }
+            {(assertion.source_id, assertion.source_doc_id) for assertion in candidate.assertions}
         )
         source_ids = tuple(source_id for source_id, _ in refs)
         source_doc_ids = tuple(doc_id for _, doc_id in refs)
@@ -407,8 +406,7 @@ class POCAssertionDetector:
         barrier = (
             BarrierSide.PRIVATE
             if any(
-                assertion.barrier_side is BarrierSide.PRIVATE
-                for assertion in candidate.assertions
+                assertion.barrier_side is BarrierSide.PRIVATE for assertion in candidate.assertions
             )
             else BarrierSide.PUBLIC
         )

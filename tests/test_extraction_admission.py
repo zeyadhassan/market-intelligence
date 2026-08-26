@@ -56,9 +56,7 @@ def _rating_doc(*, known: bool = True) -> CanonicalDocument:
     )
 
 
-def _claim(
-    properties: ClaimProperties, name: str = "Gulf Meridian Bank Q.P.S.C."
-) -> RawClaim:
+def _claim(properties: ClaimProperties, name: str = "Gulf Meridian Bank Q.P.S.C.") -> RawClaim:
     text = f"{name} outlook changed to negative."
     return RawClaim(
         predicate=EdgeType.RATING_ACTION_ON,
@@ -84,9 +82,7 @@ async def _resolver() -> EntityResolver:
 
 async def test_valid_sibling_writes_with_resolver_key_while_bad_claim_is_rejected() -> None:
     bad = _claim(ClaimProperties())
-    good = _claim(
-        ClaimProperties(direction=ChangeDirection.NEGATIVE, rating_type="outlook")
-    )
+    good = _claim(ClaimProperties(direction=ChangeDirection.NEGATIVE, rating_type="outlook"))
     writer = _Writer()
     pipeline = ExtractionPipeline(
         _Extractor([bad, good]),
@@ -107,28 +103,32 @@ async def test_valid_sibling_writes_with_resolver_key_while_bad_claim_is_rejecte
 
 async def test_unresolved_organization_never_uses_model_key() -> None:
     writer = _Writer()
+    resolver = await _resolver()
     pipeline = ExtractionPipeline(
         _Extractor(
             [
-                    _claim(
-                        ClaimProperties(
-                            direction=ChangeDirection.NEGATIVE,
-                            rating_type="outlook",
-                        ),
-                        name="Unlisted Example Bank",
-                    )
+                _claim(
+                    ClaimProperties(
+                        direction=ChangeDirection.NEGATIVE,
+                        rating_type="outlook",
+                    ),
+                    name="Unlisted Example Bank",
+                )
             ]
         ),
         writer,  # type: ignore[arg-type]
         InMemoryProposedTypeSink(),
-        await _resolver(),
+        resolver,
     )
 
     result = await pipeline.extract_document(_rating_doc(known=False), RECORDED)
 
     assert result.assertions_written == 0
     assert result.unresolved_entity_rejections == 1
+    assert result.claims_held_for_resolution == 1
     assert writer.assertions == []
+    queue = await resolver._store.queue()  # noqa: SLF001
+    assert [item.mention_text for item in queue] == ["Unlisted Example Bank"]
 
 
 def test_every_detector_attribute_is_extractable_and_required() -> None:
@@ -136,8 +136,10 @@ def test_every_detector_attribute_is_extractable_and_required() -> None:
 
     for pattern in ALL_PATTERNS:
         required_by_claims = set().union(
-            *(PREDICATE_PROPERTY_REQUIREMENTS.get(predicate, frozenset())
-              for predicate in pattern.required_claim_types)
+            *(
+                PREDICATE_PROPERTY_REQUIREMENTS.get(predicate, frozenset())
+                for predicate in pattern.required_claim_types
+            )
         )
         assert pattern.required_attributes <= schema_attributes
         assert pattern.required_attributes <= required_by_claims

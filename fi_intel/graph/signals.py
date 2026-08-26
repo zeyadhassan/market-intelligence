@@ -222,6 +222,7 @@ def score_signal(
     lifecycle_state: SignalLifecycleState,
     historical_precision: float | None = None,
     precision_samples: int = 0,
+    precision_weight_scale: float | None = None,
 ) -> tuple[float, float, tuple[ScoreContribution, ...]]:
     """Return base score, surfaced score, and fully transparent contributions."""
     age_days = max(0.0, (as_of - latest_recorded_at).total_seconds() / 86_400)
@@ -231,18 +232,24 @@ def score_signal(
     novelty = _novelty_value(lifecycle_state)
 
     measured_precision = (
-        historical_precision
-        if historical_precision is not None
-        else pattern.historical_precision
+        historical_precision if historical_precision is not None else pattern.historical_precision
     )
-    precision_weight = 0.15 if measured_precision is not None else 0.0
+    # Early feedback is useful but uncertain.  Beta shrinkage happens in the
+    # provider; the contribution then ramps smoothly to full weight at 30
+    # authorized outcomes instead of appearing at a 30-sample cliff.
+    sample_weight = (
+        _unit_interval(precision_weight_scale)
+        if precision_weight_scale is not None
+        else min(1.0, precision_samples / 30)
+    )
+    precision_weight = 0.15 * sample_weight if measured_precision is not None else 0.0
     precision_explanation = (
-        f"Measured from {precision_samples} authorized analyst outcomes."
+        f"Beta-shrunk estimate from {precision_samples} authorized analyst outcomes."
         if measured_precision is not None
-        else "No measured analyst-feedback sample clears the minimum; contribution disabled."
+        else "No authorized analyst-feedback sample is available; contribution disabled."
     )
     values = (
-        ("pattern_prior", pattern.priority / 100.0, 0.20, "Governed detector prior."),
+        ("pattern_prior", pattern.priority / 100.0, 0.30, "Governed detector prior."),
         (
             "historical_precision",
             measured_precision or 0.0,
@@ -255,11 +262,11 @@ def score_signal(
             0.20,
             "Magnitude relative to the governed materiality threshold.",
         ),
-        ("freshness", freshness, 0.15, "Recency within the pattern freshness window."),
+        ("freshness", freshness, 0.10, "Recency within the pattern freshness window."),
         (
             "claim_coverage",
             coverage,
-            0.10,
+            0.05,
             "Matched required claim types with exact assertions.",
         ),
         (

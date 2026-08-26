@@ -14,7 +14,7 @@ ahead of the data (gap) or behind it (duplicate work).
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol, runtime_checkable
 
 import asyncpg
@@ -54,7 +54,21 @@ class DocumentStore(Protocol):
     async def load_cursor(self, source_id: str) -> FetchCursor | None: ...
 
     async def load_documents(self, source_id: str) -> list[CanonicalDocument]:
-        """All persisted canonical documents for a source (dedupe seed)."""
+        """All persisted canonical documents for a source."""
+        ...
+
+    async def load_recent_documents(
+        self, source_id: str, *, window_days: int
+    ) -> list[CanonicalDocument]:
+        """Documents in a bounded window ending at the source's latest document."""
+        ...
+
+    async def load_document_hashes(self, source_id: str) -> set[str]:
+        """All exact-dedupe hashes without document bodies or shingle sets."""
+        ...
+
+    async def load_document(self, source_id: str, doc_id: str) -> CanonicalDocument | None:
+        """Load one citation target without scanning the source corpus."""
         ...
 
     async def status(self) -> list[SourceStatus]: ...
@@ -87,6 +101,28 @@ class InMemoryDocumentStore:
 
     async def load_documents(self, source_id: str) -> list[CanonicalDocument]:
         return [d for (sid, _), d in self._docs.items() if sid == source_id]
+
+    async def load_recent_documents(
+        self, source_id: str, *, window_days: int
+    ) -> list[CanonicalDocument]:
+        if window_days < 1:
+            raise ValueError("window_days must be >= 1")
+        documents = await self.load_documents(source_id)
+        if not documents:
+            return []
+        latest = max(document.published_at for document in documents)
+        earliest = latest - timedelta(days=window_days)
+        return [document for document in documents if document.published_at >= earliest]
+
+    async def load_document_hashes(self, source_id: str) -> set[str]:
+        return {
+            document.content_hash()
+            for (stored_source_id, _), document in self._docs.items()
+            if stored_source_id == source_id
+        }
+
+    async def load_document(self, source_id: str, doc_id: str) -> CanonicalDocument | None:
+        return self._docs.get((source_id, doc_id))
 
     async def status(self) -> list[SourceStatus]:
         source_ids = {sid for sid, _ in self._docs} | set(self._cursors)
@@ -199,24 +235,63 @@ class PostgresDocumentStore:
             "SELECT * FROM document WHERE source_id = $1 ORDER BY published_at",
             source_id,
         )
-        return [
-            CanonicalDocument(
-                doc_id=row["doc_id"],
-                source_id=row["source_id"],
-                published_at=row["published_at"],
-                recorded_at=row["recorded_at"],
-                title=row["title"],
-                body=row["body"],
-                language=row["language"],
-                document_class=row["document_class"],
-                barrier_side=row["barrier_side"],
-                mentioned_names=tuple(row["mentioned_names"]),
-                identifiers=json.loads(row["identifiers"]),
-                url=row["url"],
-                metadata=json.loads(row["metadata"]),
-            )
-            for row in rows
-        ]
+        return [self._document_from_row(row) for row in rows]
+
+    async def load_recent_documents(
+        self, source_id: str, *, window_days: int
+    ) -> list[CanonicalDocument]:
+        if window_days < 1:
+            raise ValueError("window_days must be >= 1")
+        pool = await self._get_pool()
+        rows = await pool.fetch(
+            """
+            SELECT * FROM document
+            WHERE source_id = $1
+              AND published_at >= (
+                  SELECT max(published_at) - make_interval(days => $2)
+                  FROM document WHERE source_id = $1
+              )
+            ORDER BY published_at
+            """,
+            source_id,
+            window_days,
+        )
+        return [self._document_from_row(row) for row in rows]
+
+    async def load_document_hashes(self, source_id: str) -> set[str]:
+        pool = await self._get_pool()
+        rows = await pool.fetch(
+            "SELECT content_hash FROM document WHERE source_id = $1",
+            source_id,
+        )
+        return {str(row["content_hash"]) for row in rows}
+
+    async def load_document(self, source_id: str, doc_id: str) -> CanonicalDocument | None:
+        pool = await self._get_pool()
+        row = await pool.fetchrow(
+            "SELECT * FROM document WHERE source_id = $1 AND doc_id = $2",
+            source_id,
+            doc_id,
+        )
+        return None if row is None else self._document_from_row(row)
+
+    @staticmethod
+    def _document_from_row(row: asyncpg.Record) -> CanonicalDocument:
+        return CanonicalDocument(
+            doc_id=row["doc_id"],
+            source_id=row["source_id"],
+            published_at=row["published_at"],
+            recorded_at=row["recorded_at"],
+            title=row["title"],
+            body=row["body"],
+            language=row["language"],
+            document_class=row["document_class"],
+            barrier_side=row["barrier_side"],
+            mentioned_names=tuple(row["mentioned_names"]),
+            identifiers=json.loads(row["identifiers"]),
+            url=row["url"],
+            metadata=json.loads(row["metadata"]),
+        )
 
     async def status(self) -> list[SourceStatus]:
         pool = await self._get_pool()

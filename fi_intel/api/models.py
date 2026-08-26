@@ -168,3 +168,106 @@ class SessionView(ApiModel):
     principal_id: str
     desks: tuple[str, ...]
     roles: tuple[str, ...]
+
+
+class TopicTagView(ApiModel):
+    topic_id: str
+    label: str
+    description: str
+    subscribed: bool = False
+
+
+class TopicSubscriptionUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    active: bool
+
+
+class TopicSubscriptionView(ApiModel):
+    topic_id: str
+    active: bool
+    updated_at: datetime
+
+
+class OpportunityEvidenceView(ApiModel):
+    evidence_id: str
+    title: str
+    quote: str
+    source_id: str
+    source_url: str | None = None
+    published_at: datetime | None = None
+    fetched_at: datetime | None = None
+    content_hash: str | None = None
+    country: str | None = None
+    source_type: str | None = None
+
+
+class OpportunityResultView(ApiModel):
+    result_id: str
+    topic_id: str
+    title: str
+    entity_name: str
+    summary: str
+    freshness_reason: str
+    lifecycle_state: str
+    score: float = Field(ge=0.0, le=1.0)
+    as_of: datetime
+    changed_at: datetime
+    coverage_state: str
+    falsifier: str
+    evidence: tuple[OpportunityEvidenceView, ...] = ()
+    latest_evaluation: str | None = None
+
+
+class LiveSourceStatusView(ApiModel):
+    source_id: str
+    display_name: str
+    country: str
+    source_type: str
+    source_url: str
+    status: str
+    fetched_at: datetime | None = None
+    content_hash: str | None = None
+    candidate_count: int = 0
+    rejected_candidate_count: int = 0
+    detail: str
+
+
+class TopicResultsView(ApiModel):
+    topic_id: str
+    label: str
+    analysis_status: str
+    coverage_state: str
+    as_of: datetime
+    message: str
+    mode: str = "fixture"
+    scope_notice: str
+    model_name: str | None = None
+    run_id: str | None = None
+    required_source_count: int = 0
+    successful_source_count: int = 0
+    rejected_candidate_count: int = 0
+    source_statuses: tuple[LiveSourceStatusView, ...] = ()
+    results: tuple[OpportunityResultView, ...] = ()
+
+
+class ResultEvaluationVerdict(StrEnum):
+    USEFUL = "useful"
+    NOT_RELEVANT = "not_relevant"
+    INCORRECT = "incorrect"
+    DUPLICATE = "duplicate"
+    TOO_OLD = "too_old"
+
+
+class ResultEvaluationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    verdict: ResultEvaluationVerdict
+    note: str = Field(default="", max_length=1000)
+
+
+class ResultEvaluationReceipt(ApiModel):
+    evaluation_id: str
+    result_id: str
+    verdict: ResultEvaluationVerdict
+    recorded_at: datetime

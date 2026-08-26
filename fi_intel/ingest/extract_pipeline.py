@@ -92,6 +92,7 @@ class ExtractionResult(BaseModel):
     low_confidence_dropped: int = 0
     semantic_rejections: int = 0
     unresolved_entity_rejections: int = 0
+    claims_held_for_resolution: int = 0
 
 
 class ExtractionPipeline:
@@ -172,8 +173,12 @@ class ExtractionPipeline:
             object_key = await self._endpoint_key(claim.object, doc)
             if subject_key is None or object_key is None:
                 unresolved += 1
+                # EntityResolver has already persisted each unresolved
+                # organization mention in the resolution review queue.  Keep
+                # the claim out of the graph and make the held count part of
+                # the run result instead of silently losing it.
                 self._log.info(
-                    "extract.unresolved_entity_rejected",
+                    "extract.claim_held_for_resolution",
                     doc_id=doc.doc_id,
                     predicate=str(claim.predicate),
                 )
@@ -208,11 +213,10 @@ class ExtractionPipeline:
             low_confidence_dropped=low_confidence,
             semantic_rejections=len(outcome.rejected_semantics),
             unresolved_entity_rejections=unresolved,
+            claims_held_for_resolution=unresolved,
         )
 
-    async def _endpoint_key(
-        self, mention: RawEntityMention, doc: CanonicalDocument
-    ) -> str | None:
+    async def _endpoint_key(self, mention: RawEntityMention, doc: CanonicalDocument) -> str | None:
         if mention.node_type == NodeType.ORGANIZATION:
             resolution = await self._resolver.resolve_mention(doc, mention.name)
             return resolution.lei if resolution is not None else None

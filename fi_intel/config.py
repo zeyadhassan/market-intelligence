@@ -56,13 +56,27 @@ class Settings(BaseSettings):
     source_cursor_history_limit: int = 1_000
     source_raw_retention_days: int = 2_555
 
+    # Stage 1 live GCC POC. The checked-in source matrix is intentionally
+    # bounded to official, public regulator/market pages in all six GCC
+    # countries. `complete` in that demo means every registered POC page was
+    # fetched and analysed in the current run; it is not a claim that every
+    # issuer IR site, rating action, or licensed news wire is covered.
+    gcc_live_lookback_days: int = 45
+    gcc_live_source_char_limit: int = 60_000
+    gcc_live_cache_seconds: int = 900
+    gcc_live_max_parallel_sources: int = 4
+
     # Detector coverage is explicit and fail-closed. These are comma-separated
     # stable IDs so deployment config can name the authorized source universe
     # and the desk's covered legal entities without asking an extractor.
     coverage_required_source_ids: str = ""
     covered_entity_leis: str = ""
+    # Measured on the 120-scenario calibration grid (2026-08-26): 60 admits
+    # 72%, versus 43% at 65 and 92% at 55.
+    # Every brief renders its realized score range against this threshold so a
+    # deployment-specific retune is observable rather than a silent cliff.
     triage_priority_threshold: int = 60
-    historical_precision_min_feedback: int = 30
+    historical_precision_full_weight_samples: int = 30
 
     # GLEIF publishes both a JSON:API surface and Golden Copy bulk files.
     # The paginated API is the default operational path; bulk file URLs are

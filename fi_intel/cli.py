@@ -80,6 +80,61 @@ def _main(log_level: Annotated[str, typer.Option(envvar="FI_INTEL_LOG_LEVEL")] =
     configure_logging(log_level)
 
 
+demo_app = typer.Typer(help="Run service-free product demonstrations.", no_args_is_help=True)
+app.add_typer(demo_app, name="demo")
+
+
+@demo_app.command("stage-one")
+def demo_stage_one(
+    port: Annotated[int, typer.Option(min=1, max=65535, help="Local HTTP port.")] = 8765,
+) -> None:
+    """Serve the live GCC tag-subscription POC on localhost."""
+    import uvicorn
+
+    from fi_intel.demo.gcc_live import live_demo_configuration_errors
+    from fi_intel.demo.stage_one_live_app import live_source_country_count
+
+    errors = live_demo_configuration_errors(Settings())
+    if errors:
+        print("Live Stage 1 demo cannot start:")  # noqa: T201
+        for error in errors:
+            print(f"- {error}")  # noqa: T201
+        print(  # noqa: T201
+            "Set the missing FI_INTEL_* values; the command will not substitute fixture results."
+        )
+        raise typer.Exit(code=2)
+    print(  # noqa: T201
+        f"Stage 1 live POC: configured LLM + official sources across "
+        f"{live_source_country_count()} GCC countries."
+    )
+    print(f"Open http://127.0.0.1:{port}/ in a browser. Press Ctrl+C to stop.")  # noqa: T201
+    uvicorn.run(
+        "fi_intel.demo.stage_one_live_app:create_stage_one_live_app",
+        factory=True,
+        host="127.0.0.1",
+        port=port,
+        reload=False,
+    )
+
+
+@demo_app.command("stage-one-fixture")
+def demo_stage_one_fixture(
+    port: Annotated[int, typer.Option(min=1, max=65535, help="Local HTTP port.")] = 8765,
+) -> None:
+    """Serve the explicit synthetic fixture used by tests and offline UI work."""
+    import uvicorn
+
+    print("Stage 1 synthetic fixture: no live source or model calls are made.")  # noqa: T201
+    print(f"Open http://127.0.0.1:{port}/ in a browser. Press Ctrl+C to stop.")  # noqa: T201
+    uvicorn.run(
+        "fi_intel.demo.stage_one_app:create_stage_one_demo_app",
+        factory=True,
+        host="127.0.0.1",
+        port=port,
+        reload=False,
+    )
+
+
 sources_app = typer.Typer(help="Inspect registered sources.", no_args_is_help=True)
 app.add_typer(sources_app, name="sources")
 
@@ -369,8 +424,7 @@ def db_migrate() -> None:
         return
     for migration in applied:
         print(  # noqa: T201
-            f"applied {migration.version_key} {migration.filename} "
-            f"sha256={migration.checksum[:12]}"
+            f"applied {migration.version_key} {migration.filename} sha256={migration.checksum[:12]}"
         )
 
 
@@ -380,9 +434,7 @@ def db_status() -> None:
     from fi_intel.db.migrations import PostgresMigrationRunner
 
     settings = Settings()
-    applied, pending = asyncio.run(
-        PostgresMigrationRunner(settings.postgres_dsn).status()
-    )
+    applied, pending = asyncio.run(PostgresMigrationRunner(settings.postgres_dsn).status())
     for applied_migration in applied:
         print(  # noqa: T201
             f"applied\t{applied_migration.version_key}\t{applied_migration.filename}"
@@ -472,7 +524,8 @@ def extract(
         print(  # noqa: T201
             f"{r.doc_id}: written={r.assertions_written} "
             f"low_confidence_dropped={r.low_confidence_dropped} "
-            f"offset_rejected={r.offset_rejections} proposed_types={r.proposed_types}"
+            f"offset_rejected={r.offset_rejections} proposed_types={r.proposed_types} "
+            f"claims_held_for_resolution={r.claims_held_for_resolution}"
         )
 
 
@@ -508,7 +561,7 @@ def patterns_run(
         operations = PostgresSourceOperationsStore(settings.postgres_dsn)
         precision = PostgresPatternPrecisionProvider(
             settings.postgres_dsn,
-            minimum_samples=settings.historical_precision_min_feedback,
+            full_weight_samples=settings.historical_precision_full_weight_samples,
         )
         access = await _resolve_graph_access(settings, caller, run_id)
         client = GraphClient(
@@ -525,9 +578,7 @@ def patterns_run(
                 if item.strip()
             )
             covered_entities = frozenset(
-                item.strip()
-                for item in settings.covered_entity_leis.split(",")
-                if item.strip()
+                item.strip() for item in settings.covered_entity_leis.split(",") if item.strip()
             )
             coverage = SourceOperationsCoverageProvider(
                 operations,
@@ -685,9 +736,7 @@ def research(
                 if item.strip()
             )
             covered_entities = frozenset(
-                item.strip()
-                for item in settings.covered_entity_leis.split(",")
-                if item.strip()
+                item.strip() for item in settings.covered_entity_leis.split(",") if item.strip()
             )
             registry = PatternRegistry(
                 client,
@@ -779,7 +828,7 @@ def brief(
         audit = PostgresAuditLog(settings.postgres_dsn)
         precision = PostgresPatternPrecisionProvider(
             settings.postgres_dsn,
-            minimum_samples=settings.historical_precision_min_feedback,
+            full_weight_samples=settings.historical_precision_full_weight_samples,
         )
         access = await _resolve_graph_access(settings, caller, run_id)
         client = GraphClient(
@@ -798,9 +847,7 @@ def brief(
                 if item.strip()
             )
             covered_entities = frozenset(
-                item.strip()
-                for item in settings.covered_entity_leis.split(",")
-                if item.strip()
+                item.strip() for item in settings.covered_entity_leis.split(",") if item.strip()
             )
             registry = PatternRegistry(
                 client,
@@ -894,7 +941,7 @@ def backtest(
         operations = PostgresSourceOperationsStore(settings.postgres_dsn)
         precision = PostgresPatternPrecisionProvider(
             settings.postgres_dsn,
-            minimum_samples=settings.historical_precision_min_feedback,
+            full_weight_samples=settings.historical_precision_full_weight_samples,
         )
         access = await _resolve_graph_access(settings, caller, run_id)
         client = GraphClient(
@@ -911,9 +958,7 @@ def backtest(
                 if item.strip()
             )
             covered_entities = frozenset(
-                item.strip()
-                for item in settings.covered_entity_leis.split(",")
-                if item.strip()
+                item.strip() for item in settings.covered_entity_leis.split(",") if item.strip()
             )
             registry = PatternRegistry(
                 client,
@@ -925,9 +970,7 @@ def backtest(
                 ),
                 precision=precision,
             )
-            return await Backtester(client, registry).run(
-                start, end, step_days, outcomes=[mandate]
-            )
+            return await Backtester(client, registry).run(start, end, step_days, outcomes=[mandate])
         finally:
             await client.close()
             await audit.close()

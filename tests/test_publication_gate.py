@@ -65,6 +65,19 @@ class _Model:
         return self.response
 
 
+class _TargetedDocumentStore(InMemoryDocumentStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.targeted_reads: list[tuple[str, str]] = []
+
+    async def load_documents(self, source_id: str) -> list[CanonicalDocument]:
+        raise AssertionError(f"publication must not scan the {source_id!r} corpus")
+
+    async def load_document(self, source_id: str, doc_id: str) -> CanonicalDocument | None:
+        self.targeted_reads.append((source_id, doc_id))
+        return await super().load_document(source_id, doc_id)
+
+
 def _signal() -> Signal:
     return Signal(
         signal_id="signal-1",
@@ -132,7 +145,7 @@ async def test_research_rejects_any_out_of_bundle_citation(bad_index: int) -> No
 
 async def test_publication_resolves_atomic_claim_and_exact_excerpt() -> None:
     doc, evidence = _document_and_evidence()
-    store = InMemoryDocumentStore()
+    store = _TargetedDocumentStore()
     await store.commit_batch(
         [doc],
         [],
@@ -154,6 +167,7 @@ async def test_publication_resolves_atomic_claim_and_exact_excerpt() -> None:
     )
 
     assert await validate_opportunity(opportunity, store, [evidence]) is opportunity
+    assert store.targeted_reads == [("wire", doc.doc_id)]
 
     tampered = evidence.model_copy(update={"excerpt": "different text"})
     with pytest.raises(EvidenceValidationError, match="excerpt does not match span"):
@@ -230,9 +244,7 @@ async def test_publication_rechecks_as_of_and_information_barrier() -> None:
 async def test_research_rejects_unauthorized_trigger_source() -> None:
     _, evidence = _document_and_evidence()
     model = _Model(
-        ResearchResponse(
-            title="t", claims=[], falsifier="f", insufficient_evidence=True
-        )
+        ResearchResponse(title="t", claims=[], falsifier="f", insufficient_evidence=True)
     )
     researcher = OpportunityResearcher(
         _Tools([evidence]),  # type: ignore[arg-type]

@@ -52,6 +52,13 @@ async def _check_contract(store: DocumentStore) -> None:
 
     loaded = await store.load_documents("contract_source")
     assert [d.doc_id for d in loaded] == ["C-1", "C-2"]
+    assert (await store.load_document("contract_source", "C-2")) == docs[1]
+    assert await store.load_document("contract_source", "missing") is None
+    recent = await store.load_recent_documents("contract_source", window_days=7)
+    assert [d.doc_id for d in recent] == ["C-1", "C-2"]
+    assert await store.load_document_hashes("contract_source") == {
+        document.content_hash() for document in docs
+    }
 
     cursor = await store.load_cursor("contract_source")
     assert cursor is not None and cursor.position == "2"
@@ -80,16 +87,10 @@ async def test_postgres_store_contract() -> None:
                 " VALUES ('contract_source', 'Contract test', 'test')"
                 " ON CONFLICT (source_id) DO NOTHING"
             )
-            await conn.execute(
-                "DELETE FROM document_chunk WHERE source_id = 'contract_source'"
-            )
-            await conn.execute(
-                "DELETE FROM document_duplicate WHERE source_id = 'contract_source'"
-            )
+            await conn.execute("DELETE FROM document_chunk WHERE source_id = 'contract_source'")
+            await conn.execute("DELETE FROM document_duplicate WHERE source_id = 'contract_source'")
             await conn.execute("DELETE FROM document WHERE source_id = 'contract_source'")
-            await conn.execute(
-                "DELETE FROM ingest_cursor WHERE source_id = 'contract_source'"
-            )
+            await conn.execute("DELETE FROM ingest_cursor WHERE source_id = 'contract_source'")
         await _check_contract(store)
     finally:
         await store.close()

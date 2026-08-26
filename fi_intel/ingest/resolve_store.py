@@ -82,9 +82,7 @@ class PostgresResolutionStore:
     async def record_resolution(self, resolution: Resolution) -> None:
         pool = await self._get_pool()
         async with pool.acquire() as conn, conn.transaction():
-            row = await conn.fetchrow(
-                "SELECT entity_id FROM entity WHERE lei = $1", resolution.lei
-            )
+            row = await conn.fetchrow("SELECT entity_id FROM entity WHERE lei = $1", resolution.lei)
             if row is None:
                 msg = f"resolution targets unknown LEI {resolution.lei!r}"
                 raise ValueError(msg)
@@ -178,14 +176,21 @@ class PostgresResolutionStore:
         await pool.execute(
             """
             INSERT INTO resolution_queue
-                (source_id, doc_id, mention_text, candidate_entity_id, best_score)
-            VALUES ($1, $2, $3, $4, $5)
+                (source_id, doc_id, mention_text, candidate_entity_id, best_score, reason)
+            SELECT $1, $2, $3, $4, $5, $6
+            WHERE NOT EXISTS (
+                SELECT 1 FROM resolution_queue
+                WHERE source_id = $1 AND doc_id = $2
+                  AND lower(mention_text) = lower($3)
+                  AND status = 'pending'
+            )
             """,
             queued.source_id,
             queued.doc_id,
             queued.mention_text,
             candidate_id,
             queued.best_score,
+            queued.reason,
         )
 
     async def resolutions(self) -> list[Resolution]:
@@ -238,7 +243,7 @@ class PostgresResolutionStore:
         rows = await pool.fetch(
             """
             SELECT q.source_id, q.doc_id, q.mention_text, e.lei AS candidate_lei,
-                   q.best_score
+                   q.best_score, q.reason
             FROM resolution_queue q
             LEFT JOIN entity e ON e.entity_id = q.candidate_entity_id
             WHERE q.status = 'pending'
@@ -252,7 +257,7 @@ class PostgresResolutionStore:
                 mention_text=row["mention_text"],
                 candidate_lei=row["candidate_lei"],
                 best_score=row["best_score"],
-                reason="",
+                reason=row["reason"],
             )
             for row in rows
         ]

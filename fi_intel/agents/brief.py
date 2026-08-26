@@ -18,6 +18,7 @@ from fi_intel.governance.model_usage import (
     ModelUsageLog,
     ModelUsageSnapshot,
 )
+from fi_intel.graph.coverage import DetectorCoverageGap
 from fi_intel.graph.registry import PatternRegistry, Signal
 from fi_intel.logging import get_logger
 from fi_intel.tools.evidence import EvidenceItem, Opportunity
@@ -35,6 +36,18 @@ class BriefItem(BaseModel):
     evidence: list[EvidenceItem]
 
 
+class TriageScoreDistribution(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    threshold: int = Field(ge=0, le=100)
+    signal_count: int = Field(ge=0)
+    at_or_above_threshold: int = Field(ge=0)
+    below_threshold: int = Field(ge=0)
+    minimum: int | None = Field(default=None, ge=0, le=100)
+    median: float | None = Field(default=None, ge=0.0, le=100.0)
+    maximum: int | None = Field(default=None, ge=0, le=100)
+
+
 class Brief(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -46,6 +59,8 @@ class Brief(BaseModel):
     unresearched_signals: list[Signal] = Field(default_factory=list)
     deferred_signals: list[Signal] = Field(default_factory=list)
     abstained_signals: list[Signal] = Field(default_factory=list)
+    dark_detectors: list[DetectorCoverageGap] = Field(default_factory=list)
+    triage_scores: TriageScoreDistribution
     coverage_complete: bool = True
 
     @property
@@ -73,22 +88,26 @@ class BriefCompiler:
         self._limits = capacity_limits or ModelCapacityLimits()
         self._usage_log = usage_log
         self._run_id = run_id
-        self._triage_priority_threshold = (
-            settings or Settings()
-        ).triage_priority_threshold
+        self._triage_priority_threshold = (settings or Settings()).triage_priority_threshold
         self._log = get_logger(component="agents.brief")
 
     async def compile(self, as_of: datetime, desk: str, enabled: set[str] | None = None) -> Brief:
         signals = await self._registry.run(as_of, enabled=enabled)
+        coverage_gaps = list(self._registry.last_coverage_gaps)
+        triage_scores = self._score_distribution(signals)
         self._log.info("brief.patterns", fired=len(signals), desk=desk)
         if not signals:
-            return Brief(as_of=as_of, desk=desk, items=[], nothing_material=True)
+            return Brief(
+                as_of=as_of,
+                desk=desk,
+                items=[],
+                nothing_material=True,
+                dark_detectors=coverage_gaps,
+                triage_scores=triage_scores,
+                coverage_complete=not coverage_gaps,
+            )
 
-        high = [
-            signal
-            for signal in signals
-            if signal.priority >= self._triage_priority_threshold
-        ]
+        high = [signal for signal in signals if signal.priority >= self._triage_priority_threshold]
         self._log.info("brief.triage", kept=len(high), dropped=len(signals) - len(high))
 
         items: list[BriefItem] = []
@@ -116,9 +135,7 @@ class BriefCompiler:
             if opportunity.insufficient_evidence:
                 abstained.append(signal)
                 continue
-            items.append(
-                BriefItem(signal=signal, opportunity=opportunity, evidence=evidence)
-            )
+            items.append(BriefItem(signal=signal, opportunity=opportunity, evidence=evidence))
 
         self._log.info(
             "brief.deep_research",
@@ -135,13 +152,33 @@ class BriefCompiler:
             nothing_material=len(items) == 0,
             research_usage=usage,
             unresearched_signals=[
-                signal
-                for signal in signals
-                if signal.priority < self._triage_priority_threshold
+                signal for signal in signals if signal.priority < self._triage_priority_threshold
             ],
             deferred_signals=deferred,
             abstained_signals=abstained,
-            coverage_complete=not deferred,
+            dark_detectors=coverage_gaps,
+            triage_scores=triage_scores,
+            coverage_complete=not deferred and not coverage_gaps,
+        )
+
+    def _score_distribution(self, signals: list[Signal]) -> TriageScoreDistribution:
+        scores = sorted(signal.priority for signal in signals)
+        count = len(scores)
+        median = None
+        if count:
+            middle = count // 2
+            median = (
+                float(scores[middle]) if count % 2 else (scores[middle - 1] + scores[middle]) / 2.0
+            )
+        at_or_above = sum(score >= self._triage_priority_threshold for score in scores)
+        return TriageScoreDistribution(
+            threshold=self._triage_priority_threshold,
+            signal_count=count,
+            at_or_above_threshold=at_or_above,
+            below_threshold=count - at_or_above,
+            minimum=scores[0] if scores else None,
+            median=median,
+            maximum=scores[-1] if scores else None,
         )
 
     async def _snapshot(self) -> ModelUsageSnapshot:
@@ -153,6 +190,4 @@ class BriefCompiler:
         fallback = self._limits.cold_start_estimate
         if self._usage_log is None:
             return fallback
-        return await self._usage_log.estimate(
-            "research", self._researcher.model_version, fallback
-        )
+        return await self._usage_log.estimate("research", self._researcher.model_version, fallback)

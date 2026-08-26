@@ -40,9 +40,7 @@ class _ExactReplayAdapter:
     def __init__(self, doc: CanonicalDocument) -> None:
         self._doc = doc
 
-    async def fetch(
-        self, cursor: FetchCursor | None = None
-    ) -> AsyncIterator[CanonicalDocument]:
+    async def fetch(self, cursor: FetchCursor | None = None) -> AsyncIterator[CanonicalDocument]:
         del cursor
         yield self._doc
 
@@ -151,3 +149,37 @@ async def test_exact_duplicate_only_run_still_advances_cursor() -> None:
     assert result.persisted == 0
     assert result.batches_committed == 1
     assert result.final_cursor == "2"
+
+
+async def test_exact_dedupe_keeps_hash_identity_beyond_near_duplicate_window() -> None:
+    old_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+    recent_timestamp = datetime(2024, 2, 1, tzinfo=UTC)
+    old = CanonicalDocument(
+        source_id="replay",
+        doc_id="D-old",
+        published_at=old_timestamp,
+        recorded_at=old_timestamp,
+        title="Historical story",
+        body="An exact historical story that falls outside the shingle window.",
+        document_class=DocumentClass.NEWS_WIRE,
+    )
+    recent = old.model_copy(
+        update={
+            "doc_id": "D-recent",
+            "published_at": recent_timestamp,
+            "recorded_at": recent_timestamp,
+            "title": "Recent unrelated story",
+            "body": "A recent and unrelated update.",
+        }
+    )
+    store = InMemoryDocumentStore()
+    await store.commit_batch(
+        [old, recent],
+        [],
+        FetchCursor(source_id="replay", position="1", updated_at=recent_timestamp),
+    )
+
+    result = await IngestPipeline(store).run(_ExactReplayAdapter(old))
+
+    assert result.exact_duplicates == 1
+    assert result.persisted == 0

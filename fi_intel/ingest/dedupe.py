@@ -68,19 +68,27 @@ class DedupeIndex:
 
     def __init__(self, threshold: float = NEAR_DUP_THRESHOLD) -> None:
         self._threshold = threshold
-        self._by_hash: dict[str, CanonicalDocument] = {}
+        self._seen_hashes: set[str] = set()
+        self._by_id: dict[str, CanonicalDocument] = {}
         self._shingles: dict[str, frozenset[tuple[str, ...]]] = {}
 
     def load(self, docs: list[CanonicalDocument]) -> None:
         """Seed from already-persisted documents (resume path)."""
         for doc in docs:
-            self._by_hash.setdefault(doc.content_hash(), doc)
+            content_hash = doc.content_hash()
+            self._seen_hashes.add(content_hash)
+            self._by_id.setdefault(doc.doc_id, doc)
             self._shingles.setdefault(doc.doc_id, _doc_shingles(doc))
+
+    def load_hashes(self, content_hashes: set[str]) -> None:
+        """Seed exact-dedupe identity without retaining historical document text."""
+
+        self._seen_hashes.update(content_hashes)
 
     def classify(self, doc: CanonicalDocument) -> CanonicalDocument | DuplicateVerdict | None:
         """Return the doc if novel, a verdict if near-dup, None if exact dup."""
         content_hash = doc.content_hash()
-        if content_hash in self._by_hash:
+        if content_hash in self._seen_hashes:
             return None
 
         shingles = _doc_shingles(doc)
@@ -90,16 +98,11 @@ class DedupeIndex:
             score = jaccard(shingles, seen_shingles)
             if score > best_score:
                 best_score = score
-                best = self._by_hash_value(seen_id)
+                best = self._by_id.get(seen_id)
         if best is not None and best_score >= self._threshold:
             return DuplicateVerdict(doc=doc, canonical=best, similarity=best_score)
 
-        self._by_hash[content_hash] = doc
+        self._seen_hashes.add(content_hash)
+        self._by_id[doc.doc_id] = doc
         self._shingles[doc.doc_id] = shingles
         return doc
-
-    def _by_hash_value(self, doc_id: str) -> CanonicalDocument | None:
-        for doc in self._by_hash.values():
-            if doc.doc_id == doc_id:
-                return doc
-        return None

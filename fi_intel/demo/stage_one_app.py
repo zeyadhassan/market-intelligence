@@ -1,0 +1,322 @@
+"""Runnable, service-free Stage 1 subscription product demonstration."""
+
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from uuid import uuid4
+
+from fastapi import FastAPI
+
+from fi_intel.api.app import create_app
+from fi_intel.api.auth import (
+    AuthenticationError,
+    Authenticator,
+    AuthorizationError,
+    RequestPrincipal,
+    VerifiedToken,
+)
+from fi_intel.api.models import (
+    OpportunityEvidenceView,
+    OpportunityResultView,
+    ResultEvaluationReceipt,
+    ResultEvaluationRequest,
+    TopicResultsView,
+    TopicSubscriptionUpdate,
+    TopicSubscriptionView,
+    TopicTagView,
+)
+from fi_intel.api.service import InMemoryAnalystService, ResourceNotFoundError
+from fi_intel.api.stage_one_page import STAGE_ONE_FIXTURE_HTML
+from fi_intel.demo.runner import POCDemoArtifacts, run_poc_demo
+from fi_intel.retrieval.entitlement import Principal, Side
+
+DEMO_TOKEN = "stage-one-demo"  # noqa: S105 - fixed credential for localhost fixture app only
+DEMO_PRINCIPAL_ID = "stage-one-demo-analyst"
+DEMO_DESK = "fi_gcc"
+FIXTURE_NOTICE = "Synthetic deterministic fixture - not a production quality or coverage estimate."
+
+
+@dataclass(frozen=True)
+class _TopicDefinition:
+    topic_id: str
+    label: str
+    description: str
+    patterns: frozenset[str]
+
+
+_TOPICS = (
+    _TopicDefinition(
+        topic_id="upcoming-maturities",
+        label="Upcoming maturities",
+        description="Funding needs where a material maturity has no announced refinancing.",
+        patterns=frozenset({"maturity_wall_no_refi"}),
+    ),
+    _TopicDefinition(
+        topic_id="issuance-programmes",
+        label="New funding programmes",
+        description="Approved programmes that may create a future issuance window.",
+        patterns=frozenset({"board_approved_issuance_programme"}),
+    ),
+    _TopicDefinition(
+        topic_id="ratings-capital-pressure",
+        label="Rating and capital pressure",
+        description="Rating deterioration combined with a material capital movement.",
+        patterns=frozenset({"negative_rating_action_with_capital_decline"}),
+    ),
+    _TopicDefinition(
+        topic_id="treasury-leadership",
+        label="Treasury leadership changes",
+        description="Senior treasury changes that may open a timely coverage conversation.",
+        patterns=frozenset({"leadership_change_treasury"}),
+    ),
+)
+_TOPICS_BY_ID = {topic.topic_id: topic for topic in _TOPICS}
+_TOPIC_BY_PATTERN = {pattern: topic.topic_id for topic in _TOPICS for pattern in topic.patterns}
+_FRESHNESS_REASONS = {
+    "maturity_wall_no_refi": (
+        "New in the selected analysis window: the maturity is inside the governed horizon and no "
+        "refinancing announcement was found in the fixture evidence."
+    ),
+    "board_approved_issuance_programme": (
+        "New in the selected analysis window: an approved programme has documented capacity and "
+        "is not yet marked as marketed."
+    ),
+    "negative_rating_action_with_capital_decline": (
+        "New in the selected analysis window: the rating and capital facts jointly crossed the "
+        "topic's materiality threshold."
+    ),
+    "leadership_change_treasury": (
+        "Detected in the selected analysis window, but only results above the visible triage "
+        "threshold are surfaced."
+    ),
+}
+
+
+class _DemoTokenVerifier:
+    async def verify(self, credential: str) -> VerifiedToken:
+        if credential != DEMO_TOKEN:
+            raise AuthenticationError("invalid Stage 1 demo token")
+        return VerifiedToken(subject=DEMO_PRINCIPAL_ID, issuer="fi-intel-stage-one-local")
+
+
+class _DemoIdentityDirectory:
+    async def resolve(self, subject: str) -> RequestPrincipal | None:
+        if subject != DEMO_PRINCIPAL_ID:
+            return None
+        return RequestPrincipal(
+            subject=subject,
+            principal=Principal(
+                principal_id=DEMO_PRINCIPAL_ID,
+                entitlement_group="poc-fixture-public",
+                side=Side.PUBLIC,
+            ),
+            desks=frozenset({DEMO_DESK}),
+            roles=frozenset({"analyst"}),
+            purposes=frozenset({"market_intelligence"}),
+        )
+
+    async def close(self) -> None:
+        return None
+
+
+class StageOneDemoService:
+    """In-memory subscriptions and results backed by the packaged POC analysis."""
+
+    def __init__(self) -> None:
+        self._subscriptions: dict[str, dict[str, datetime]] = {}
+        self._analysis_lock = asyncio.Lock()
+        self._artifacts: POCDemoArtifacts | None = None
+        self._results_by_topic: dict[str, tuple[OpportunityResultView, ...]] = {}
+        self._results_by_id: dict[str, OpportunityResultView] = {}
+        self._latest_evaluations: dict[tuple[str, str], str] = {}
+        self.evaluation_events: list[ResultEvaluationReceipt] = []
+
+    @staticmethod
+    def _authorize(principal: RequestPrincipal) -> str:
+        principal.require_role("analyst", "reviewer", "admin")
+        principal.require_desk(DEMO_DESK)
+        return principal.principal.principal_id
+
+    @staticmethod
+    def _topic(topic_id: str) -> _TopicDefinition:
+        topic = _TOPICS_BY_ID.get(topic_id)
+        if topic is None:
+            raise ResourceNotFoundError(f"unknown topic {topic_id!r}")
+        return topic
+
+    async def list_topics(self, principal: RequestPrincipal) -> list[TopicTagView]:
+        principal_id = self._authorize(principal)
+        active = self._subscriptions.get(principal_id, {})
+        return [
+            TopicTagView(
+                topic_id=topic.topic_id,
+                label=topic.label,
+                description=topic.description,
+                subscribed=topic.topic_id in active,
+            )
+            for topic in _TOPICS
+        ]
+
+    async def list_subscriptions(self, principal: RequestPrincipal) -> list[TopicSubscriptionView]:
+        principal_id = self._authorize(principal)
+        return [
+            TopicSubscriptionView(topic_id=topic_id, active=True, updated_at=updated_at)
+            for topic_id, updated_at in sorted(self._subscriptions.get(principal_id, {}).items())
+        ]
+
+    async def update_subscription(
+        self,
+        principal: RequestPrincipal,
+        topic_id: str,
+        request: TopicSubscriptionUpdate,
+    ) -> TopicSubscriptionView:
+        principal_id = self._authorize(principal)
+        self._topic(topic_id)
+        now = datetime.now(UTC)
+        subscriptions = self._subscriptions.setdefault(principal_id, {})
+        if request.active:
+            subscriptions[topic_id] = now
+        else:
+            subscriptions.pop(topic_id, None)
+        return TopicSubscriptionView(topic_id=topic_id, active=request.active, updated_at=now)
+
+    async def get_topic_results(
+        self, principal: RequestPrincipal, topic_id: str, *, refresh: bool = False
+    ) -> TopicResultsView:
+        del refresh
+        principal_id = self._authorize(principal)
+        topic = self._topic(topic_id)
+        if topic_id not in self._subscriptions.get(principal_id, {}):
+            raise AuthorizationError("subscribe to the topic before requesting its daily results")
+        await self._ensure_analysis()
+        artifacts = self._artifacts
+        if artifacts is None:  # pragma: no cover - guarded by _ensure_analysis
+            raise RuntimeError("Stage 1 fixture analysis did not initialize")
+        results = tuple(
+            result.model_copy(
+                update={
+                    "latest_evaluation": self._latest_evaluations.get(
+                        (principal_id, result.result_id)
+                    )
+                }
+            )
+            for result in self._results_by_topic.get(topic_id, ())
+        )
+        coverage_state = "complete" if artifacts.report.brief.coverage_complete else "incomplete"
+        opportunity_label = "opportunity" if len(results) == 1 else "opportunities"
+        message = (
+            f"{len(results)} fresh {opportunity_label} found"
+            if results
+            else "Analysis complete - nothing new"
+        )
+        return TopicResultsView(
+            topic_id=topic_id,
+            label=topic.label,
+            analysis_status="complete",
+            coverage_state=coverage_state,
+            as_of=artifacts.report.as_of,
+            message=message,
+            mode="fixture",
+            scope_notice=FIXTURE_NOTICE,
+            results=results,
+        )
+
+    async def evaluate_result(
+        self,
+        principal: RequestPrincipal,
+        result_id: str,
+        request: ResultEvaluationRequest,
+    ) -> ResultEvaluationReceipt:
+        principal_id = self._authorize(principal)
+        await self._ensure_analysis()
+        result = self._results_by_id.get(result_id)
+        if result is None:
+            raise ResourceNotFoundError(f"unknown result {result_id!r}")
+        if result.topic_id not in self._subscriptions.get(principal_id, {}):
+            raise AuthorizationError("subscribe to the result topic before evaluating it")
+        receipt = ResultEvaluationReceipt(
+            evaluation_id=str(uuid4()),
+            result_id=result_id,
+            verdict=request.verdict,
+            recorded_at=datetime.now(UTC),
+        )
+        self.evaluation_events.append(receipt)
+        self._latest_evaluations[(principal_id, result_id)] = request.verdict.value
+        return receipt
+
+    async def _ensure_analysis(self) -> None:
+        if self._artifacts is not None:
+            return
+        async with self._analysis_lock:
+            if self._artifacts is not None:
+                return
+            artifacts = await run_poc_demo()
+            documents = {document.doc_id: document for document in artifacts.documents}
+            results_by_topic: dict[str, list[OpportunityResultView]] = {
+                topic.topic_id: [] for topic in _TOPICS
+            }
+            results_by_id: dict[str, OpportunityResultView] = {}
+            coverage_state = (
+                "complete" if artifacts.report.brief.coverage_complete else "incomplete"
+            )
+            for item in artifacts.report.brief.items:
+                topic_id = _TOPIC_BY_PATTERN.get(item.signal.pattern)
+                if topic_id is None:
+                    continue
+                evidence = tuple(
+                    OpportunityEvidenceView(
+                        evidence_id=evidence_item.evidence_id,
+                        title=(
+                            documents[evidence_item.doc_id].title
+                            if evidence_item.doc_id in documents
+                            else evidence_item.doc_id
+                        ),
+                        quote=evidence_item.excerpt,
+                        source_id=evidence_item.source_id,
+                        source_url=evidence_item.source_url,
+                        published_at=(
+                            documents[evidence_item.doc_id].published_at
+                            if evidence_item.doc_id in documents
+                            else None
+                        ),
+                    )
+                    for evidence_item in item.evidence
+                )
+                result = OpportunityResultView(
+                    result_id=item.signal.signal_id,
+                    topic_id=topic_id,
+                    title=item.opportunity.title,
+                    entity_name=item.signal.entity_name,
+                    summary=item.opportunity.summary,
+                    freshness_reason=_FRESHNESS_REASONS[item.signal.pattern],
+                    lifecycle_state="new",
+                    score=item.signal.opportunity_score,
+                    as_of=item.signal.as_of,
+                    changed_at=item.signal.updated_at or item.signal.as_of,
+                    coverage_state=coverage_state,
+                    falsifier=item.opportunity.falsifier,
+                    evidence=evidence,
+                )
+                results_by_topic[topic_id].append(result)
+                results_by_id[result.result_id] = result
+            self._artifacts = artifacts
+            self._results_by_topic = {
+                topic_id: tuple(sorted(results, key=lambda item: item.score, reverse=True))
+                for topic_id, results in results_by_topic.items()
+            }
+            self._results_by_id = results_by_id
+
+
+def create_stage_one_demo_app() -> FastAPI:
+    """Uvicorn factory for the localhost-only synthetic Stage 1 demo."""
+
+    directory = _DemoIdentityDirectory()
+    return create_app(
+        Authenticator(_DemoTokenVerifier(), directory),
+        InMemoryAnalystService(),
+        stage_one_service=StageOneDemoService(),
+        stage_one_html=STAGE_ONE_FIXTURE_HTML,
+        owned_resources=(directory,),
+    )

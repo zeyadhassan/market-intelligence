@@ -21,6 +21,7 @@ from fi_intel.demo.models import POCDemoReport, POCEvaluation, POCStageSummary
 from fi_intel.governance.audit import InMemoryAuditLog
 from fi_intel.governance.model_usage import ModelCallEstimate, ModelCapacityLimits
 from fi_intel.governance.policy import GraphAccessContext
+from fi_intel.graph.coverage import DetectorCoverageGap
 from fi_intel.graph.registry import PatternRegistry
 from fi_intel.graph.signals import Signal
 from fi_intel.graph.writer import AssertionWriter
@@ -93,6 +94,11 @@ class _LocalPatternRegistry(PatternRegistry):
         self._poc_detector = detector
         self._poc_assertions = assertions
         self._poc_access = access
+        # PatternRegistry normally initializes this state in its graph-backed
+        # constructor. The service-free registry intentionally does not create
+        # a GraphClient, but BriefCompiler still consumes the same coverage-gap
+        # port after every run.
+        self._last_coverage_gaps: list[DetectorCoverageGap] = []
 
     @property
     def access(self) -> GraphAccessContext:

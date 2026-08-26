@@ -30,13 +30,29 @@ class CoverageDecision(BaseModel):
     checked_source_ids: tuple[str, ...] = ()
 
 
+class DetectorCoverageGap(BaseModel):
+    """One detector suppressed by incomplete operational coverage."""
+
+    model_config = ConfigDict(frozen=True)
+
+    pattern_name: str
+    entity_key: str | None = None
+    reasons: tuple[str, ...]
+    checked_source_ids: tuple[str, ...] = ()
+
+
 @runtime_checkable
 class CoverageProvider(Protocol):
+    async def preflight(self, request: CoverageRequest) -> CoverageDecision: ...
+
     async def assess(self, request: CoverageRequest) -> CoverageDecision: ...
 
 
 class FailClosedCoverageProvider:
     """Default used when computed coverage has not been configured."""
+
+    async def preflight(self, request: CoverageRequest) -> CoverageDecision:
+        return await self.assess(request)
 
     async def assess(self, request: CoverageRequest) -> CoverageDecision:
         return CoverageDecision(
@@ -50,6 +66,10 @@ class StaticCoverageProvider:
 
     def __init__(self, *, complete: bool, reason: str = "static fixture coverage") -> None:
         self._decision = CoverageDecision(complete=complete, reasons=(reason,))
+
+    async def preflight(self, request: CoverageRequest) -> CoverageDecision:
+        del request
+        return self._decision
 
     async def assess(self, request: CoverageRequest) -> CoverageDecision:
         del request
@@ -69,6 +89,27 @@ class SourceOperationsCoverageProvider:
         self._operations = operations
         self._required_source_ids = required_source_ids
         self._covered_entity_keys = covered_entity_keys
+
+    async def preflight(self, request: CoverageRequest) -> CoverageDecision:
+        """Report structurally dark detectors before any query returns rows."""
+
+        reasons: list[str] = []
+        checked: list[str] = []
+        if CoverageScope.DESK_ACCOUNT in request.scopes and not self._covered_entity_keys:
+            reasons.append("no desk account coverage universe is configured")
+        if CoverageScope.SOURCE_OPERATIONS in request.scopes:
+            required = self._required_source_ids.get(request.pattern_name, frozenset())
+            if not required:
+                reasons.append("no required source universe is configured")
+            unauthorized = required - request.allowed_source_ids
+            if unauthorized:
+                reasons.append(f"required sources are not authorized: {sorted(unauthorized)}")
+            checked.extend(sorted(required & request.allowed_source_ids))
+        return CoverageDecision(
+            complete=not reasons,
+            reasons=tuple(reasons),
+            checked_source_ids=tuple(checked),
+        )
 
     async def assess(self, request: CoverageRequest) -> CoverageDecision:
         reasons: list[str] = []

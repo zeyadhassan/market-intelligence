@@ -13,12 +13,18 @@ from fi_intel.api.models import (
     EvidenceSpanView,
     FeedbackReceipt,
     FeedbackRequest,
+    ResultEvaluationReceipt,
+    ResultEvaluationRequest,
     ReviewDecisionRequest,
     ReviewReceipt,
     RunView,
     SignalCloseReceipt,
     SignalCloseRequest,
     SignalView,
+    TopicResultsView,
+    TopicSubscriptionUpdate,
+    TopicSubscriptionView,
+    TopicTagView,
 )
 
 
@@ -85,6 +91,35 @@ class AnalystService(Protocol):
     async def ready(self) -> bool: ...
 
     async def close(self) -> None: ...
+
+
+@runtime_checkable
+class StageOneService(Protocol):
+    """Subscription-first product port used by the Stage 1 page."""
+
+    async def list_topics(self, principal: RequestPrincipal) -> list[TopicTagView]: ...
+
+    async def list_subscriptions(
+        self, principal: RequestPrincipal
+    ) -> list[TopicSubscriptionView]: ...
+
+    async def update_subscription(
+        self,
+        principal: RequestPrincipal,
+        topic_id: str,
+        request: TopicSubscriptionUpdate,
+    ) -> TopicSubscriptionView: ...
+
+    async def get_topic_results(
+        self, principal: RequestPrincipal, topic_id: str, *, refresh: bool = False
+    ) -> TopicResultsView: ...
+
+    async def evaluate_result(
+        self,
+        principal: RequestPrincipal,
+        result_id: str,
+        request: ResultEvaluationRequest,
+    ) -> ResultEvaluationReceipt: ...
 
 
 class InMemoryAnalystService:

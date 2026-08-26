@@ -17,6 +17,8 @@ from fi_intel.ingest.resolve import (
     ReferenceEntity,
     ResolutionStore,
     ResolverName,
+    merge_score,
+    name_token_idf,
     normalize_name,
     token_sort_ratio,
 )
@@ -145,6 +147,71 @@ def test_threshold_separates_variants_from_trap() -> None:
 
 
 @pytest.mark.parametrize(
+    ("mention", "candidate", "jurisdiction"),
+    [
+        ("Abu Dhabi Islamic Bank PJSC", "First Abu Dhabi Bank PJSC", "AE"),
+        ("National Bank of Bahrain B.S.C.", "Arab National Bank", "BH"),
+        ("Abu Dhabi Islamic Bank PJSC", "Dubai Islamic Bank PJSC", "AE"),
+    ],
+)
+async def test_real_gcc_confusing_names_queue_instead_of_merging(
+    mention: str, candidate: str, jurisdiction: str
+) -> None:
+    store = InMemoryResolutionStore()
+    store._reference["CANDIDATE"] = ReferenceEntity(  # noqa: SLF001
+        lei="CANDIDATE",
+        legal_name=candidate,
+        jurisdiction="SA" if candidate == "Arab National Bank" else "AE",
+        sector="bank",
+    )
+    document = CanonicalDocument(
+        doc_id="gcc-name-trap",
+        source_id="resolution-test",
+        published_at=datetime(2024, 1, 1, tzinfo=UTC),
+        recorded_at=datetime(2024, 1, 1, 1, tzinfo=UTC),
+        title=mention,
+        body=f"{mention} published an update.",
+        document_class=DocumentClass.NEWS_WIRE,
+        mentioned_names=(mention,),
+        metadata={"jurisdiction": jurisdiction, "sector": "bank"},
+    )
+
+    await EntityResolver(store).resolve_document(document)
+
+    assert await store.resolutions() == []
+    assert len(await store.queue()) == 1
+
+
+def test_idf_merge_score_requires_rare_token_agreement() -> None:
+    reference_names = [
+        "First Abu Dhabi Bank PJSC",
+        "Arab National Bank",
+        "Dubai Islamic Bank PJSC",
+        "Emirates NBD Bank PJSC",
+        "Qatar National Bank",
+        "Doha Bank",
+        "Al Rayan Bank",
+        "Saudi Awwal Bank",
+        "Bank Albilad",
+        "Bank Aljazira",
+        "Burgan Bank",
+        "National Bank of Kuwait",
+    ]
+    idf = name_token_idf(reference_names)
+    default = max(idf.values())
+
+    for left, right in (
+        ("First Abu Dhabi Bank PJSC", "Abu Dhabi Islamic Bank PJSC"),
+        ("Arab National Bank", "National Bank of Bahrain B.S.C."),
+        ("Abu Dhabi Islamic Bank PJSC", "Dubai Islamic Bank PJSC"),
+    ):
+        assert (
+            merge_score(normalize_name(left), normalize_name(right), idf, default)
+            < FUZZY_AUTO_MERGE_THRESHOLD
+        )
+
+
+@pytest.mark.parametrize(
     ("mention", "reference_name"),
     [
         ("Credit Suisse Group AG", "Credit Suisse AG"),
@@ -152,9 +219,7 @@ def test_threshold_separates_variants_from_trap() -> None:
         ("Gulf Meridian Holdings", "Gulf Meridian Bank"),
     ],
 )
-async def test_holdco_opco_pairs_always_queue(
-    mention: str, reference_name: str
-) -> None:
+async def test_holdco_opco_pairs_always_queue(mention: str, reference_name: str) -> None:
     store = InMemoryResolutionStore()
     store._reference["TRAP-LEI"] = ReferenceEntity(  # noqa: SLF001
         lei="TRAP-LEI",

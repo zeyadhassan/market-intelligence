@@ -11,6 +11,7 @@ from fi_intel.graph.client import GraphClient
 from fi_intel.graph.coverage import (
     CoverageProvider,
     CoverageRequest,
+    DetectorCoverageGap,
     FailClosedCoverageProvider,
     StaticCoverageProvider,
 )
@@ -137,6 +138,7 @@ class PatternRegistry:
         else:
             self._coverage = FailClosedCoverageProvider()
         self._precision = precision or UnavailablePatternPrecisionProvider()
+        self._last_coverage_gaps: list[DetectorCoverageGap] = []
         self._authorization_scope = signal_authorization_scope(
             access.principal.entitlement_group,
             access.principal.side.value,
@@ -154,6 +156,12 @@ class PatternRegistry:
     def registered_patterns(self) -> tuple[Pattern, ...]:
         """Public read-only pattern metadata for evaluation and tooling."""
         return tuple(self._patterns[name] for name in sorted(self._patterns))
+
+    @property
+    def last_coverage_gaps(self) -> tuple[DetectorCoverageGap, ...]:
+        """Coverage gates observed by the most recent evaluate/run call."""
+
+        return tuple(self._last_coverage_gaps)
 
     async def evaluate(
         self,
@@ -202,12 +210,17 @@ class PatternRegistry:
         if window_days is not None and window_days < 1:
             raise ValueError("window_days must be >= 1")
         active = self._active_patterns(enabled)
+        self._last_coverage_gaps = []
         signals: list[Signal] = []
         async with self._client._driver.session() as session:  # noqa: SLF001
             for pattern in active:
+                preflight_gap = await self._coverage_preflight(pattern, as_of)
+                if preflight_gap is not None:
+                    self._record_coverage_gap(preflight_gap)
+                    continue
                 precision = await self._precision.estimate(
                     pattern.name,
-                    pattern.version,
+                    pattern.precision_lineage,
                     as_of,
                     self._access,
                 )
@@ -223,32 +236,17 @@ class PatternRegistry:
                         "freshness_days": pattern.freshness_days,
                         "allowed_source_ids": sorted(self._access.allowed_source_ids),
                         "side": self._access.principal.side.value,
+                        **pattern.query_parameters,
                     },
                 )
                 rows = [record.data() async for record in result]
                 grouped: dict[str, list[_PatternCandidate]] = {}
                 for row in rows:
                     candidate = await self._candidate(pattern, row)
-                    if pattern.computed_coverage_scopes:
-                        coverage = await self._coverage.assess(
-                            CoverageRequest(
-                                pattern_name=pattern.name,
-                                entity_key=candidate.entity_key,
-                                as_of=as_of,
-                                freshness_days=pattern.freshness_days,
-                                allowed_source_ids=self._access.allowed_source_ids,
-                                scopes=pattern.computed_coverage_scopes,
-                            )
-                        )
-                        if not coverage.complete:
-                            self._log.info(
-                                "pattern.coverage_incomplete",
-                                pattern=pattern.name,
-                                entity_key=candidate.entity_key,
-                                reasons=coverage.reasons,
-                                checked_source_ids=coverage.checked_source_ids,
-                            )
-                            continue
+                    coverage_gap = await self._candidate_coverage_gap(pattern, candidate, as_of)
+                    if coverage_gap is not None:
+                        self._record_coverage_gap(coverage_gap)
+                        continue
                     grouped.setdefault(candidate.signal_id, []).append(candidate)
                 seen = set(grouped)
                 for candidates in grouped.values():
@@ -284,6 +282,66 @@ class PatternRegistry:
                 )
         signals.sort(key=lambda signal: signal.opportunity_score, reverse=True)
         return signals
+
+    async def _coverage_preflight(
+        self, pattern: Pattern, as_of: datetime
+    ) -> DetectorCoverageGap | None:
+        if not pattern.computed_coverage_scopes:
+            return None
+        decision = await self._coverage.preflight(
+            CoverageRequest(
+                pattern_name=pattern.name,
+                entity_key="",
+                as_of=as_of,
+                freshness_days=pattern.freshness_days,
+                allowed_source_ids=self._access.allowed_source_ids,
+                scopes=pattern.computed_coverage_scopes,
+            )
+        )
+        if decision.complete:
+            return None
+        return DetectorCoverageGap(
+            pattern_name=pattern.name,
+            reasons=decision.reasons,
+            checked_source_ids=decision.checked_source_ids,
+        )
+
+    async def _candidate_coverage_gap(
+        self,
+        pattern: Pattern,
+        candidate: _PatternCandidate,
+        as_of: datetime,
+    ) -> DetectorCoverageGap | None:
+        if not pattern.computed_coverage_scopes:
+            return None
+        decision = await self._coverage.assess(
+            CoverageRequest(
+                pattern_name=pattern.name,
+                entity_key=candidate.entity_key,
+                as_of=as_of,
+                freshness_days=pattern.freshness_days,
+                allowed_source_ids=self._access.allowed_source_ids,
+                scopes=pattern.computed_coverage_scopes,
+            )
+        )
+        if decision.complete:
+            return None
+        return DetectorCoverageGap(
+            pattern_name=pattern.name,
+            entity_key=candidate.entity_key,
+            reasons=decision.reasons,
+            checked_source_ids=decision.checked_source_ids,
+        )
+
+    def _record_coverage_gap(self, gap: DetectorCoverageGap) -> None:
+        self._last_coverage_gaps.append(gap)
+        self._log.info(
+            "pattern.coverage_incomplete",
+            pattern=gap.pattern_name,
+            entity_key=gap.entity_key,
+            reasons=gap.reasons,
+            checked_source_ids=gap.checked_source_ids,
+        )
 
     def _active_patterns(self, enabled: set[str] | None) -> tuple[Pattern, ...]:
         if enabled is not None:
@@ -395,6 +453,7 @@ class PatternRegistry:
             lifecycle_state=SignalLifecycleState.NEW,
             historical_precision=precision.rate if precision is not None else None,
             precision_samples=precision.samples if precision is not None else 0,
+            precision_weight_scale=precision.weight_scale if precision is not None else None,
         )
         decision = classify_lifecycle(previous, preliminary_base, as_of)
         base_score, opportunity_score, contributions = score_signal(
@@ -408,6 +467,7 @@ class PatternRegistry:
             lifecycle_state=decision.state,
             historical_precision=precision.rate if precision is not None else None,
             precision_samples=precision.samples if precision is not None else 0,
+            precision_weight_scale=precision.weight_scale if precision is not None else None,
         )
         return (
             Signal(

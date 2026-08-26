@@ -36,6 +36,7 @@ class MaterialityThreshold(BaseModel):
     operator: MaterialityOperator
     value: float
     unit: str = Field(min_length=1)
+    query_expression: str = Field(min_length=1)
 
 
 class CoveragePrerequisite(BaseModel):
@@ -54,6 +55,7 @@ class Pattern(BaseModel):
 
     name: str = Field(min_length=1)
     version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
+    precision_lineage: str = Field(pattern=r"^\d+$")
     hypothesis: str = Field(min_length=1)
     eligible_outcome_kinds: frozenset[str] = Field(min_length=1)
     required_claim_types: frozenset[EdgeType] = Field(min_length=1)
@@ -65,16 +67,51 @@ class Pattern(BaseModel):
     material_arguments: tuple[str, ...] = Field(min_length=1)
     priority: int = Field(ge=0, le=100)
     historical_precision: float | None = Field(default=None, ge=0.0, le=1.0)
+    allowed_currencies: tuple[str, ...] = ()
+    default_materiality_score: float = Field(default=0.0, ge=0.0, le=1.0)
     owner: str = Field(min_length=1)
     reviewer: str = Field(min_length=1)
     deployment_state: PatternDeploymentState
     authorization_domain: str = Field(min_length=1)
     query_fixture_ids: tuple[str, ...] = Field(min_length=1)
-    # Parameters: as_of, window_days, freshness_days, allowed_source_ids, side.
-    cypher: str = Field(min_length=1)
+    # Governed markers are rendered from metadata; callers cannot supply
+    # materiality or currency literals independently of the reviewed fields.
+    cypher_template: str = Field(min_length=1)
+
+    @property
+    def cypher(self) -> str:
+        materiality = " AND ".join(
+            f"({threshold.query_expression}) {_operator_cypher(threshold.operator)} "
+            f"$materiality_threshold_{index}"
+            for index, threshold in enumerate(self.materiality_thresholds)
+        )
+        query = self.cypher_template.replace("{materiality}", f"AND {materiality}")
+
+        def currency_scope(match: re.Match[str]) -> str:
+            if not self.allowed_currencies:
+                raise ValueError("currency marker requires allowed_currencies metadata")
+            return f"AND {match.group(1)}.fact_currency IN $allowed_currencies"
+
+        query = re.sub(r"\{currency_scope:(\w+)\}", currency_scope, query)
+        return _build(query)
+
+    @property
+    def query_parameters(self) -> dict[str, object]:
+        parameters: dict[str, object] = {
+            f"materiality_threshold_{index}": threshold.value
+            for index, threshold in enumerate(self.materiality_thresholds)
+        }
+        parameters["allowed_currencies"] = [
+            currency.casefold() for currency in self.allowed_currencies
+        ]
+        parameters["default_materiality_score"] = self.default_materiality_score
+        return parameters
 
     @model_validator(mode="after")
     def _validate_query_contract(self) -> "Pattern":
+        _validate_governed_markers(self)
+        if self.precision_lineage != self.version.split(".", 1)[0]:
+            raise ValueError("precision lineage must match the compatible semver major")
         required_columns = {
             "_assertion_ids",
             "_source_ids",
@@ -96,13 +133,9 @@ class Pattern(BaseModel):
         )
         if missing_typed_attributes:
             raise ValueError(f"pattern query omits typed attributes: {missing_typed_attributes}")
-        unprojected_attributes = sorted(
-            self.required_attributes - PROJECTED_PROPERTY_NAMES
-        )
+        unprojected_attributes = sorted(self.required_attributes - PROJECTED_PROPERTY_NAMES)
         if unprojected_attributes:
-            raise ValueError(
-                f"pattern references unprojected attributes: {unprojected_attributes}"
-            )
+            raise ValueError(f"pattern references unprojected attributes: {unprojected_attributes}")
         coverage_attributes = {
             attribute
             for prerequisite in self.coverage_prerequisites
@@ -130,6 +163,20 @@ class Pattern(BaseModel):
             for prerequisite in self.coverage_prerequisites
             if prerequisite.scope is not CoverageScope.ASSERTION
         )
+
+
+def _validate_governed_markers(pattern: Pattern) -> None:
+    if pattern.cypher_template.count("{materiality}") != 1:
+        raise ValueError("pattern query must contain one governed materiality marker")
+    currency_marker = "{currency_scope:" in pattern.cypher_template
+    if pattern.allowed_currencies and not currency_marker:
+        raise ValueError("currency-scoped pattern query omits governed currency marker")
+    if not pattern.allowed_currencies and currency_marker:
+        raise ValueError("currency marker requires an explicit allowed currency scope")
+    if len(set(pattern.allowed_currencies)) != len(pattern.allowed_currencies):
+        raise ValueError("allowed currencies must be unique")
+    if any(not re.fullmatch(r"[A-Z]{3}", value) for value in pattern.allowed_currencies):
+        raise ValueError("allowed currencies must be uppercase ISO 4217 codes")
 
 
 def _pin(alias: str) -> str:
@@ -160,15 +207,25 @@ def _build(query: str) -> str:
     return re.sub(r"\{access:(\w+)\}", lambda match: _access(match.group(1)), query)
 
 
+def _operator_cypher(operator: MaterialityOperator) -> str:
+    return {
+        MaterialityOperator.GREATER_THAN_OR_EQUAL: ">=",
+        MaterialityOperator.LESS_THAN_OR_EQUAL: "<=",
+        MaterialityOperator.EQUAL: "=",
+    }[operator]
+
+
 _OWNER = "FIG Signals"
 _REVIEWER = "FIG Model Risk"
 _AUTHORIZATION_DOMAIN = "caller-source-grants-and-barrier"
 _MANDATE_OUTCOMES = frozenset({"mandate_announced"})
+_USD_AMOUNT_SCOPE = ("USD",)
 
 
 MATURITY_WALL = Pattern(
     name="maturity_wall_no_refi",
-    version="3.0.0",
+    version="3.1.0",
+    precision_lineage="3",
     hypothesis=(
         "A material near-term maturity with complete refinancing coverage can precede "
         "a DCM mandate."
@@ -184,6 +241,7 @@ MATURITY_WALL = Pattern(
             operator=MaterialityOperator.GREATER_THAN_OR_EQUAL,
             value=250.0,
             unit="USD million",
+            query_expression="a.fact_amount_usd_mn",
         ),
     ),
     coverage_prerequisites=(
@@ -196,12 +254,13 @@ MATURITY_WALL = Pattern(
     material_arguments=("instrument", "currency"),
     priority=80,
     historical_precision=None,
+    allowed_currencies=_USD_AMOUNT_SCOPE,
     owner=_OWNER,
     reviewer=_REVIEWER,
     deployment_state=PatternDeploymentState.ACTIVE,
     authorization_domain=_AUTHORIZATION_DOMAIN,
     query_fixture_ids=("gulf_meridian_dcm", "steady_state_decoy"),
-    cypher=_build(
+    cypher_template=(
         """
         MATCH (org:Entity {node_type: 'Organization'})
         MATCH (a:Assertion {predicate: 'MATURES_ON'})-[:SUBJECT]->(inst:Entity)
@@ -210,8 +269,8 @@ MATURITY_WALL = Pattern(
         MATCH (ai)-[:OBJECT]->(inst)
         WHERE {pin:a} AND {pin:ai} AND {fresh:a} AND {fresh:ai}
           AND {access:a} AND {access:ai}
-          AND a.fact_amount_usd_mn >= 250.0
-          AND a.fact_currency = 'usd'
+          {materiality}
+          {currency_scope:a}
           AND datetime(a.valid_from) <= datetime($as_of) + duration({days: $window_days})
           AND datetime(a.valid_from) >= datetime($as_of)
           AND NOT EXISTS {
@@ -228,8 +287,9 @@ MATURITY_WALL = Pattern(
                [a.barrier_side, ai.barrier_side] AS _barrier_sides,
                CASE WHEN a.recorded_at >= ai.recorded_at
                     THEN a.recorded_at ELSE ai.recorded_at END AS _latest_recorded_at,
-               CASE WHEN a.fact_amount_usd_mn >= 500.0 THEN 1.0
-                    ELSE a.fact_amount_usd_mn / 500.0 END AS _materiality_score,
+               CASE WHEN a.fact_amount_usd_mn >= $materiality_threshold_0 * 2.0 THEN 1.0
+                    ELSE a.fact_amount_usd_mn / ($materiality_threshold_0 * 2.0)
+                    END AS _materiality_score,
                (a.confidence + ai.confidence) / 2.0 AS _evidence_confidence
         """
     ),
@@ -237,7 +297,8 @@ MATURITY_WALL = Pattern(
 
 RATING_PLUS_CAPITAL = Pattern(
     name="negative_rating_action_with_capital_decline",
-    version="3.0.0",
+    version="3.1.0",
+    precision_lineage="3",
     hypothesis=(
         "A material CET1 decline near a negative outlook action can precede financing activity."
     ),
@@ -252,6 +313,7 @@ RATING_PLUS_CAPITAL = Pattern(
             operator=MaterialityOperator.GREATER_THAN_OR_EQUAL,
             value=0.5,
             unit="percentage points",
+            query_expression="cm.fact_prior - cm.fact_value",
         ),
     ),
     coverage_prerequisites=(
@@ -269,7 +331,7 @@ RATING_PLUS_CAPITAL = Pattern(
     deployment_state=PatternDeploymentState.ACTIVE,
     authorization_domain=_AUTHORIZATION_DOMAIN,
     query_fixture_ids=("gulf_meridian_dcm", "steady_state_decoy"),
-    cypher=_build(
+    cypher_template=(
         """
         MATCH (org:Entity {node_type: 'Organization'})
         MATCH (ra:Assertion {predicate: 'RATING_ACTION_ON'})-[:SUBJECT|OBJECT]->(org)
@@ -280,7 +342,7 @@ RATING_PLUS_CAPITAL = Pattern(
           AND ra.fact_rating_type = 'outlook'
           AND cm.fact_direction = 'down'
           AND cm.fact_metric = 'cet1'
-          AND cm.fact_prior - cm.fact_value >= 0.5
+          {materiality}
           AND abs(duration.inDays(date(cm.valid_from), date(ra.valid_from)).days) <= 120
         RETURN DISTINCT org.key AS entity_key, org.display_name AS entity_name,
                ra.fact_rating_type AS rating_type, cm.fact_metric AS metric,
@@ -291,8 +353,9 @@ RATING_PLUS_CAPITAL = Pattern(
                [ra.barrier_side, cm.barrier_side] AS _barrier_sides,
                CASE WHEN ra.recorded_at >= cm.recorded_at
                     THEN ra.recorded_at ELSE cm.recorded_at END AS _latest_recorded_at,
-               CASE WHEN cm.fact_prior - cm.fact_value >= 2.0 THEN 1.0
-                    ELSE (cm.fact_prior - cm.fact_value) / 2.0 END AS _materiality_score,
+               CASE WHEN cm.fact_prior - cm.fact_value >= $materiality_threshold_0 * 4.0
+                    THEN 1.0 ELSE (cm.fact_prior - cm.fact_value)
+                    / ($materiality_threshold_0 * 4.0) END AS _materiality_score,
                (ra.confidence + cm.confidence) / 2.0 AS _evidence_confidence
         """
     ),
@@ -300,7 +363,8 @@ RATING_PLUS_CAPITAL = Pattern(
 
 LEADERSHIP = Pattern(
     name="leadership_change_treasury",
-    version="3.0.0",
+    version="3.1.0",
+    precision_lineage="3",
     hypothesis=(
         "A fresh treasury leadership change can create a time-sensitive coverage opportunity."
     ),
@@ -311,10 +375,11 @@ LEADERSHIP = Pattern(
     prediction_horizon_days=180,
     materiality_thresholds=(
         MaterialityThreshold(
-            attribute="covered_role_change",
-            operator=MaterialityOperator.EQUAL,
-            value=1.0,
-            unit="boolean",
+            attribute="account_tier_score",
+            operator=MaterialityOperator.GREATER_THAN_OR_EQUAL,
+            value=0.0,
+            unit="normalized covered-account tier",
+            query_expression="coalesce(org.account_tier_score, $default_materiality_score)",
         ),
     ),
     coverage_prerequisites=(
@@ -328,17 +393,19 @@ LEADERSHIP = Pattern(
     material_arguments=("role",),
     priority=60,
     historical_precision=None,
+    default_materiality_score=0.0,
     owner=_OWNER,
     reviewer=_REVIEWER,
     deployment_state=PatternDeploymentState.ACTIVE,
     authorization_domain=_AUTHORIZATION_DOMAIN,
     query_fixture_ids=("gulf_meridian_dcm",),
-    cypher=_build(
+    cypher_template=(
         """
         MATCH (a:Assertion {predicate: 'LEADERSHIP_CHANGE_AT'})
         MATCH (a)-[:OBJECT]->(org:Entity {node_type: 'Organization'})
         WHERE {pin:a} AND {fresh:a} AND {access:a}
           AND a.fact_role IN ['treasurer', 'cfo']
+          {materiality}
         RETURN org.key AS entity_key, org.display_name AS entity_name,
                a.fact_role AS role, a.source_doc_id AS doc,
                a.properties_json AS props,
@@ -347,7 +414,8 @@ LEADERSHIP = Pattern(
                [a.source_doc_id] AS _source_doc_ids,
                [a.barrier_side] AS _barrier_sides,
                a.recorded_at AS _latest_recorded_at,
-               1.0 AS _materiality_score,
+               coalesce(org.account_tier_score, $default_materiality_score)
+                   AS _materiality_score,
                a.confidence AS _evidence_confidence
         """
     ),
@@ -355,7 +423,8 @@ LEADERSHIP = Pattern(
 
 PROGRAMME = Pattern(
     name="board_approved_issuance_programme",
-    version="3.0.0",
+    version="3.1.0",
+    precision_lineage="3",
     hypothesis="A material approved but unmarketed issuance programme can precede a mandate.",
     eligible_outcome_kinds=_MANDATE_OUTCOMES,
     required_claim_types=frozenset({EdgeType.PROGRAMME_APPROVED_BY}),
@@ -368,6 +437,7 @@ PROGRAMME = Pattern(
             operator=MaterialityOperator.GREATER_THAN_OR_EQUAL,
             value=0.5,
             unit="USD billion",
+            query_expression="a.fact_limit_usd_bn",
         ),
     ),
     coverage_prerequisites=(
@@ -380,18 +450,19 @@ PROGRAMME = Pattern(
     material_arguments=("programme_key", "currency"),
     priority=60,
     historical_precision=None,
+    allowed_currencies=_USD_AMOUNT_SCOPE,
     owner=_OWNER,
     reviewer=_REVIEWER,
     deployment_state=PatternDeploymentState.ACTIVE,
     authorization_domain=_AUTHORIZATION_DOMAIN,
     query_fixture_ids=("gulf_meridian_dcm",),
-    cypher=_build(
+    cypher_template=(
         """
         MATCH (a:Assertion {predicate: 'PROGRAMME_APPROVED_BY'})-[:SUBJECT]->(programme)
         MATCH (a)-[:OBJECT]->(org:Entity {node_type: 'Organization'})
         WHERE {pin:a} AND {fresh:a} AND {access:a}
-          AND a.fact_limit_usd_bn >= 0.5
-          AND a.fact_currency = 'usd'
+          {materiality}
+          {currency_scope:a}
           AND a.fact_status = 'approved'
           AND a.fact_marketed = false
         RETURN org.key AS entity_key, org.display_name AS entity_name,
@@ -402,8 +473,9 @@ PROGRAMME = Pattern(
                [a.source_doc_id] AS _source_doc_ids,
                [a.barrier_side] AS _barrier_sides,
                a.recorded_at AS _latest_recorded_at,
-               CASE WHEN a.fact_limit_usd_bn >= 1.5 THEN 1.0
-                    ELSE a.fact_limit_usd_bn / 1.5 END AS _materiality_score,
+               CASE WHEN a.fact_limit_usd_bn >= $materiality_threshold_0 * 3.0 THEN 1.0
+                    ELSE a.fact_limit_usd_bn / ($materiality_threshold_0 * 3.0)
+                    END AS _materiality_score,
                a.confidence AS _evidence_confidence
         """
     ),
@@ -411,7 +483,8 @@ PROGRAMME = Pattern(
 
 AT1_CALL = Pattern(
     name="at1_call_approaching_no_refi",
-    version="3.0.0",
+    version="3.1.0",
+    precision_lineage="3",
     hypothesis=(
         "A material approaching AT1 call with complete refinancing coverage can precede issuance."
     ),
@@ -426,6 +499,7 @@ AT1_CALL = Pattern(
             operator=MaterialityOperator.GREATER_THAN_OR_EQUAL,
             value=250.0,
             unit="USD million",
+            query_expression="a.fact_amount_usd_mn",
         ),
     ),
     coverage_prerequisites=(
@@ -438,12 +512,13 @@ AT1_CALL = Pattern(
     material_arguments=("instrument", "instrument_class", "currency"),
     priority=65,
     historical_precision=None,
+    allowed_currencies=_USD_AMOUNT_SCOPE,
     owner=_OWNER,
     reviewer=_REVIEWER,
     deployment_state=PatternDeploymentState.PILOT,
     authorization_domain=_AUTHORIZATION_DOMAIN,
     query_fixture_ids=("gulf_meridian_dcm",),
-    cypher=_build(
+    cypher_template=(
         """
         MATCH (org:Entity {node_type: 'Organization'})
         MATCH (a:Assertion {predicate: 'CALLABLE_ON'})-[:SUBJECT]->(inst:Entity)
@@ -452,8 +527,8 @@ AT1_CALL = Pattern(
         WHERE {pin:a} AND {pin:ai} AND {fresh:a} AND {fresh:ai}
           AND {access:a} AND {access:ai}
           AND a.fact_class = 'at1'
-          AND a.fact_amount_usd_mn >= 250.0
-          AND a.fact_currency = 'usd'
+          {materiality}
+          {currency_scope:a}
           AND datetime(a.valid_from) <= datetime($as_of) + duration({days: $window_days})
           AND datetime(a.valid_from) >= datetime($as_of)
           AND NOT EXISTS {
@@ -469,8 +544,9 @@ AT1_CALL = Pattern(
                [a.barrier_side, ai.barrier_side] AS _barrier_sides,
                CASE WHEN a.recorded_at >= ai.recorded_at
                     THEN a.recorded_at ELSE ai.recorded_at END AS _latest_recorded_at,
-               CASE WHEN a.fact_amount_usd_mn >= 500.0 THEN 1.0
-                    ELSE a.fact_amount_usd_mn / 500.0 END AS _materiality_score,
+               CASE WHEN a.fact_amount_usd_mn >= $materiality_threshold_0 * 2.0 THEN 1.0
+                    ELSE a.fact_amount_usd_mn / ($materiality_threshold_0 * 2.0)
+                    END AS _materiality_score,
                (a.confidence + ai.confidence) / 2.0 AS _evidence_confidence
         """
     ),
