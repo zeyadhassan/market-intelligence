@@ -1,0 +1,17 @@
+[
+  {
+    "doc_id": "SW-2024-0013",
+    "source_id": "synthetic_wire_private",
+    "published_at": "2024-05-20T08:00:00+00:00",
+    "recorded_at": "2024-05-20T08:05:00+00:00",
+    "title": "Gulf Meridian Bank liquidity facility discussion (private side)",
+    "body": "Private-side note: Gulf Meridian Bank has held preliminary discussions with relationship banks about a standby liquidity facility. This information is material and non-public; it must never be retrievable by a public-side principal under any query formulation.",
+    "language": "en",
+    "document_class": "news_wire",
+    "barrier_side": "private",
+    "mentioned_names": ["Gulf Meridian Bank"],
+    "identifiers": {"lei": "213800GMBQPSC000000001"},
+    "url": "https://fixtures.local/synthetic_wire_private/SW-2024-0013",
+    "metadata": {"episode": "gulf_meridian_dcm", "entitlement_case": "private_side_must_not_leak"}
+  }
+]

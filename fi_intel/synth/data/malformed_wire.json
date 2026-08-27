@@ -1,0 +1,44 @@
+[
+  {
+    "doc_id": "SW-OK-0001",
+    "source_id": "synthetic_wire",
+    "published_at": "2024-01-03T08:00:00+00:00",
+    "recorded_at": "2024-01-03T08:05:00+00:00",
+    "title": "Ordinary market roundup",
+    "body": "A well-formed document that must commit before the malformed one fails the run.",
+    "language": "en",
+    "document_class": "news_wire",
+    "barrier_side": "public",
+    "mentioned_names": [],
+    "identifiers": {},
+    "metadata": {}
+  },
+  {
+    "doc_id": "SW-BAD-0001",
+    "source_id": "synthetic_wire",
+    "published_at": "2024-01-04T08:00:00+00:00",
+    "recorded_at": "2024-01-03T08:05:00+00:00",
+    "title": "Broken record",
+    "body": "recorded_at precedes published_at: the adapter must raise, not coerce.",
+    "language": "en",
+    "document_class": "news_wire",
+    "barrier_side": "public",
+    "mentioned_names": [],
+    "identifiers": {},
+    "metadata": {}
+  },
+  {
+    "doc_id": "SW-OK-0002",
+    "source_id": "synthetic_wire",
+    "published_at": "2024-01-05T08:00:00+00:00",
+    "recorded_at": "2024-01-05T08:05:00+00:00",
+    "title": "Later document",
+    "body": "Must never be persisted: the run fails before reaching it.",
+    "language": "en",
+    "document_class": "news_wire",
+    "barrier_side": "public",
+    "mentioned_names": [],
+    "identifiers": {},
+    "metadata": {}
+  }
+]

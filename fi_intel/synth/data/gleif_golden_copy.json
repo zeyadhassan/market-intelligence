@@ -1,0 +1,78 @@
+[
+  {
+    "doc_id": "GLEIF-213800GMBQPSC000000001",
+    "source_id": "gleif_fixture",
+    "published_at": "2024-01-01T00:00:00+00:00",
+    "recorded_at": "2024-01-01T00:00:00+00:00",
+    "title": "Gulf Meridian Bank Q.P.S.C.",
+    "body": "GLEIF golden-copy record for Gulf Meridian Bank Q.P.S.C., a Qatari public shareholding company and commercial bank. Direct parent: Gulf Meridian Group Holding Q.P.S.C.",
+    "language": "en",
+    "document_class": "reference",
+    "barrier_side": "public",
+    "mentioned_names": ["Gulf Meridian Bank Q.P.S.C."],
+    "identifiers": {"lei": "213800GMBQPSC000000001"},
+    "metadata": {
+      "legal_name": "Gulf Meridian Bank Q.P.S.C.",
+      "jurisdiction": "QA",
+      "sector": "bank",
+      "parent_lei": "213800GMGROUP0000004"
+    }
+  },
+  {
+    "doc_id": "GLEIF-213800GMGROUP0000004",
+    "source_id": "gleif_fixture",
+    "published_at": "2024-01-01T00:00:00+00:00",
+    "recorded_at": "2024-01-01T00:00:00+00:00",
+    "title": "Gulf Meridian Group Holding Q.P.S.C.",
+    "body": "GLEIF golden-copy record for Gulf Meridian Group Holding Q.P.S.C., ultimate parent of the Gulf Meridian banking group. No further parent (ultimate consolidator).",
+    "language": "en",
+    "document_class": "reference",
+    "barrier_side": "public",
+    "mentioned_names": ["Gulf Meridian Group Holding Q.P.S.C."],
+    "identifiers": {"lei": "213800GMGROUP0000004"},
+    "metadata": {
+      "legal_name": "Gulf Meridian Group Holding Q.P.S.C.",
+      "jurisdiction": "QA",
+      "sector": "holding",
+      "parent_lei": ""
+    }
+  },
+  {
+    "doc_id": "GLEIF-213800NHB00000000002",
+    "source_id": "gleif_fixture",
+    "published_at": "2024-01-01T00:00:00+00:00",
+    "recorded_at": "2024-01-01T00:00:00+00:00",
+    "title": "Northern Harbour Bank P.J.S.C.",
+    "body": "GLEIF golden-copy record for Northern Harbour Bank P.J.S.C., a UAE commercial bank. No parent recorded.",
+    "language": "en",
+    "document_class": "reference",
+    "barrier_side": "public",
+    "mentioned_names": ["Northern Harbour Bank P.J.S.C."],
+    "identifiers": {"lei": "213800NHB00000000002"},
+    "metadata": {
+      "legal_name": "Northern Harbour Bank P.J.S.C.",
+      "jurisdiction": "AE",
+      "sector": "bank",
+      "parent_lei": ""
+    }
+  },
+  {
+    "doc_id": "GLEIF-213800GMCAPITAL000003",
+    "source_id": "gleif_fixture",
+    "published_at": "2024-01-01T00:00:00+00:00",
+    "recorded_at": "2024-01-01T00:00:00+00:00",
+    "title": "Gulf Meridian Capital Partners L.L.C.",
+    "body": "GLEIF golden-copy record for Gulf Meridian Capital Partners L.L.C., an independent Dubai-based asset manager. Unaffiliated with Gulf Meridian Bank Q.P.S.C. despite the similar name.",
+    "language": "en",
+    "document_class": "reference",
+    "barrier_side": "public",
+    "mentioned_names": ["Gulf Meridian Capital Partners L.L.C."],
+    "identifiers": {"lei": "213800GMCAPITAL000003"},
+    "metadata": {
+      "legal_name": "Gulf Meridian Capital Partners L.L.C.",
+      "jurisdiction": "AE",
+      "sector": "asset_manager",
+      "parent_lei": ""
+    }
+  }
+]

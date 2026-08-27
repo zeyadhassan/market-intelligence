@@ -1,0 +1,108 @@
+"""Security and boundedness contracts for registered-source HTTP."""
+
+from datetime import UTC, datetime
+
+import httpx
+import pytest
+
+from fi_intel.sources.transport import (
+    ConditionalRequest,
+    DisallowedSourceUrlError,
+    HardenedSourceClient,
+    HttpxSourceTransport,
+    SourceResponseTooLargeError,
+    SourceResponseTruncatedError,
+)
+from tests.source_support import ScriptedSourceTransport, source_response
+
+NOW = datetime(2026, 8, 25, 12, tzinfo=UTC)
+
+
+def _client(transport: ScriptedSourceTransport) -> HardenedSourceClient:
+    async def no_sleep(delay: float) -> None:
+        del delay
+
+    return HardenedSourceClient(
+        transport,
+        allowed_origins=("https://www.sec.gov",),
+        user_agent="fi-intel-test test@example.invalid",
+        timeout_seconds=2,
+        max_attempts=2,
+        max_redirects=2,
+        clock=lambda: NOW,
+        sleep=no_sleep,
+    )
+
+
+async def test_initial_and_redirect_urls_cannot_escape_registered_origin() -> None:
+    transport = ScriptedSourceTransport([])
+    client = _client(transport)
+
+    with pytest.raises(DisallowedSourceUrlError):
+        await client.fetch("http://127.0.0.1/latest", max_bytes=100)
+    with pytest.raises(DisallowedSourceUrlError):
+        await client.fetch("https://www.sec.gov.evil.example/latest", max_bytes=100)
+    assert transport.requests == []
+
+    allowed = "https://www.sec.gov/feed"
+    transport = ScriptedSourceTransport(
+        [
+            (
+                allowed,
+                source_response(
+                    302,
+                    headers=(("location", "http://169.254.169.254/latest/meta-data"),),
+                ),
+            )
+        ]
+    )
+    client = _client(transport)
+    with pytest.raises(DisallowedSourceUrlError):
+        await client.fetch(allowed, max_bytes=100)
+    assert len(transport.requests) == 1
+
+
+async def test_conditional_headers_and_transient_retry_are_bounded() -> None:
+    url = "https://www.sec.gov/feed"
+    transport = ScriptedSourceTransport(
+        [
+            (url, source_response(503, headers=(("retry-after", "0"),))),
+            (url, source_response(304)),
+        ]
+    )
+    response = await _client(transport).fetch(
+        url,
+        max_bytes=100,
+        conditional=ConditionalRequest(etag='"feed-v1"', last_modified="yesterday"),
+    )
+
+    assert response.not_modified
+    assert len(transport.requests) == 2
+    for _, headers, timeout, byte_limit in transport.requests:
+        assert headers["If-None-Match"] == '"feed-v1"'
+        assert headers["If-Modified-Since"] == "yesterday"
+        assert timeout == 2
+        assert byte_limit == 100
+
+
+async def test_httpx_transport_rejects_oversize_and_truncated_responses() -> None:
+    oversize = httpx.MockTransport(
+        lambda request: httpx.Response(200, content=b"12345", request=request)
+    )
+    transport = HttpxSourceTransport(oversize)
+    with pytest.raises(SourceResponseTooLargeError):
+        await transport.send("https://www.sec.gov/x", {}, timeout_seconds=1, max_bytes=4)
+    await transport.close()
+
+    truncated = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            content=b"abc",
+            headers={"content-length": "10"},
+            request=request,
+        )
+    )
+    transport = HttpxSourceTransport(truncated)
+    with pytest.raises(SourceResponseTruncatedError):
+        await transport.send("https://www.sec.gov/x", {}, timeout_seconds=1, max_bytes=20)
+    await transport.close()
