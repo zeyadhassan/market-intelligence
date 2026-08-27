@@ -5,13 +5,81 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fi-intel"
 version = "0.1.0"
-description = "Incremental market-intelligence project scaffold"
-readme = "README.md"
+description = "Market intelligence platform for the Financial Institutions unit"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "httpx>=0.26",
+    "tenacity>=8.2",
+    "structlog>=24.1",
+    "typer>=0.9",
+    "asyncpg>=0.29",
+    "neo4j>=5.16",
+    # Real StructuredExtractor/ReasoningModel/Embedder adapters
+    # (fi_intel/ingest/extractors/, fi_intel/agents/reasoning/,
+    # fi_intel/retrieval/embedders/) — a thin client for any
+    # OpenAI-compatible endpoint (the on-prem gpt-oss-120b deployment in
+    # production; no cloud LLM provider is called anywhere in this repo).
+    "openai>=3.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "PyJWT[crypto]>=2.9",
+    "cryptography>=45.0",
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-http>=1.27",
+    # Windows does not ship the IANA timezone database used by ZoneInfo.
+    "tzdata>=2025.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    # Keep `podman compose` on the Podman-native provider even if Docker
+    # Desktop happens to be installed on a developer workstation.
+    "podman-compose>=1.0",
+    "ruff>=0.3",
+    # Keep the development server on the WebSockets major exercised by this
+    # repository and avoid an incidental major upgrade during lock refreshes.
+    "websockets>=14,<17",
+    "mypy>=1.8",
+    # Tests import httpx2 directly to build OpenAI SDK mock transports.
+    "httpx2>=2.0",
+]
 
 [project.scripts]
-fi-intel = "fi_intel.cli:main"
+fi-intel = "fi_intel.cli:app"
 
 [tool.setuptools.packages.find]
-include = ["fi_intel*"]
+include = ["fi_intel*", "evals*"]
+
+[tool.setuptools.package-data]
+fi_intel = ["synth/data/*.json", "synth/data/*.xml"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# evals/ ships real tests (e.g. the backtest leakage gate); they are part of
+# the default suite, not optional extras.
+testpaths = ["tests", "evals"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "ASYNC", "S", "C90", "T20"]
+
+[tool.ruff.lint.per-file-ignores]
+# CLI commands may print user-facing output.
+"fi_intel/cli.py" = ["T20"]
+# Evaluation harnesses may print reports.
+"evals/**" = ["T20", "S101"]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+strict = true
+packages = ["fi_intel"]
