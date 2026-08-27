@@ -1,0 +1,20 @@
+FROM docker.io/library/python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+RUN groupadd --system fi-intel \
+    && useradd --system --gid fi-intel --home-dir /app fi-intel
+
+COPY pyproject.toml README.md /app/
+COPY fi_intel /app/fi_intel
+COPY evals /app/evals
+RUN python -m pip install --no-cache-dir .
+
+RUN mkdir -p /app/.fi-intel/archive && chown -R fi-intel:fi-intel /app
+USER fi-intel
+
+ENTRYPOINT ["fi-intel"]

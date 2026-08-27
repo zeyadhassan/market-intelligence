@@ -1,0 +1,135 @@
+x-app: &app
+  build:
+    context: ..
+    dockerfile: deploy/Containerfile
+  image: localhost/fi-intel:dev
+  restart: unless-stopped
+  profiles: ["app"]
+  environment: &app-environment
+    FI_INTEL_POSTGRES_DSN: postgresql://fi_intel:fi_intel@postgres:5432/fi_intel
+    FI_INTEL_NEO4J_URI: bolt://neo4j:7687
+    FI_INTEL_NEO4J_USER: neo4j
+    FI_INTEL_NEO4J_PASSWORD: fi_intel
+    FI_INTEL_RAW_ARCHIVE_PATH: /app/.fi-intel/archive
+    FI_INTEL_EMAIL_SMTP_HOST: mailpit
+    FI_INTEL_EMAIL_SMTP_PORT: "1025"
+    FI_INTEL_ANALYSIS_MODE: ${FI_INTEL_ANALYSIS_MODE:-shadow}
+    FI_INTEL_LLM_BASE_URL: ${FI_INTEL_LLM_BASE_URL:-}
+    FI_INTEL_LLM_API_KEY: ${FI_INTEL_LLM_API_KEY:-not-needed}
+    FI_INTEL_EMBEDDING_BASE_URL: ${FI_INTEL_EMBEDDING_BASE_URL:-}
+    FI_INTEL_EMBEDDING_MODEL: ${FI_INTEL_EMBEDDING_MODEL:-}
+    FI_INTEL_RSS_USER_AGENT: ${FI_INTEL_RSS_USER_AGENT:-fi-intel set-FI_INTEL_RSS_USER_AGENT@example.invalid}
+    FI_INTEL_COVERED_ENTITY_LEIS: ${FI_INTEL_COVERED_ENTITY_LEIS:-}
+    FI_INTEL_COVERAGE_REQUIRED_SOURCE_IDS: ${FI_INTEL_COVERAGE_REQUIRED_SOURCE_IDS:-}
+    FI_INTEL_OIDC_ISSUER: ${FI_INTEL_OIDC_ISSUER:-}
+    FI_INTEL_OIDC_AUDIENCE: ${FI_INTEL_OIDC_AUDIENCE:-}
+    FI_INTEL_OIDC_JWKS_URL: ${FI_INTEL_OIDC_JWKS_URL:-}
+    FI_INTEL_ACCESS_SUBJECT: ${FI_INTEL_ACCESS_SUBJECT:-cli.user}
+    FI_INTEL_ACCESS_PRINCIPAL_ID: ${FI_INTEL_ACCESS_PRINCIPAL_ID:-cli.user}
+    FI_INTEL_ACCESS_ENTITLEMENT_GROUP: ${FI_INTEL_ACCESS_ENTITLEMENT_GROUP:-fi_gcc_public}
+    FI_INTEL_ACCESS_SIDE: ${FI_INTEL_ACCESS_SIDE:-public}
+    FI_INTEL_ACCESS_DESKS: ${FI_INTEL_ACCESS_DESKS:-fi_gcc}
+    FI_INTEL_ACCESS_ROLES: ${FI_INTEL_ACCESS_ROLES:-analyst}
+    FI_INTEL_ACCESS_PURPOSES: ${FI_INTEL_ACCESS_PURPOSES:-market_intelligence}
+    FI_INTEL_EMAIL_ENABLED: ${FI_INTEL_EMAIL_ENABLED:-false}
+    FI_INTEL_EMAIL_RECIPIENT_ALLOWLIST: ${FI_INTEL_EMAIL_RECIPIENT_ALLOWLIST:-}
+    FI_INTEL_EMAIL_DESTINATION_KEY: ${FI_INTEL_EMAIL_DESTINATION_KEY:-}
+    FI_INTEL_TELEMETRY_TRACE_ENDPOINT: ${FI_INTEL_TELEMETRY_TRACE_ENDPOINT:-}
+    FI_INTEL_TELEMETRY_METRIC_ENDPOINT: ${FI_INTEL_TELEMETRY_METRIC_ENDPOINT:-}
+  volumes:
+    - ../.fi-intel/archive:/app/.fi-intel/archive:Z
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: docker.io/pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: fi_intel
+      POSTGRES_PASSWORD: fi_intel
+      POSTGRES_DB: fi_intel
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fi_intel -d fi_intel"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  neo4j:
+    image: docker.io/library/neo4j:5.26-community
+    environment:
+      NEO4J_AUTH: neo4j/fi_intel
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p fi_intel 'RETURN 1' >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: docker.io/axllent/mailpit:v1.27
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  api:
+    <<: *app
+    command: ["serve", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+
+  scheduler:
+    <<: *app
+    command: ["scheduler", "run"]
+
+  source-worker:
+    <<: *app
+    command: ["worker", "source"]
+
+  projection-worker:
+    <<: *app
+    command: ["worker", "projection"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+
+  analysis-worker:
+    <<: *app
+    command: ["worker", "analysis"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+
+  search-worker:
+    <<: *app
+    command: ["worker", "search"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+
+  delivery-worker:
+    <<: *app
+    command: ["worker", "delivery"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  neo4j_data:
