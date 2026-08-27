@@ -1,0 +1,104 @@
+{
+  "dataset_id": "developer-mvp-readiness-cases",
+  "version": "1.0.0",
+  "tier": "regression_fixture",
+  "executed_at": "2026-08-27T00:00:00Z",
+  "limitations": [
+    "Synthetic deterministic cases verify control behavior, not live-source recall or production quality.",
+    "Arabic and transliteration cases verify fail-closed routing only; they are not a language-quality claim.",
+    "Named-analyst usefulness, licensed-source coverage, and provider webhook behavior require post-MVP qualification.",
+    "Small case counts do not support statistical confidence-bound claims."
+  ],
+  "cases": [
+    {
+      "case_id": "lifecycle-new-updated-unchanged",
+      "labels": ["new", "updated", "unchanged"],
+      "control": "opportunity_lifecycle",
+      "expected": "material-change-only-versioning"
+    },
+    {
+      "case_id": "lifecycle-resolution-and-contradiction",
+      "labels": ["resolved", "contradicted", "signal_disappearance_unknown_outcome"],
+      "control": "opportunity_lifecycle",
+      "expected": "explicit-evidence-required"
+    },
+    {
+      "case_id": "temporal-ambiguity",
+      "labels": ["ambiguous", "superseded", "future_effective", "late_recorded"],
+      "control": "temporal_admission",
+      "expected": "hold-or-temporally-pin"
+    },
+    {
+      "case_id": "coverage-hidden-refinancing",
+      "labels": ["incomplete_coverage", "unavailable_required_source", "hidden_refinancing"],
+      "control": "coverage_admission",
+      "expected": "never-nothing-new"
+    },
+    {
+      "case_id": "wrong-or-similar-entity",
+      "labels": ["wrong_entity", "similar_bank", "subsidiary", "branch"],
+      "control": "entity_admission",
+      "expected": "hold-unresolved-identity"
+    },
+    {
+      "case_id": "corporate-identity-shapes",
+      "labels": ["holdco_opco", "issuer_instrument", "asset_manager"],
+      "control": "entity_admission",
+      "expected": "exact-identifier-required"
+    },
+    {
+      "case_id": "arabic-transliteration",
+      "labels": ["arabic_legal_name", "english_transliteration"],
+      "control": "entity_admission",
+      "expected": "hold-without-qualified-identifier"
+    },
+    {
+      "case_id": "announcement-state-change",
+      "labels": ["revised", "withdrawn", "cancelled", "completed"],
+      "control": "temporal_admission",
+      "expected": "append-superseding-state"
+    },
+    {
+      "case_id": "support-and-contradiction",
+      "labels": ["support", "contradiction", "decorative_citation"],
+      "control": "citation_admission",
+      "expected": "predicate-support-required"
+    },
+    {
+      "case_id": "copied-and-malformed-content",
+      "labels": ["copied_content", "syndicated_content", "boilerplate", "table", "malformed_document"],
+      "control": "document_admission",
+      "expected": "deduplicate-or-quarantine"
+    },
+    {
+      "case_id": "fabricated-material-fields",
+      "labels": ["fabricated_amount", "fabricated_currency", "fabricated_date", "fabricated_status"],
+      "control": "citation_admission",
+      "expected": "reject-unsupported-field"
+    },
+    {
+      "case_id": "source-prompt-injection",
+      "labels": ["prompt_injection"],
+      "control": "model_boundary",
+      "expected": "treat-source-as-data"
+    },
+    {
+      "case_id": "model-failures",
+      "labels": ["model_refusal", "malformed_model_output", "model_timeout", "tool_outage"],
+      "control": "model_boundary",
+      "expected": "retry-or-hold-never-publish"
+    },
+    {
+      "case_id": "authorization-barrier",
+      "labels": ["barrier_crossover"],
+      "control": "authorization",
+      "expected": "deny"
+    },
+    {
+      "case_id": "bounded-graph-expansion",
+      "labels": ["high_degree_entity"],
+      "control": "interactive_search",
+      "expected": "typed-allowlisted-bounded"
+    }
+  ]
+}
