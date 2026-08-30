@@ -29,6 +29,7 @@ class SourceRunResult(BaseModel):
 
     run_id: UUID
     observation: SourceObservation
+    document_version_ids: tuple[UUID, ...] = ()
 
 
 class SourceIngestionCoordinator:
@@ -61,9 +62,7 @@ class SourceIngestionCoordinator:
         self._operations = operations
         self._clock = clock or (lambda: datetime.now(UTC))
 
-    async def run(
-        self, *, requested_by: str, run_id: UUID | None = None
-    ) -> SourceRunResult:
+    async def run(self, *, requested_by: str, run_id: UUID | None = None) -> SourceRunResult:
         started_at = self._now()
         previous = await self._operations.load_state(self._registration.source_id)
         run = await self._ingestion.begin_run(
@@ -77,6 +76,7 @@ class SourceIngestionCoordinator:
             committed = 0
             not_novel = 0
             quarantined = 0
+            document_version_ids: list[UUID] = []
             for item in poll.items:
                 result = await self._ingestion.ingest(
                     run.run_id,
@@ -94,6 +94,8 @@ class SourceIngestionCoordinator:
                     not_novel += 1
                 else:
                     quarantined += 1
+                if result.document_version_id is not None:
+                    document_version_ids.append(result.document_version_id)
         except Exception as exc:
             finished_at = self._after(started_at)
             observation, state = failed_source_observation(
@@ -122,10 +124,12 @@ class SourceIngestionCoordinator:
             quarantine_count=quarantined,
         )
         await self._operations.record(observation, state)
-        await self._ingestion.finish_run(
-            run.run_id, had_quarantine=quarantined > 0
+        await self._ingestion.finish_run(run.run_id, had_quarantine=quarantined > 0)
+        return SourceRunResult(
+            run_id=run.run_id,
+            observation=observation,
+            document_version_ids=tuple(document_version_ids),
         )
-        return SourceRunResult(run_id=run.run_id, observation=observation)
 
     def _now(self) -> datetime:
         value = self._clock()

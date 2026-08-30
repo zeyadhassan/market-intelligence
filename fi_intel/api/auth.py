@@ -7,14 +7,12 @@ import asyncpg
 import jwt
 from pydantic import BaseModel, ConfigDict, Field
 
+from fi_intel.application.runtime_resources import PostgresPoolProvider
+from fi_intel.governance.access import AuthorizationError, RequestPrincipal
 from fi_intel.retrieval.entitlement import Principal, Side
 
 
 class AuthenticationError(RuntimeError):
-    pass
-
-
-class AuthorizationError(RuntimeError):
     pass
 
 
@@ -23,30 +21,6 @@ class VerifiedToken(BaseModel):
 
     subject: str = Field(min_length=1)
     issuer: str = Field(min_length=1)
-
-
-class RequestPrincipal(BaseModel):
-    """Identity and access attributes loaded from the trusted directory."""
-
-    model_config = ConfigDict(frozen=True)
-
-    subject: str
-    principal: Principal
-    desks: frozenset[str]
-    roles: frozenset[str]
-    purposes: frozenset[str]
-
-    def require_desk(self, desk: str) -> None:
-        if desk not in self.desks:
-            raise AuthorizationError(f"principal is not assigned to desk {desk!r}")
-
-    def require_role(self, *roles: str) -> None:
-        if not self.roles.intersection(roles):
-            raise AuthorizationError(f"one of roles {roles!r} is required")
-
-    def require_purpose(self, purpose: str) -> None:
-        if purpose not in self.purposes:
-            raise AuthorizationError(f"purpose {purpose!r} is required")
 
 
 @runtime_checkable
@@ -94,13 +68,25 @@ class OIDCTokenVerifier:
 class PostgresIdentityDirectory:
     """Map verified OIDC subjects to access attributes controlled by the server."""
 
-    def __init__(self, dsn: str) -> None:
+    def __init__(
+        self,
+        dsn: str,
+        *,
+        pool: asyncpg.Pool | None = None,
+        pool_provider: PostgresPoolProvider | None = None,
+    ) -> None:
         self._dsn = dsn
-        self._pool: asyncpg.Pool | None = None
+        self._pool = pool
+        self._pool_provider = pool_provider
+        self._owns_pool = pool is None and pool_provider is None
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is None:
-            self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=4)
+            self._pool = (
+                await self._pool_provider.get_pool()
+                if self._pool_provider is not None
+                else await asyncpg.create_pool(self._dsn, min_size=1, max_size=4)
+            )
         return self._pool
 
     async def resolve(self, subject: str) -> RequestPrincipal | None:
@@ -133,9 +119,9 @@ class PostgresIdentityDirectory:
         )
 
     async def close(self) -> None:
-        if self._pool is not None:
+        if self._pool is not None and self._owns_pool:
             await self._pool.close()
-            self._pool = None
+        self._pool = None
 
 
 class Authenticator:
@@ -149,3 +135,16 @@ class Authenticator:
         if principal is None:
             raise AuthorizationError("verified subject has no active access assignment")
         return principal
+
+
+__all__ = [
+    "AuthenticationError",
+    "Authenticator",
+    "AuthorizationError",
+    "IdentityDirectory",
+    "OIDCTokenVerifier",
+    "PostgresIdentityDirectory",
+    "RequestPrincipal",
+    "TokenVerifier",
+    "VerifiedToken",
+]

@@ -78,15 +78,11 @@ class EntityReferenceRecord(BaseModel):
     def from_json_api(cls, raw: dict[str, Any]) -> Self:
         attributes = _mapping(raw.get("attributes"), "data.attributes")
         entity = _mapping(attributes.get("entity"), "data.attributes.entity")
-        registration = _mapping(
-            attributes.get("registration"), "data.attributes.registration"
-        )
+        registration = _mapping(attributes.get("registration"), "data.attributes.registration")
         legal_name = _mapping(entity.get("legalName"), "entity.legalName").get("name")
         relationships = raw.get("relationships")
         relationship_map = (
-            _mapping(relationships, "data.relationships")
-            if relationships is not None
-            else {}
+            _mapping(relationships, "data.relationships") if relationships is not None else {}
         )
         return cls(
             lei=str(raw.get("id") or attributes.get("lei") or ""),
@@ -102,14 +98,10 @@ class EntityReferenceRecord(BaseModel):
                 registration.get("lastUpdateDate"), "registration.lastUpdateDate"
             ),
             direct_parent_lei=_relationship_lei(relationship_map, "direct-parent"),
-            ultimate_parent_lei=_relationship_lei(
-                relationship_map, "ultimate-parent"
-            ),
+            ultimate_parent_lei=_relationship_lei(relationship_map, "ultimate-parent"),
         )
 
-    def to_canonical(
-        self, *, source_id: str, recorded_at: datetime
-    ) -> CanonicalDocument:
+    def to_canonical(self, *, source_id: str, recorded_at: datetime) -> CanonicalDocument:
         if recorded_at.tzinfo is None or recorded_at.utcoffset() is None:
             raise ValueError("GLEIF recorded_at must be timezone-aware")
         if recorded_at < self.last_updated_at:
@@ -228,9 +220,7 @@ class GleifRawAdapter:
             page_count += 1
             if page.not_modified:
                 return self._not_modified_poll(cursor, page_count, page.fetched_at)
-            polled_at = (
-                page.fetched_at if polled_at is None else max(polled_at, page.fetched_at)
-            )
+            polled_at = page.fetched_at if polled_at is None else max(polled_at, page.fetched_at)
             if page_count == 1:
                 feed_etag = page.header("etag")
                 feed_last_modified = page.header("last-modified")
@@ -242,22 +232,23 @@ class GleifRawAdapter:
             for raw_item in data:
                 summary = _mapping(raw_item, "data[]")
                 discovered += 1
-                sequence, unchanged_delta, published_at, detail_fetched_at = (
-                    await self._acquire_summary(
-                        summary,
-                        prior,
-                        current,
-                        seen_entities,
-                        acquired,
-                        sequence,
-                    )
+                (
+                    sequence,
+                    unchanged_delta,
+                    published_at,
+                    detail_fetched_at,
+                ) = await self._acquire_summary(
+                    summary,
+                    prior,
+                    current,
+                    seen_entities,
+                    acquired,
+                    sequence,
                 )
                 unchanged += unchanged_delta
                 latest = published_at if latest is None else max(latest, published_at)
                 polled_at = (
-                    detail_fetched_at
-                    if polled_at is None
-                    else max(polled_at, detail_fetched_at)
+                    detail_fetched_at if polled_at is None else max(polled_at, detail_fetched_at)
                 )
             page_url = _next_link(root)
 
@@ -269,9 +260,7 @@ class GleifRawAdapter:
             sequence_number=sequence,
             feed_etag=feed_etag,
             feed_last_modified=feed_last_modified,
-            detail_validators=tuple(
-                ordered[: self._registration.cursor_history_limit]
-            ),
+            detail_validators=tuple(ordered[: self._registration.cursor_history_limit]),
             latest_source_published_at=latest,
             updated_at=last_poll_at,
         )
@@ -346,9 +335,9 @@ class GleifRawAdapter:
         if previous is not None and previous.source_revision == revision:
             return sequence, 1, published_at, detail.fetched_at
         sequence += 1
-        headers = tuple(
-            RawHeader(name=name, value=value) for name, value in detail.headers
-        ) + (RawHeader(name="content-location", value=detail.final_url),)
+        headers = tuple(RawHeader(name=name, value=value) for name, value in detail.headers) + (
+            RawHeader(name="content-location", value=detail.final_url),
+        )
         envelope = RawSourceEnvelope(
             source_id=self.source_id,
             external_id=external_id,
@@ -386,6 +375,144 @@ class GleifRawAdapter:
         )
 
 
+class GleifTargetedRawAdapter:
+    """Poll the exact configured LEI universe instead of an arbitrary API prefix."""
+
+    def __init__(
+        self,
+        registration: SourceRegistration,
+        access_policy: AccessPolicy,
+        client: HardenedSourceClient,
+        leis: frozenset[str],
+    ) -> None:
+        if registration.kind is not SourceKind.REFERENCE_API:
+            raise ValueError("targeted GLEIF adapter requires a reference_api registration")
+        if registration.barrier_side is not access_policy.barrier_side:
+            raise ValueError("GLEIF registration and policy barriers differ")
+        if not access_policy.allowed_entitlement_groups.issubset(
+            registration.allowed_entitlement_groups
+        ):
+            raise ValueError("GLEIF policy contains an unregistered entitlement group")
+        normalized = frozenset(item.strip().upper() for item in leis if item.strip())
+        invalid = sorted(item for item in normalized if not is_valid_lei(item))
+        if invalid:
+            raise ValueError(f"target entity universe contains invalid LEIs: {invalid}")
+        if not normalized:
+            raise ValueError("target entity universe must contain at least one LEI")
+        if len(normalized) > registration.cursor_history_limit:
+            raise ValueError("target entity universe exceeds durable cursor capacity")
+        self._registration = registration
+        self._policy = access_policy
+        self._client = client
+        self._leis = normalized
+
+    @property
+    def source_id(self) -> str:
+        return self._registration.source_id
+
+    async def poll(self, cursor: RawSourceCursor | None = None) -> RawSourcePoll:
+        if cursor is not None and cursor.source_id != self.source_id:
+            raise ValueError("GLEIF cursor belongs to another source")
+        prior = {
+            item.external_id: item
+            for item in (cursor.detail_validators if cursor is not None else ())
+        }
+        validators: list[DetailValidator] = []
+        acquired: list[RawAcquiredItem] = []
+        sequence = cursor.sequence_number if cursor is not None else 0
+        latest = cursor.latest_source_published_at if cursor is not None else None
+        unchanged = 0
+        polled_at: datetime | None = None
+        feed_hash = hashlib.sha256()
+        base = "https://api.gleif.org/api/v1/lei-records"
+        for lei in sorted(self._leis):
+            external_id = f"GLEIF-{lei}"
+            previous = prior.get(external_id)
+            response = await self._client.fetch(
+                f"{base}/{lei}",
+                max_bytes=self._registration.max_detail_bytes,
+                conditional=(
+                    ConditionalRequest(previous.etag, previous.last_modified)
+                    if previous is not None
+                    else None
+                ),
+                accept="application/vnd.api+json, application/json",
+            )
+            polled_at = (
+                response.fetched_at if polled_at is None else max(polled_at, response.fetched_at)
+            )
+            if response.not_modified:
+                if previous is None:
+                    raise SourceTransportError("GLEIF detail returned 304 without prior state")
+                validators.append(previous)
+                unchanged += 1
+                continue
+            root = _json_mapping(response.payload)
+            record = EntityReferenceRecord.from_json_api(_mapping(root.get("data"), "data"))
+            if record.lei != lei:
+                raise MalformedGleifRecordError("GLEIF detail identity differs from target LEI")
+            revision = hashlib.sha256(response.payload).hexdigest()
+            validators.append(
+                DetailValidator(
+                    external_id=external_id,
+                    source_revision=revision,
+                    etag=response.header("etag"),
+                    last_modified=response.header("last-modified"),
+                )
+            )
+            latest = (
+                record.last_updated_at if latest is None else max(latest, record.last_updated_at)
+            )
+            feed_hash.update(response.payload)
+            if previous is not None and previous.source_revision == revision:
+                unchanged += 1
+                continue
+            sequence += 1
+            headers = tuple(
+                RawHeader(name=name, value=value) for name, value in response.headers
+            ) + (RawHeader(name="content-location", value=response.final_url),)
+            envelope = RawSourceEnvelope(
+                source_id=self.source_id,
+                external_id=external_id,
+                source_revision=revision,
+                payload=response.payload,
+                media_type=response.header("content-type") or "application/json",
+                headers=headers,
+                fetched_at=response.fetched_at,
+                source_published_at=record.last_updated_at,
+                access_policy=self._policy,
+            )
+            acquired.append(
+                RawAcquiredItem(
+                    envelope=envelope,
+                    cursor_position=cursor_position(self.source_id, external_id, revision),
+                    sequence_number=sequence,
+                )
+            )
+        checked_at = polled_at or datetime.now(UTC)
+        next_cursor = RawSourceCursor(
+            source_id=self.source_id,
+            sequence_number=sequence,
+            detail_validators=tuple(validators),
+            latest_source_published_at=latest,
+            updated_at=checked_at,
+        )
+        return RawSourcePoll(
+            source_id=self.source_id,
+            polled_at=checked_at,
+            feed_modified=bool(acquired),
+            feed_content_hash=feed_hash.hexdigest(),
+            page_count=len(self._leis),
+            discovered_count=len(self._leis),
+            unchanged_count=unchanged,
+            items=tuple(acquired),
+            next_cursor=next_cursor,
+        )
+
+    async def close(self) -> None:
+        await self._client.close()
+
+
 class GleifDetailCanonicalizer:
     async def canonicalize(self, envelope: RawSourceEnvelope) -> CanonicalDocument:
         if envelope.source_id != "gleif":
@@ -400,9 +527,7 @@ class GleifDetailCanonicalizer:
             raise MalformedGleifRecordError(
                 "GLEIF page and detail disagree on the source update time"
             )
-        return record.to_canonical(
-            source_id=envelope.source_id, recorded_at=envelope.fetched_at
-        )
+        return record.to_canonical(source_id=envelope.source_id, recorded_at=envelope.fetched_at)
 
 
 class GleifBulkPage(BaseModel):
@@ -508,6 +633,30 @@ def gleif_registered(
     )
 
 
+def gleif_targeted_registered(
+    access_policy: AccessPolicy,
+    leis: frozenset[str],
+    settings: Settings | None = None,
+    *,
+    transport: SourceHttpTransport | None = None,
+    clock: Callable[[], datetime] | None = None,
+) -> GleifTargetedRawAdapter:
+    """Build the canonical adapter for a signed-off target LEI universe."""
+
+    active = settings or Settings()
+    registration = production_source_catalog(active).require("gleif")
+    client = HardenedSourceClient(
+        transport or HttpxSourceTransport(),
+        allowed_origins=registration.allowed_origins,
+        user_agent=active.rss_user_agent,
+        timeout_seconds=registration.request_timeout_seconds,
+        max_attempts=registration.max_attempts,
+        max_redirects=registration.max_redirects,
+        clock=clock,
+    )
+    return GleifTargetedRawAdapter(registration, access_policy, client, leis)
+
+
 def gleif_fixture() -> FixtureAdapter:
     """The GLEIF golden-copy fixture used across the test suite."""
     return FixtureAdapter(source_id="gleif_fixture", fixture_name="gleif_golden_copy.json")
@@ -554,9 +703,7 @@ def _relationship_lei(relationships: dict[str, Any], name: str) -> str | None:
 
 def _summary_updated_at(summary: dict[str, Any]) -> datetime:
     attributes = _mapping(summary.get("attributes"), "summary.attributes")
-    registration = _mapping(
-        attributes.get("registration"), "summary.attributes.registration"
-    )
+    registration = _mapping(attributes.get("registration"), "summary.attributes.registration")
     return _aware_datetime(registration.get("lastUpdateDate"), "lastUpdateDate")
 
 

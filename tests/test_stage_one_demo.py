@@ -37,7 +37,17 @@ def test_stage_one_page_is_local_simple_and_explicitly_synthetic() -> None:
     assert "/subscription" in javascript.text
     assert "/evaluation" in javascript.text
     assert "Useful" in javascript.text and "Too old" in javascript.text
+    assert "stage-one-demo" in javascript.text
+    assert "window.sessionStorage" not in javascript.text
     assert page.headers["content-security-policy"].startswith("default-src 'self'")
+
+
+def test_stage_one_app_exposes_no_legacy_result_or_brief_path() -> None:
+    client = TestClient(create_stage_one_demo_app())
+
+    assert client.get("/workbench").status_code == 404
+    assert client.get("/v1/signals", headers=_headers()).status_code == 404
+    assert client.post("/v1/briefs", headers=_headers(), json={}).status_code == 404
 
 
 def test_topic_subscription_analysis_and_evaluation_loop() -> None:
@@ -48,9 +58,7 @@ def test_topic_subscription_analysis_and_evaluation_loop() -> None:
     assert topics.status_code == 200
     assert [item["topic_id"] for item in topics.json()] == [
         "upcoming-maturities",
-        "issuance-programmes",
         "ratings-capital-pressure",
-        "treasury-leadership",
     ]
     assert not any(item["subscribed"] for item in topics.json())
 
@@ -74,7 +82,10 @@ def test_topic_subscription_analysis_and_evaluation_loop() -> None:
     assert "Synthetic deterministic fixture" in payload["scope_notice"]
     assert len(payload["results"]) == 1
     result = payload["results"][0]
-    assert result["title"] == "Upcoming sukuk maturity warrants refinancing coverage"
+    assert result["title"] == (
+        "The USD 500 million maturity with no announced refinancing supports immediate "
+        "DCM coverage."
+    )
     assert result["evidence"]
     assert result["latest_evaluation"] is None
 
@@ -90,17 +101,18 @@ def test_topic_subscription_analysis_and_evaluation_loop() -> None:
     assert refreshed.json()["results"][0]["latest_evaluation"] == "useful"
 
 
-def test_complete_empty_topic_is_not_filled_with_below_threshold_results() -> None:
+def test_topic_result_projection_does_not_mix_other_patterns() -> None:
     client = TestClient(create_stage_one_demo_app())
     client.put(
-        "/v1/topics/treasury-leadership/subscription",
+        "/v1/topics/ratings-capital-pressure/subscription",
         headers=_headers(),
         json={"active": True},
     )
 
-    response = client.get("/v1/topics/treasury-leadership/results", headers=_headers())
+    response = client.get("/v1/topics/ratings-capital-pressure/results", headers=_headers())
 
     assert response.status_code == 200
     assert response.json()["coverage_state"] == "complete"
-    assert response.json()["message"] == "Analysis complete - nothing new"
-    assert response.json()["results"] == []
+    assert response.json()["message"] == "1 fresh opportunity found"
+    assert len(response.json()["results"]) == 1
+    assert "cet1" in response.json()["results"][0]["title"].casefold()

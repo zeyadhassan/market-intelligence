@@ -127,9 +127,7 @@ class POCHeuristicExtractor:
             if current_match is not None:
                 current = Decimal(current_match.group(1))
                 prior = Decimal(prior_match.group(1)) if prior_match else current
-                direction = (
-                    ChangeDirection.DOWN if prior > current else ChangeDirection.FLAT
-                )
+                direction = ChangeDirection.DOWN if prior > current else ChangeDirection.FLAT
                 claims.append(
                     _claim(
                         predicate=EdgeType.REPORTS_METRIC,
@@ -161,11 +159,7 @@ class POCHeuristicExtractor:
                 )
             )
 
-        if (
-            "board" in lowered
-            and "approved" in lowered
-            and "medium term note programme" in lowered
-        ):
+        if "board" in lowered and "approved" in lowered and "medium term note programme" in lowered:
             limit_match = re.search(r"usd (\d+(?:\.\d+)?) billion", lowered)
             if limit_match is not None:
                 claims.append(

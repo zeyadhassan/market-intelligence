@@ -113,7 +113,9 @@ async def test_end_to_end_signal_produces_opportunity_with_resolvable_evidence(e
             claims=[
                 ResearchClaim(
                     text="Board-approved programme indicates readiness to issue.",
-                    evidence_indices=[0, 1],
+                    # Entity-profile evidence is ordered by recorded time; the
+                    # fourth assertion is the board approval source span.
+                    evidence_indices=[3],
                     confidence=0.9,
                 )
             ],

@@ -113,12 +113,8 @@ class ReplayableIngestionService:
         await self._control.create_run(run)
         return run
 
-    async def finish_run(
-        self, run_id: UUID, *, had_quarantine: bool = False
-    ) -> None:
-        status = (
-            RunStatus.COMPLETED_WITH_ERRORS if had_quarantine else RunStatus.COMPLETED
-        )
+    async def finish_run(self, run_id: UUID, *, had_quarantine: bool = False) -> None:
+        status = RunStatus.COMPLETED_WITH_ERRORS if had_quarantine else RunStatus.COMPLETED
         await self._control.finish_run(run_id, status, self._now())
 
     async def ingest(
@@ -232,18 +228,14 @@ class ReplayableIngestionService:
             source_published_at=prior.source_published_at,
             access_policy=prior.access_policy,
         )
-        return await self.ingest(
-            new_run_id, envelope, watermark, attempt=prior.attempt + 1
-        )
+        return await self.ingest(new_run_id, envelope, watermark, attempt=prior.attempt + 1)
 
     async def close(self) -> None:
         await self._archive.close()
         await self._ledger.close()
         await self._control.close()
 
-    async def _ensure_raw_archived(
-        self, job: IngestJob, envelope: RawSourceEnvelope
-    ) -> IngestJob:
+    async def _ensure_raw_archived(self, job: IngestJob, envelope: RawSourceEnvelope) -> IngestJob:
         if job.status is not JobStatus.RECEIVED:
             return job
         archived = await self._archive.put_if_absent(
@@ -262,9 +254,7 @@ class ReplayableIngestionService:
             detail="raw bytes durably archived",
         )
 
-    async def _commit_raw_asset(
-        self, job: IngestJob, envelope: RawSourceEnvelope
-    ) -> None:
+    async def _commit_raw_asset(self, job: IngestJob, envelope: RawSourceEnvelope) -> None:
         if job.archive_uri is None:
             raise ValueError("raw asset cannot be committed before archive")
         metadata: dict[str, JsonValue] = {
@@ -390,9 +380,7 @@ class ReplayableIngestionService:
             aggregate_version=version_number,
             occurred_at=canonical.recorded_at,
             correlation_id=envelope.raw_asset_id,
-            causation_id=outbox_event_id(
-                "raw-asset.archived.v1", envelope.raw_asset_id, 1
-            ),
+            causation_id=outbox_event_id("raw-asset.archived.v1", envelope.raw_asset_id, 1),
             policy_id=version.policy_id,
             payload={
                 "document_id": str(identity.document_id),
@@ -486,9 +474,7 @@ class ReplayableIngestionService:
         )
 
     @staticmethod
-    def _validate_replay_envelope(
-        job: IngestJob, envelope: RawSourceEnvelope
-    ) -> None:
+    def _validate_replay_envelope(job: IngestJob, envelope: RawSourceEnvelope) -> None:
         actual = (
             envelope.raw_asset_id,
             envelope.content_hash,
@@ -505,9 +491,7 @@ class ReplayableIngestionService:
             raise ValueError("replay envelope conflicts with the recorded ingest job")
 
     @staticmethod
-    def _validate_canonical(
-        envelope: RawSourceEnvelope, canonical: CanonicalDocument
-    ) -> None:
+    def _validate_canonical(envelope: RawSourceEnvelope, canonical: CanonicalDocument) -> None:
         if canonical.source_id != envelope.source_id:
             raise ValueError("canonicalizer changed source_id")
         if canonical.doc_id != envelope.external_id:

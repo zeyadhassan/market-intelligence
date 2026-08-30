@@ -17,9 +17,7 @@ def source_response(
 
 
 class ScriptedSourceTransport(SourceHttpTransport):
-    def __init__(
-        self, exchanges: list[tuple[str, TransportResponse | Exception]]
-    ) -> None:
+    def __init__(self, exchanges: list[tuple[str, TransportResponse | Exception]]) -> None:
         self._exchanges = list(exchanges)
         self.requests: list[tuple[str, dict[str, str], float, int]] = []
         self.closed = False

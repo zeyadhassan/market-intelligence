@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import os
+from pathlib import Path
 from typing import Protocol, runtime_checkable
+from urllib.parse import unquote, urlparse
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
@@ -137,3 +141,71 @@ class InMemoryRawArchive:
 
     def object_count(self) -> int:
         return len(self._objects)
+
+
+class FileRawArchive:
+    """Content-verifying durable archive rooted at an operator-owned mount."""
+
+    def __init__(self, root: str | Path) -> None:
+        self._root = Path(root).resolve()
+        self._root.mkdir(parents=True, exist_ok=True)
+
+    def _path(self, key: str) -> Path:
+        candidate = (self._root / key).resolve()
+        if self._root != candidate and self._root not in candidate.parents:
+            raise ValueError("archive key escapes the configured root")
+        return candidate
+
+    async def put_if_absent(
+        self,
+        *,
+        key: str,
+        content: bytes,
+        content_hash: str,
+        media_type: str,
+        archived_at: AwareDatetime,
+    ) -> ArchivedObject:
+        if not content:
+            raise ValueError("archive content cannot be empty")
+        if hashlib.sha256(content).hexdigest() != content_hash:
+            raise ArchiveConflictError("declared content hash does not match bytes")
+        path = self._path(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            previous = path.read_bytes()
+            if previous != content:
+                raise ArchiveConflictError("archive key has conflicting immutable content")
+        else:
+            temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+            temporary.write_bytes(content)
+            try:
+                temporary.replace(path)
+            finally:
+                temporary.unlink(missing_ok=True)
+        return ArchivedObject(
+            key=key,
+            uri=path.as_uri(),
+            content_hash=content_hash,
+            size_bytes=len(content),
+            media_type=media_type,
+            archived_at=archived_at,
+        )
+
+    async def get(self, uri: str) -> bytes:
+        path = _archive_uri_path(uri)
+        if self._root != path and self._root not in path.parents:
+            raise ValueError("archive URI escapes the configured root")
+        return await asyncio.to_thread(path.read_bytes)
+
+    async def close(self) -> None:
+        return None
+
+
+def _archive_uri_path(uri: str) -> Path:
+    parsed = urlparse(uri)
+    if parsed.scheme != "file":
+        raise ValueError("archive URI must use the file scheme")
+    raw_path = unquote(parsed.path)
+    if os.name == "nt" and raw_path.startswith("/"):
+        raw_path = raw_path[1:]
+    return Path(raw_path).resolve()

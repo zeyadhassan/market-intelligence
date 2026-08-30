@@ -77,9 +77,7 @@ async def register_candidate(
     )
 
 
-async def promote_active(
-    registry: InMemoryModelRegistry, item: ModelArtifact, suffix: int
-) -> None:
+async def promote_active(registry: InMemoryModelRegistry, item: ModelArtifact, suffix: int) -> None:
     await registry.transition(
         transition(
             f"10000000-0000-0000-0000-{suffix:012d}",
@@ -209,8 +207,7 @@ async def test_canary_routing_is_sticky_and_approximately_bounded() -> None:
     first = await registry.route(ModelComponent.REASONING, "stable-signal")
     assert await registry.route(ModelComponent.REASONING, "stable-signal") == first
     routed = [
-        await registry.route(ModelComponent.REASONING, f"signal-{index}")
-        for index in range(1_000)
+        await registry.route(ModelComponent.REASONING, f"signal-{index}") for index in range(1_000)
     ]
     canary_count = sum(item.release_id == canary.release_id for item in routed)
     assert 70 <= canary_count <= 130

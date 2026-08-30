@@ -164,3 +164,64 @@ async def test_subject_filter_keeps_temporal_pin(graph: GraphClient) -> None:
     rows = await graph.read_assertions(as_of=T, access=ACCESS, subject_key=RATING.key)
     assert len(rows) == 1
     assert rows[0]["a"]["source_doc_id"] == "SW-2024-0001"
+
+
+async def test_late_arriving_state_does_not_rewrite_prior_knowledge(graph: GraphClient) -> None:
+    """A state learned in March cannot change what was knowable in February."""
+
+    writer = AssertionWriter(graph)
+    january = Assertion(
+        **_kwargs(
+            recorded_at=datetime(2024, 1, 2, tzinfo=UTC),
+            valid_from=datetime(2024, 1, 1, tzinfo=UTC),
+            properties={"rating_type": "outlook", "direction": "stable"},
+        )
+    )
+    february_state_learned_in_march = Assertion(
+        **_kwargs(
+            source_doc_id="SW-2024-0009",
+            snippet_offset=(30, 60),
+            recorded_at=datetime(2024, 3, 1, tzinfo=UTC),
+            valid_from=datetime(2024, 2, 1, tzinfo=UTC),
+            properties={"rating_type": "outlook", "direction": "negative"},
+        )
+    )
+    await writer.write(january)
+    await writer.write(february_state_learned_in_march)
+
+    known_in_february = await graph.read_assertions(
+        as_of=datetime(2024, 2, 15, tzinfo=UTC), access=ACCESS
+    )
+    known_in_march = await graph.read_assertions(
+        as_of=datetime(2024, 3, 2, tzinfo=UTC), access=ACCESS
+    )
+
+    assert {row["a"]["assertion_id"] for row in known_in_february} == {january.assertion_id()}
+    assert {row["a"]["assertion_id"] for row in known_in_march} == {
+        february_state_learned_in_march.assertion_id()
+    }
+
+
+async def test_state_projection_is_independent_of_replay_order(graph: GraphClient) -> None:
+    writer = AssertionWriter(graph)
+    older = Assertion(
+        **_kwargs(
+            recorded_at=datetime(2024, 1, 2, tzinfo=UTC),
+            valid_from=datetime(2024, 1, 1, tzinfo=UTC),
+            properties={"rating_type": "outlook", "direction": "stable"},
+        )
+    )
+    newer = Assertion(
+        **_kwargs(
+            source_doc_id="SW-2024-0010",
+            snippet_offset=(40, 70),
+            recorded_at=datetime(2024, 2, 2, tzinfo=UTC),
+            valid_from=datetime(2024, 2, 1, tzinfo=UTC),
+            properties={"rating_type": "outlook", "direction": "negative"},
+        )
+    )
+    await writer.write(newer)
+    await writer.write(older)
+
+    visible = await graph.read_assertions(as_of=datetime(2024, 2, 3, tzinfo=UTC), access=ACCESS)
+    assert {row["a"]["assertion_id"] for row in visible} == {newer.assertion_id()}

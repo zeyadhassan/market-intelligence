@@ -7,6 +7,7 @@ fallback for tests and unconfigured environments.
 
 import hashlib
 import math
+from datetime import datetime
 from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
@@ -16,7 +17,7 @@ from fi_intel.sources.canonical import CanonicalDocument, document_text
 EMBEDDING_DIM = 1024  # matches deploy/init.sql document_chunk.embedding
 CHUNK_SIZE = 512
 CHUNK_OVERLAP = 64
-CHUNKER_VERSION = f"char-window-v1:{CHUNK_SIZE}:{CHUNK_OVERLAP}"
+CHUNKER_VERSION = f"structure-aware-v2:{CHUNK_SIZE}:{CHUNK_OVERLAP}"
 
 
 class Chunk(BaseModel):
@@ -28,12 +29,30 @@ class Chunk(BaseModel):
     char_start: int
     char_end: int
     text: str
+    section_type: str = "text"
+    structure_path: tuple[str, ...] = ()
+    chunk_id: str | None = None
+    document_version_id: str | None = None
+    entity_ids: tuple[str, ...] = ()
+    assertion_ids: tuple[str, ...] = ()
+    evidence_span_ids: tuple[str, ...] = ()
+    policy_id: str | None = None
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
+    content_hash: str | None = None
+    chunker_version: str | None = None
+    embedding_release: str | None = None
 
 
 def chunk_document(
     doc: CanonicalDocument, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP
 ) -> list[Chunk]:
-    """Split title+body into overlapping character windows on word boundaries."""
+    """Split on document structure first, with bounded windows for long blocks.
+
+    Coordinates always refer to the untouched canonical title+body text.  Blank
+    lines, table-like rows, headings, and sentence ends are preferred over an
+    arbitrary character boundary.
+    """
     text = document_text(doc)
     chunks: list[Chunk] = []
     start = 0
@@ -41,10 +60,24 @@ def chunk_document(
     while start < len(text):
         end = min(start + size, len(text))
         if end < len(text):
-            # Back off to a word boundary so chunks don't split tokens.
-            boundary = text.rfind(" ", start, end)
+            candidates = [
+                text.rfind("\n\n", start, end),
+                text.rfind("\n", start, end),
+                text.rfind(". ", start, end),
+                text.rfind(" ", start, end),
+            ]
+            boundary = next(
+                (candidate for candidate in candidates if candidate >= start + size // 3),
+                -1,
+            )
             if boundary > start:
-                end = boundary
+                end = boundary + (1 if text[boundary] == "." else 0)
+        excerpt = text[start:end]
+        section_type = (
+            "table"
+            if _looks_tabular(excerpt)
+            else ("heading" if "\n" not in excerpt and len(excerpt) <= 120 else "text")
+        )
         chunks.append(
             Chunk(
                 source_id=doc.source_id,
@@ -52,7 +85,9 @@ def chunk_document(
                 chunk_index=index,
                 char_start=start,
                 char_end=end,
-                text=text[start:end],
+                text=excerpt,
+                section_type=section_type,
+                structure_path=(doc.document_class.value,),
             )
         )
         index += 1
@@ -60,6 +95,13 @@ def chunk_document(
         if end == len(text):
             break
     return chunks
+
+
+def _looks_tabular(text: str) -> bool:
+    lines = [line for line in text.splitlines() if line.strip()]
+    return bool(lines) and sum("|" in line or "\t" in line for line in lines) >= max(
+        1, len(lines) // 2
+    )
 
 
 @runtime_checkable

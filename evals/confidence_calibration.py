@@ -102,10 +102,7 @@ def calibration_decision(
         estimate = wilson_interval(
             BinaryCounts(sum(item.correct for item in admitted), len(admitted))
         )
-        if (
-            estimate.total >= minimum_samples
-            and estimate.lower >= minimum_precision_lower_bound
-        ):
+        if estimate.total >= minimum_samples and estimate.lower >= minimum_precision_lower_bound:
             return CalibrationDecision(
                 action="threshold",
                 threshold=bucket.lower,

@@ -175,7 +175,9 @@ async def test_extraction_produces_expected_events_with_dates(pipeline) -> None:
     r2 = await pipe.extract_document(rating_doc, RECORDED)
     assert r1.assertions_written == 1 and r2.assertions_written == 1
 
-    rows = await client.read_assertions(as_of=RECORDED, access=ACCESS)
+    # MATURES_ON becomes valid in 2025. Query after that valid-time boundary
+    # while retaining the earlier recorded-time visibility.
+    rows = await client.read_assertions(as_of=datetime(2025, 5, 14, tzinfo=UTC), access=ACCESS)
     by_pred = {r["a"]["predicate"]: r["a"] for r in rows}
     assert {row["a"]["source_id"] for row in rows} == {"synthetic_wire"}
     assert {row["a"]["barrier_side"] for row in rows} == {"public"}
@@ -254,9 +256,7 @@ async def test_offsets_must_resolve_to_real_text(pipeline) -> None:
         valid_from=datetime(2024, 3, 20, tzinfo=UTC),
         properties=ClaimProperties(role="treasurer"),
     )
-    pipe = ExtractionPipeline(
-        StubExtractor({"SW-2024-0005": [bad]}), writer, sink, resolver
-    )
+    pipe = ExtractionPipeline(StubExtractor({"SW-2024-0005": [bad]}), writer, sink, resolver)
     result = await pipe.extract_document(doc, RECORDED)
     assert result.assertions_written == 0
     assert result.offset_rejections == 1

@@ -6,10 +6,12 @@ conservative. Capacity pressure defers lower-ranked work and is visible in
 the result. It never causes top-N padding or an unsupported narrative.
 """
 
+import asyncio
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from fi_intel.agents.investigation import InvestigationTrajectory
 from fi_intel.agents.opportunity_research import OpportunityResearcher
 from fi_intel.config import Settings
 from fi_intel.governance.model_usage import (
@@ -20,7 +22,7 @@ from fi_intel.governance.model_usage import (
 )
 from fi_intel.graph.coverage import DetectorCoverageGap
 from fi_intel.graph.registry import PatternRegistry, Signal
-from fi_intel.logging import get_logger
+from fi_intel.logging import get_logger, safe_error_summary
 from fi_intel.tools.evidence import EvidenceItem, Opportunity
 
 
@@ -34,6 +36,16 @@ class BriefItem(BaseModel):
     signal: Signal
     opportunity: Opportunity
     evidence: list[EvidenceItem]
+    investigation: InvestigationTrajectory | None = None
+
+
+class SignalResearchFailure(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    signal: Signal
+    state: str
+    error_type: str
+    safe_error_summary: str
 
 
 class TriageScoreDistribution(BaseModel):
@@ -59,6 +71,7 @@ class Brief(BaseModel):
     unresearched_signals: list[Signal] = Field(default_factory=list)
     deferred_signals: list[Signal] = Field(default_factory=list)
     abstained_signals: list[Signal] = Field(default_factory=list)
+    failed_signals: list[SignalResearchFailure] = Field(default_factory=list)
     dark_detectors: list[DetectorCoverageGap] = Field(default_factory=list)
     triage_scores: TriageScoreDistribution
     coverage_complete: bool = True
@@ -88,7 +101,10 @@ class BriefCompiler:
         self._limits = capacity_limits or ModelCapacityLimits()
         self._usage_log = usage_log
         self._run_id = run_id
-        self._triage_priority_threshold = (settings or Settings()).triage_priority_threshold
+        active_settings = settings or Settings()
+        self._triage_priority_threshold = active_settings.triage_priority_threshold
+        self._signal_concurrency = active_settings.daily_signal_concurrency
+        self._signal_timeout_seconds = active_settings.daily_signal_timeout_seconds
         self._log = get_logger(component="agents.brief")
 
     async def compile(self, as_of: datetime, desk: str, enabled: set[str] | None = None) -> Brief:
@@ -101,7 +117,7 @@ class BriefCompiler:
                 as_of=as_of,
                 desk=desk,
                 items=[],
-                nothing_material=True,
+                nothing_material=not coverage_gaps,
                 dark_detectors=coverage_gaps,
                 triage_scores=triage_scores,
                 coverage_complete=not coverage_gaps,
@@ -113,7 +129,9 @@ class BriefCompiler:
         items: list[BriefItem] = []
         abstained: list[Signal] = []
         deferred: list[Signal] = []
+        failures: list[SignalResearchFailure] = []
         usage = await self._snapshot()
+        admitted: list[Signal] = []
         for index, signal in enumerate(high):
             estimate = await self._estimate()
             if not self._limits.allows(usage, estimate):
@@ -126,16 +144,60 @@ class BriefCompiler:
                     deferred=len(deferred),
                 )
                 break
+            usage = usage.project(estimate)
+            admitted.append(signal)
 
-            # Book the projection even if best-effort usage logging is delayed
-            # or fails. Observed values can only raise that capacity floor.
-            projected = usage.project(estimate)
-            opportunity, evidence = await self._researcher.research_signal(signal)
-            usage = projected.conservative_merge(await self._snapshot())
+        semaphore = asyncio.Semaphore(self._signal_concurrency)
+
+        async def research_one(
+            signal: Signal,
+        ) -> tuple[
+            Signal,
+            Opportunity | None,
+            list[EvidenceItem],
+            InvestigationTrajectory | None,
+            Exception | None,
+        ]:
+            try:
+                async with semaphore, asyncio.timeout(self._signal_timeout_seconds):
+                    opportunity, evidence = await self._researcher.research_signal(signal)
+                return signal, opportunity, evidence, self._researcher.last_trajectory, None
+            except Exception as exc:  # per-signal isolation is the harness boundary
+                return signal, None, [], self._researcher.last_trajectory, exc
+
+        researched = await asyncio.gather(*(research_one(signal) for signal in admitted))
+        for signal, opportunity, evidence, trajectory, error in researched:
+            if error is not None:
+                failures.append(
+                    SignalResearchFailure(
+                        signal=signal,
+                        state=(trajectory.state.value if trajectory else "failed_retryable"),
+                        error_type=type(error).__name__,
+                        safe_error_summary=safe_error_summary(error),
+                    )
+                )
+                self._log.warning(
+                    "brief.signal_failed",
+                    signal_id=signal.signal_id,
+                    error_type=type(error).__name__,
+                )
+                continue
+            if opportunity is None:
+                raise RuntimeError("research task returned neither a result nor a failure")
             if opportunity.insufficient_evidence:
                 abstained.append(signal)
                 continue
-            items.append(BriefItem(signal=signal, opportunity=opportunity, evidence=evidence))
+            items.append(
+                BriefItem(
+                    signal=signal,
+                    opportunity=opportunity,
+                    evidence=evidence,
+                    investigation=trajectory,
+                )
+            )
+
+        # Observed values can only raise the conservative capacity projection.
+        usage = usage.conservative_merge(await self._snapshot())
 
         self._log.info(
             "brief.deep_research",
@@ -145,20 +207,22 @@ class BriefCompiler:
             latency_ms=usage.latency_ms,
             cost_usd=usage.cost_usd,
         )
+        coverage_complete = not deferred and not coverage_gaps and not failures
         return Brief(
             as_of=as_of,
             desk=desk,
             items=items,
-            nothing_material=len(items) == 0,
+            nothing_material=len(items) == 0 and coverage_complete,
             research_usage=usage,
             unresearched_signals=[
                 signal for signal in signals if signal.priority < self._triage_priority_threshold
             ],
             deferred_signals=deferred,
             abstained_signals=abstained,
+            failed_signals=failures,
             dark_detectors=coverage_gaps,
             triage_scores=triage_scores,
-            coverage_complete=not deferred and not coverage_gaps,
+            coverage_complete=coverage_complete,
         )
 
     def _score_distribution(self, signals: list[Signal]) -> TriageScoreDistribution:

@@ -19,6 +19,7 @@ class DetailValidator(AcquisitionModel):
     source_revision: str = Field(min_length=1)
     etag: str | None = None
     last_modified: str | None = None
+    detail_url: str | None = None
 
 
 class RawSourceCursor(AcquisitionModel):

@@ -139,6 +139,12 @@ class _LocalResearchTools(ResearchTools):
     def access(self) -> GraphAccessContext:
         return self._poc_registry.access
 
+    supports_graph_entry = False
+    supports_neighborhood = False
+    supports_planned_search = False
+    supports_timeseries = False
+    supports_precedents = False
+
     async def corpus_search(
         self,
         query: str,
@@ -235,9 +241,7 @@ def _evaluation(
         else 0.0
     )
     recall = true_positives / len(expected) if expected else 1.0
-    passed = not (
-        missing or unexpected or non_positive or lookahead or citation_failures
-    )
+    passed = not (missing or unexpected or non_positive or lookahead or citation_failures)
     return POCEvaluation(
         expected_positive_patterns=expected,
         observed_positive_patterns=observed,
@@ -272,9 +276,7 @@ async def run_poc_demo(
     )
 
     resolution_store = InMemoryResolutionStore()
-    await resolution_store.load_reference(
-        [document async for document in gleif_fixture().fetch()]
-    )
+    await resolution_store.load_reference([document async for document in gleif_fixture().fetch()])
     resolver = EntityResolver(resolution_store)
     for document in visible_documents:
         await resolver.resolve_document(document, recorded_at=as_of)
@@ -292,9 +294,7 @@ async def run_poc_demo(
     )
     extraction_results: list[ExtractionResult] = []
     for document in visible_documents:
-        extraction_results.append(
-            await extraction.extract_document(document, document.recorded_at)
-        )
+        extraction_results.append(await extraction.extract_document(document, document.recorded_at))
     assertions = writer.assertions
 
     access = _access(source.source_id)
@@ -359,9 +359,7 @@ async def run_poc_demo(
     resolved_leis = {resolution.lei for resolution in resolutions}
     claim_count = sum(len(item.opportunity.claims) for item in brief.items)
     citation_count = sum(
-        len(claim.evidence_ids)
-        for item in brief.items
-        for claim in item.opportunity.claims
+        len(claim.evidence_ids) for item in brief.items for claim in item.opportunity.claims
     )
     stages = (
         POCStageSummary(
@@ -470,8 +468,7 @@ def format_poc_report(report: POCDemoReport) -> str:
     lines.extend(["", "Signals:"])
     if report.signals:
         lines.extend(
-            f"  {signal.opportunity_score:.3f}  {signal.pattern:<42} "
-            f"{signal.entity_name}"
+            f"  {signal.opportunity_score:.3f}  {signal.pattern:<42} {signal.entity_name}"
             for signal in report.signals
         )
     else:

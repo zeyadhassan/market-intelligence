@@ -40,6 +40,12 @@ class _Tools:
     def access(self) -> GraphAccessContext:
         return trusted_test_access("wire")
 
+    supports_graph_entry = False
+    supports_neighborhood = False
+    supports_planned_search = False
+    supports_timeseries = False
+    supports_precedents = False
+
     async def entity_profile(self, entity_key: str) -> dict[str, object]:
         assert entity_key == "LEI-1"
         return self._profile or {

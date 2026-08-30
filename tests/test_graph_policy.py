@@ -5,7 +5,8 @@ import re
 
 import pytest
 
-from fi_intel.cli import brief, research, search
+import fi_intel.cli as cli
+from fi_intel.cli import serve, worker_analysis
 from fi_intel.governance.audit import InMemoryAuditLog
 from fi_intel.governance.policy import trusted_test_access
 from fi_intel.graph.client import GraphClient
@@ -73,7 +74,24 @@ async def test_graph_audit_records_zero_result_probe() -> None:
     assert audit.events[0].source_id is None
 
 
-@pytest.mark.parametrize("command", [search, research, brief])
+@pytest.mark.parametrize("command", [serve, worker_analysis])
 def test_public_cli_does_not_accept_self_asserted_policy_fields(command) -> None:
     parameters = inspect.signature(command).parameters
     assert {"principal", "group", "side"}.isdisjoint(parameters)
+
+
+def test_direct_result_command_implementations_are_removed() -> None:
+    for name in (
+        "backtest",
+        "brief",
+        "entities_resolve",
+        "extract",
+        "index_run",
+        "ingest_run",
+        "migrate",
+        "patterns_run",
+        "research",
+        "search",
+        "sources_peek",
+    ):
+        assert not hasattr(cli, name)

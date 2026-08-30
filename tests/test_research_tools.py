@@ -70,7 +70,9 @@ async def test_entity_profile_returns_typed_assertions_with_exact_evidence_span(
         document_class=DocumentClass.NEWS_WIRE,
     )
     retrieval = SimpleNamespace(
-        resolve_span=AsyncMock(return_value=(doc, "Example Bank approved"))
+        resolve_spans=AsyncMock(
+            return_value={("wire", "doc-1", 10, 31): (doc, "Example Bank approved")}
+        )
     )
     graph = SimpleNamespace(
         read_assertions=AsyncMock(

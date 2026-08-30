@@ -73,9 +73,7 @@ def wilson_interval(counts: BinaryCounts, confidence: float = 0.95) -> RateEstim
     rate = counts.rate
     denominator = 1.0 + z_squared / n
     centre = (rate + z_squared / (2.0 * n)) / denominator
-    half_width = (
-        z * ((rate * (1.0 - rate) / n + z_squared / (4.0 * n * n)) ** 0.5) / denominator
-    )
+    half_width = z * ((rate * (1.0 - rate) / n + z_squared / (4.0 * n * n)) ** 0.5) / denominator
     return RateEstimate(
         rate=rate,
         lower=max(0.0, centre - half_width),

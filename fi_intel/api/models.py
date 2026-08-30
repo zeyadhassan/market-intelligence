@@ -139,7 +139,6 @@ class BriefPublicationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     html: str = Field(min_length=1, max_length=2_000_000)
-    coverage_complete: bool
 
 
 class BriefView(ApiModel):
@@ -215,6 +214,14 @@ class OpportunityResultView(ApiModel):
     changed_at: datetime
     coverage_state: str
     falsifier: str
+    why_now: str = ""
+    commercial_angle: str = ""
+    materiality: str = ""
+    contradictions: tuple[str, ...] = ()
+    uncertainty: str = ""
+    coverage_details: str = ""
+    change_summary: str = ""
+    investigation_trace: tuple[dict[str, str], ...] = ()
     evidence: tuple[OpportunityEvidenceView, ...] = ()
     latest_evaluation: str | None = None
 
@@ -244,6 +251,9 @@ class TopicResultsView(ApiModel):
     scope_notice: str
     model_name: str | None = None
     run_id: str | None = None
+    analysis_job_id: str | None = None
+    business_date: str | None = None
+    lifecycle_counts: dict[str, int] = Field(default_factory=dict)
     required_source_count: int = 0
     successful_source_count: int = 0
     rejected_candidate_count: int = 0
@@ -271,3 +281,20 @@ class ResultEvaluationReceipt(ApiModel):
     result_id: str
     verdict: ResultEvaluationVerdict
     recorded_at: datetime
+
+
+class SearchCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    query: str = Field(min_length=1, max_length=2000)
+    seed_entity_ids: tuple[str, ...] = Field(default=(), max_length=10)
+
+
+class SearchView(ApiModel):
+    search_id: str
+    state: str
+    route: str
+    query: str
+    temporal_pin: datetime
+    answer: dict[str, object] | None = None
+    safe_error_summary: str | None = None

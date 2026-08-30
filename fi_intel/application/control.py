@@ -40,15 +40,11 @@ class JobStatus(StrEnum):
     QUARANTINED = "quarantined"
 
 
-TERMINAL_JOB_STATUSES = frozenset(
-    {JobStatus.COMMITTED, JobStatus.NOT_NOVEL, JobStatus.QUARANTINED}
-)
+TERMINAL_JOB_STATUSES = frozenset({JobStatus.COMMITTED, JobStatus.NOT_NOVEL, JobStatus.QUARANTINED})
 
 _ALLOWED_JOB_TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
     JobStatus.RECEIVED: frozenset({JobStatus.RAW_ARCHIVED, JobStatus.QUARANTINED}),
-    JobStatus.RAW_ARCHIVED: frozenset(
-        {JobStatus.CANONICALIZED, JobStatus.QUARANTINED}
-    ),
+    JobStatus.RAW_ARCHIVED: frozenset({JobStatus.CANONICALIZED, JobStatus.QUARANTINED}),
     JobStatus.CANONICALIZED: frozenset(
         {JobStatus.COMMITTED, JobStatus.NOT_NOVEL, JobStatus.QUARANTINED}
     ),
@@ -137,9 +133,7 @@ class QuarantineRecord(ControlModel):
 class IngestionControlStore(Protocol):
     async def create_run(self, run: IngestRun) -> None: ...
 
-    async def finish_run(
-        self, run_id: UUID, status: RunStatus, finished_at: datetime
-    ) -> None: ...
+    async def finish_run(self, run_id: UUID, status: RunStatus, finished_at: datetime) -> None: ...
 
     async def create_job(self, job: IngestJob) -> None: ...
 
@@ -199,9 +193,7 @@ class InMemoryIngestionControlStore:
             raise ControlConflictError("run ID has conflicting content")
         self._runs.setdefault(run.run_id, run)
 
-    async def finish_run(
-        self, run_id: UUID, status: RunStatus, finished_at: datetime
-    ) -> None:
+    async def finish_run(self, run_id: UUID, status: RunStatus, finished_at: datetime) -> None:
         if status is RunStatus.RUNNING:
             raise ControlInvariantError("finish_run requires a terminal status")
         run = self._runs.get(run_id)
@@ -285,9 +277,7 @@ class InMemoryIngestionControlStore:
     ) -> IngestJob:
         if record.job_id != job_id:
             raise ControlInvariantError("quarantine record references another job")
-        job = self._require_transition(
-            job_id, expected, JobStatus.QUARANTINED, record.recorded_at
-        )
+        job = self._require_transition(job_id, expected, JobStatus.QUARANTINED, record.recorded_at)
         self._validate_watermark(job, watermark)
         self._check_watermark_advance(watermark)
         previous = self._quarantine.get(record.quarantine_id)
@@ -329,9 +319,7 @@ class InMemoryIngestionControlStore:
         if job is None:
             raise ControlInvariantError("ingest job is unknown")
         if job.status is not expected:
-            raise ControlInvariantError(
-                f"stale job state: expected {expected}, found {job.status}"
-            )
+            raise ControlInvariantError(f"stale job state: expected {expected}, found {job.status}")
         if requested not in _ALLOWED_JOB_TRANSITIONS[expected]:
             raise ControlInvariantError(f"invalid job transition: {expected} -> {requested}")
         if occurred_at <= job.updated_at:
@@ -361,9 +349,10 @@ class InMemoryIngestionControlStore:
 class PostgresIngestionControlStore:
     """PostgreSQL control store targeting migration 0004."""
 
-    def __init__(self, dsn: str) -> None:
+    def __init__(self, dsn: str, *, pool: asyncpg.Pool | None = None) -> None:
         self._dsn = dsn
-        self._pool: asyncpg.Pool | None = None
+        self._pool = pool
+        self._owns_pool = pool is None
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is None:
@@ -388,9 +377,7 @@ class PostgresIngestionControlStore:
             run.policy_id,
         )
 
-    async def finish_run(
-        self, run_id: UUID, status: RunStatus, finished_at: datetime
-    ) -> None:
+    async def finish_run(self, run_id: UUID, status: RunStatus, finished_at: datetime) -> None:
         if status is RunStatus.RUNNING:
             raise ControlInvariantError("finish_run requires a terminal status")
         pool = await self._get_pool()
@@ -592,9 +579,9 @@ class PostgresIngestionControlStore:
         ]
 
     async def close(self) -> None:
-        if self._pool is not None:
+        if self._pool is not None and self._owns_pool:
             await self._pool.close()
-            self._pool = None
+        self._pool = None
 
     async def _transition(
         self,
@@ -646,9 +633,7 @@ class PostgresIngestionControlStore:
         )
 
     @staticmethod
-    async def _upsert_watermark(
-        conn: asyncpg.Connection, watermark: SourceWatermark
-    ) -> None:
+    async def _upsert_watermark(conn: asyncpg.Connection, watermark: SourceWatermark) -> None:
         result = await conn.execute(
             """
             INSERT INTO ingest_watermark_v2 (
@@ -683,9 +668,7 @@ class PostgresIngestionControlStore:
         return self._job_from_row(row)
 
     @staticmethod
-    async def _fetch_job_row(
-        conn: asyncpg.Connection, job_id: UUID
-    ) -> asyncpg.Record | None:
+    async def _fetch_job_row(conn: asyncpg.Connection, job_id: UUID) -> asyncpg.Record | None:
         return await conn.fetchrow(
             """
             SELECT j.*, p.barrier_side, p.allowed_entitlement_groups, p.created_at
@@ -714,9 +697,7 @@ class PostgresIngestionControlStore:
             access_policy=AccessPolicy(
                 policy_id=row["policy_id"],
                 barrier_side=BarrierSide(row["barrier_side"]),
-                allowed_entitlement_groups=frozenset(
-                    row["allowed_entitlement_groups"]
-                ),
+                allowed_entitlement_groups=frozenset(row["allowed_entitlement_groups"]),
                 created_at=row["created_at"],
             ),
             status=row["status"],

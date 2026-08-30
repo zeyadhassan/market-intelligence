@@ -306,9 +306,10 @@ class InMemoryEntityRepository:
 class PostgresEntityRepository:
     """PostgreSQL repository targeting migration ``0008_entity_intelligence.sql``."""
 
-    def __init__(self, dsn: str) -> None:
+    def __init__(self, dsn: str, *, pool: asyncpg.Pool | None = None) -> None:
         self._dsn = dsn
-        self._pool: asyncpg.Pool | None = None
+        self._pool = pool
+        self._owns_pool = pool is None
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is None:
@@ -610,9 +611,9 @@ class PostgresEntityRepository:
         return tuple(_link_decision_from_row(row) for row in rows)
 
     async def close(self) -> None:
-        if self._pool is not None:
+        if self._pool is not None and self._owns_pool:
             await self._pool.close()
-            self._pool = None
+        self._pool = None
 
     @staticmethod
     async def _load_bundle(

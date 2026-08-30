@@ -56,9 +56,7 @@ def discover_migrations(deploy_directory: Path | None = None) -> tuple[Migration
     if not baseline.is_file():
         raise MigrationPlanError(f"baseline migration is missing: {baseline}")
     if not migration_directory.is_dir():
-        raise MigrationPlanError(
-            f"migration directory is missing: {migration_directory}"
-        )
+        raise MigrationPlanError(f"migration directory is missing: {migration_directory}")
 
     paths: list[tuple[int, Path, str]] = [(1, baseline, "baseline schema")]
     seen = {1: baseline.name}
@@ -69,8 +67,7 @@ def discover_migrations(deploy_directory: Path | None = None) -> tuple[Migration
         version = int(match.group("version"))
         if version in seen:
             raise MigrationPlanError(
-                f"duplicate migration version {version:04d}: "
-                f"{seen[version]} and {path.name}"
+                f"duplicate migration version {version:04d}: {seen[version]} and {path.name}"
             )
         seen[version] = path.name
         paths.append((version, path, match.group("name").replace("_", " ")))
@@ -79,9 +76,7 @@ def discover_migrations(deploy_directory: Path | None = None) -> tuple[Migration
     actual_versions = [version for version, _, _ in paths]
     expected_versions = list(range(1, actual_versions[-1] + 1))
     if actual_versions != expected_versions:
-        raise MigrationPlanError(
-            f"migration versions are not contiguous: {actual_versions}"
-        )
+        raise MigrationPlanError(f"migration versions are not contiguous: {actual_versions}")
 
     migrations: list[Migration] = []
     for version, path, description in paths:
@@ -256,9 +251,7 @@ class PostgresMigrationRunner:
         )
 
     @staticmethod
-    def _assert_no_drift(
-        plan: tuple[Migration, ...], applied: list[AppliedMigration]
-    ) -> None:
+    def _assert_no_drift(plan: tuple[Migration, ...], applied: list[AppliedMigration]) -> None:
         expected = {item.version_key: item for item in plan}
         for record in applied:
             migration = expected[record.version_key]

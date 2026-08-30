@@ -27,6 +27,7 @@ class CoverageScope(StrEnum):
     ASSERTION = "assertion"
     SOURCE_OPERATIONS = "source_operations"
     DESK_ACCOUNT = "desk_account"
+    FACTUAL_ENTITY = "factual_entity"
 
 
 class MaterialityThreshold(BaseModel):
@@ -184,7 +185,21 @@ def _pin(alias: str) -> str:
     return (
         f"{alias}.recorded_at <= datetime($as_of) "
         f"AND ({alias}.superseded_at IS NULL OR {alias}.superseded_at > datetime($as_of)) "
-        f"AND ({alias}.valid_to IS NULL OR datetime({alias}.valid_to) > datetime($as_of))"
+        f"AND (coalesce({alias}.asserted_valid_to, {alias}.valid_to) IS NULL OR "
+        f"datetime(coalesce({alias}.asserted_valid_to, {alias}.valid_to)) "
+        f"> datetime($as_of)) "
+        f"AND ({alias}.state_key IS NULL OR NOT EXISTS {{ "
+        f"MATCH (newer:Assertion {{state_key: {alias}.state_key}}) "
+        f"WHERE newer.assertion_id <> {alias}.assertion_id "
+        f"AND newer.recorded_at <= datetime($as_of) "
+        f"AND (newer.superseded_at IS NULL OR newer.superseded_at > datetime($as_of)) "
+        "AND newer.source_id IN $allowed_source_ids "
+        "AND (newer.barrier_side = 'public' OR $side = 'private') "
+        f"AND newer.valid_from <= datetime($as_of) "
+        f"AND newer.valid_from > {alias}.valid_from "
+        f"AND (coalesce(newer.asserted_valid_to, newer.valid_to) IS NULL OR "
+        f"datetime(coalesce(newer.asserted_valid_to, newer.valid_to)) "
+        f"> datetime($as_of)) }})"
     )
 
 
@@ -249,6 +264,14 @@ MATURITY_WALL = Pattern(
             name="refinancing-search-complete",
             description="Authorized refinancing coverage is complete for the instrument.",
             scope=CoverageScope.SOURCE_OPERATIONS,
+        ),
+        CoveragePrerequisite(
+            name="instrument-factual-coverage-complete",
+            description=(
+                "The declared issuer, exchange, regulator, rating and news universe was "
+                "reconciled for this instrument and time window."
+            ),
+            scope=CoverageScope.FACTUAL_ENTITY,
         ),
     ),
     material_arguments=("instrument", "currency"),
@@ -507,6 +530,14 @@ AT1_CALL = Pattern(
             name="refinancing-search-complete",
             description="Authorized refinancing coverage is complete for the AT1 instrument.",
             scope=CoverageScope.SOURCE_OPERATIONS,
+        ),
+        CoveragePrerequisite(
+            name="instrument-factual-coverage-complete",
+            description=(
+                "The declared issuer, exchange, regulator, rating and news universe was "
+                "reconciled for this instrument and time window."
+            ),
+            scope=CoverageScope.FACTUAL_ENTITY,
         ),
     ),
     material_arguments=("instrument", "instrument_class", "currency"),

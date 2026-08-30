@@ -14,7 +14,6 @@ from typing import Protocol, runtime_checkable
 import asyncpg
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from fi_intel.graph.writer import AssertionWriter
 from fi_intel.ingest.extract import (
     EXTRACTOR_VERSION,
     RawEntityMention,
@@ -24,6 +23,7 @@ from fi_intel.ingest.extract import (
 )
 from fi_intel.ingest.resolve import EntityResolver, normalize_name
 from fi_intel.logging import get_logger
+from fi_intel.ontology.schema import Assertion
 from fi_intel.ontology.validators import (
     ProposedType,
     proposed_type_from_validation_error,
@@ -40,6 +40,17 @@ class ProposedTypeSink(Protocol):
     async def record(self, proposal: ProposedType) -> None: ...
 
 
+@runtime_checkable
+class AssertionSink(Protocol):
+    """Admission boundary for validated assertions.
+
+    The canonical implementation commits evidence and the claim decision to
+    PostgreSQL before an outbox handler projects the assertion into Neo4j.
+    """
+
+    async def write(self, assertion: Assertion) -> str: ...
+
+
 class InMemoryProposedTypeSink:
     def __init__(self) -> None:
         self.proposals: list[ProposedType] = []
@@ -51,9 +62,10 @@ class InMemoryProposedTypeSink:
 class PostgresProposedTypeSink:
     """Persist proposed types to the review queue."""
 
-    def __init__(self, dsn: str) -> None:
+    def __init__(self, dsn: str, *, pool: asyncpg.Pool | None = None) -> None:
         self._dsn = dsn
-        self._pool: asyncpg.Pool | None = None
+        self._pool = pool
+        self._owns_pool = pool is None
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is None:
@@ -77,9 +89,9 @@ class PostgresProposedTypeSink:
         )
 
     async def close(self) -> None:
-        if self._pool is not None:
+        if self._pool is not None and self._owns_pool:
             await self._pool.close()
-            self._pool = None
+        self._pool = None
 
 
 class ExtractionResult(BaseModel):
@@ -99,7 +111,7 @@ class ExtractionPipeline:
     def __init__(
         self,
         extractor: StructuredExtractor,
-        writer: AssertionWriter,
+        writer: AssertionSink,
         proposed_sink: ProposedTypeSink,
         resolver: EntityResolver,
         min_confidence: float = 0.0,

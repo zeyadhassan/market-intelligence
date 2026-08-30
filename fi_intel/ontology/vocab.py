@@ -23,15 +23,15 @@ class EdgeType(StrEnum):
     # Structure
     SUBSIDIARY_OF = "SUBSIDIARY_OF"
     # Events affecting organizations
-    RATING_ACTION_ON = "RATING_ACTION_ON"          # Rating -> Organization
+    RATING_ACTION_ON = "RATING_ACTION_ON"  # Rating -> Organization
     LEADERSHIP_CHANGE_AT = "LEADERSHIP_CHANGE_AT"  # Person/Event -> Organization
     PROGRAMME_APPROVED_BY = "PROGRAMME_APPROVED_BY"  # Programme -> Organization
     # Debt
-    ISSUES = "ISSUES"                  # Organization -> Instrument
-    MATURES_ON = "MATURES_ON"          # Instrument -> Event(maturity)
-    CALLABLE_ON = "CALLABLE_ON"        # Instrument -> Event(first call)
-    REFINANCES = "REFINANCES"          # Instrument/Programme -> Instrument
+    ISSUES = "ISSUES"  # Organization -> Instrument
+    MATURES_ON = "MATURES_ON"  # Instrument -> Event(maturity)
+    CALLABLE_ON = "CALLABLE_ON"  # Instrument -> Event(first call)
+    REFINANCES = "REFINANCES"  # Instrument/Programme -> Instrument
     # Metrics
     REPORTS_METRIC = "REPORTS_METRIC"  # Organization -> Metric value event
     # Outcome
-    MANDATE_OF = "MANDATE_OF"          # Event(mandate) -> Organization
+    MANDATE_OF = "MANDATE_OF"  # Event(mandate) -> Organization

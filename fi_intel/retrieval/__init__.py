@@ -6,3 +6,7 @@ caller's group and barrier side. A prompt-level restriction is not a
 control, and there is deliberately no way to ask this package for an
 unfiltered query.
 """
+
+from fi_intel.retrieval.reranking import DeterministicFixtureReranker, Reranker
+
+__all__ = ["DeterministicFixtureReranker", "Reranker"]

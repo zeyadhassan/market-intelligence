@@ -52,6 +52,18 @@ def document_version_id(document_id: UUID, source_revision: str, content_hash: s
     return _stable_uuid("document-version", document_id, source_revision, content_hash)
 
 
+def entity_identity_id(entity_type: str, governed_key: str) -> UUID:
+    """Return one cross-store identity for a governed entity key."""
+
+    return _stable_uuid("entity", entity_type, governed_key)
+
+
+def knowledge_assertion_id(assertion_identity: str) -> UUID:
+    """Return the ledger/graph identity for one validated assertion."""
+
+    return _stable_uuid("assertion", assertion_identity)
+
+
 def signal_identity_id(
     pattern_id: str,
     pattern_version: str,
@@ -522,7 +534,7 @@ class SignalTransition(LedgerModel):
 
     @model_validator(mode="after")
     def _not_noop(self) -> Self:
-        if self.from_status == self.to_status:
+        if self.from_status == self.to_status and self.to_status is not SignalStatus.CONFIRMED:
             raise ValueError("signal transition must change status")
         if len(set(self.contributing_assertion_ids)) != len(self.contributing_assertion_ids):
             raise ValueError("contributing_assertion_ids contains duplicates")
@@ -549,6 +561,7 @@ _ALLOWED_SIGNAL_TRANSITIONS: dict[SignalStatus | None, frozenset[SignalStatus]] 
     ),
     SignalStatus.CONFIRMED: frozenset(
         {
+            SignalStatus.CONFIRMED,
             SignalStatus.REVIEWED,
             SignalStatus.SUPPRESSED,
             SignalStatus.EXPIRED,

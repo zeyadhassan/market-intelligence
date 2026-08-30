@@ -14,6 +14,7 @@ from fi_intel.sources.adapters.gleif import (
     GleifBulkPage,
     GleifDetailCanonicalizer,
     GleifRawAdapter,
+    GleifTargetedRawAdapter,
     is_valid_lei,
 )
 from fi_intel.sources.canonical import BarrierSide, DocumentClass
@@ -151,9 +152,7 @@ async def test_gleif_raw_adapter_paginates_and_canonicalizes_exact_details() -> 
     assert poll.discovered_count == 2
     assert [item.sequence_number for item in poll.items] == [1, 2]
     canonicalizer = GleifDetailCanonicalizer()
-    documents = [
-        await canonicalizer.canonicalize(item.envelope) for item in poll.items
-    ]
+    documents = [await canonicalizer.canonicalize(item.envelope) for item in poll.items]
     assert [document.identifiers["lei"] for document in documents] == [
         LEI_ONE,
         LEI_TWO,
@@ -191,3 +190,58 @@ async def test_injected_gleif_bulk_pages_preserve_source_adapter_restart() -> No
     ]
     assert [document.doc_id for document in resumed] == [documents[1].doc_id]
     assert calls == [(None, 1), (BULK_PAGE_TWO, 1)]
+
+
+async def test_targeted_gleif_adapter_fetches_exact_configured_universe_and_resumes() -> None:
+    registration = production_source_catalog().require("gleif")
+    ordered = sorted((LEI_ONE, LEI_TWO))
+    scripted: list[tuple[str, object]] = []
+    for lei in ordered:
+        scripted.append(
+            (
+                f"https://api.gleif.org/api/v1/lei-records/{lei}",
+                source_response(
+                    200,
+                    _payload({"data": _record(lei, f"Entity {lei}")}),
+                    headers=(
+                        ("content-type", "application/vnd.api+json"),
+                        ("etag", f'"{lei}"'),
+                    ),
+                ),
+            )
+        )
+    scripted.extend(
+        (
+            f"https://api.gleif.org/api/v1/lei-records/{lei}",
+            source_response(304),
+        )
+        for lei in ordered
+    )
+    transport = ScriptedSourceTransport(scripted)
+    client = HardenedSourceClient(
+        transport,
+        allowed_origins=registration.allowed_origins,
+        user_agent="fi-intel-test test@example.invalid",
+        timeout_seconds=1,
+        max_attempts=1,
+        max_redirects=1,
+        clock=lambda: NOW,
+    )
+    adapter = GleifTargetedRawAdapter(
+        registration,
+        _policy(),
+        client,
+        frozenset({LEI_ONE, LEI_TWO}),
+    )
+
+    first = await adapter.poll()
+    second = await adapter.poll(first.next_cursor)
+
+    assert [item.envelope.external_id for item in first.items] == [
+        f"GLEIF-{lei}" for lei in ordered
+    ]
+    assert first.discovered_count == 2
+    assert second.items == ()
+    assert second.unchanged_count == 2
+    assert all("If-None-Match" in request[1] for request in transport.requests[-2:])
+    transport.assert_exhausted()

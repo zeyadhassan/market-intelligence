@@ -32,6 +32,8 @@ from fi_intel.api.models import (
     ReviewDecisionRequest,
     ReviewReceipt,
     RunView,
+    SearchCreateRequest,
+    SearchView,
     SessionView,
     SignalCloseReceipt,
     SignalCloseRequest,
@@ -41,7 +43,12 @@ from fi_intel.api.models import (
     TopicSubscriptionView,
     TopicTagView,
 )
-from fi_intel.api.service import AnalystService, ResourceNotFoundError, StageOneService
+from fi_intel.api.service import (
+    AnalystService,
+    PublicationNotReadyError,
+    ResourceNotFoundError,
+    StageOneService,
+)
 from fi_intel.api.stage_one_page import STAGE_ONE_CSS, STAGE_ONE_HTML, STAGE_ONE_JS
 from fi_intel.api.workbench import WORKBENCH_CSS, WORKBENCH_HTML, WORKBENCH_JS
 from fi_intel.logging import get_logger
@@ -61,6 +68,8 @@ def create_app(  # noqa: C901 - route registration is intentionally centralized
     *,
     stage_one_service: StageOneService | None = None,
     stage_one_html: str = STAGE_ONE_HTML,
+    stage_one_javascript: str = STAGE_ONE_JS,
+    canonical_stage_one_only: bool = False,
     owns_telemetry: bool = False,
     owned_resources: tuple[_AsyncCloseable, ...] = (),
 ) -> FastAPI:
@@ -94,6 +103,13 @@ def create_app(  # noqa: C901 - route registration is intentionally centralized
         lifespan=lifespan,
     )
     bearer = HTTPBearer(auto_error=False)
+
+    @app.exception_handler(PublicationNotReadyError)
+    async def publication_not_ready(
+        request: Request, exc: PublicationNotReadyError
+    ) -> JSONResponse:
+        del request
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(exc)})
 
     async def current_principal(
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)] = None,
@@ -205,8 +221,8 @@ def create_app(  # noqa: C901 - route registration is intentionally centralized
             return Response(STAGE_ONE_CSS, media_type="text/css")
 
         @app.get("/stage-one/assets/stage-one.js", include_in_schema=False)
-        async def stage_one_js() -> Response:
-            return Response(STAGE_ONE_JS, media_type="text/javascript")
+        async def stage_one_javascript_asset() -> Response:
+            return Response(stage_one_javascript, media_type="text/javascript")
 
     @app.get("/v1/session", response_model=SessionView)
     async def session(principal: principal_dependency) -> SessionView:
@@ -243,9 +259,18 @@ def create_app(  # noqa: C901 - route registration is intentionally centralized
         async def get_topic_results(
             topic_id: str,
             principal: principal_dependency,
+            response: Response,
             refresh: Annotated[bool, Query()] = False,
         ) -> TopicResultsView:
-            return await stage_one.get_topic_results(principal, topic_id, refresh=refresh)
+            result = await stage_one.get_topic_results(principal, topic_id, refresh=refresh)
+            if result.analysis_status in {
+                "queued",
+                "running",
+                "deferred",
+                "retryable_failed",
+            }:
+                response.status_code = status.HTTP_202_ACCEPTED
+            return result
 
         @app.post(
             "/v1/results/{result_id}/evaluation",
@@ -258,6 +283,28 @@ def create_app(  # noqa: C901 - route registration is intentionally centralized
             principal: principal_dependency,
         ) -> ResultEvaluationReceipt:
             return await stage_one.evaluate_result(principal, result_id, evaluation)
+
+        @app.post(
+            "/v1/searches",
+            response_model=SearchView,
+            status_code=status.HTTP_202_ACCEPTED,
+        )
+        async def create_search(
+            search_request: SearchCreateRequest,
+            principal: principal_dependency,
+        ) -> SearchView:
+            return await stage_one.create_search(principal, search_request)
+
+        @app.get("/v1/searches/{search_id}", response_model=SearchView)
+        async def get_search(
+            search_id: str,
+            principal: principal_dependency,
+            response: Response,
+        ) -> SearchView:
+            result = await stage_one.get_search(principal, search_id)
+            if result.state in {"queued", "running", "retryable_failed"}:
+                response.status_code = status.HTTP_202_ACCEPTED
+            return result
 
     @app.get("/v1/signals", response_model=list[SignalView])
     async def list_signals(
@@ -349,39 +396,89 @@ def create_app(  # noqa: C901 - route registration is intentionally centralized
     async def get_run(run_id: str, principal: principal_dependency) -> RunView:
         return await service.get_run(principal, run_id)
 
+    if canonical_stage_one_only:
+        if stage_one_service is None:
+            raise ValueError("canonical Stage One routing requires a Stage One service")
+        supported_paths = {
+            "/",
+            "/health/live",
+            "/health/ready",
+            "/stage-one",
+            "/stage-one/assets/stage-one.css",
+            "/stage-one/assets/stage-one.js",
+            "/v1/session",
+            "/v1/topics",
+            "/v1/subscriptions",
+            "/v1/topics/{topic_id}/subscription",
+            "/v1/topics/{topic_id}/results",
+            "/v1/results/{result_id}/evaluation",
+            "/v1/searches",
+            "/v1/searches/{search_id}",
+        }
+        app.router.routes[:] = [
+            route for route in app.router.routes if getattr(route, "path", None) in supported_paths
+        ]
     return app
 
 
 def create_production_app() -> FastAPI:
     """Strict ``uvicorn --factory`` entry point for the deployed API."""
-    from fi_intel.api.config import AnalystApiSettings
     from fi_intel.api.postgres import PostgresAnalystService
+    from fi_intel.api.stage_one_postgres import PostgresStageOneService
+    from fi_intel.application.preflight import canonical_configuration_errors
+    from fi_intel.application.runtime_resources import SharedPostgresPool
+    from fi_intel.config import Settings
+    from fi_intel.runtime import ExecutionPath, RuntimeCapabilities, validate_settings_runtime
     from fi_intel.telemetry import TelemetryConfig
 
-    settings = AnalystApiSettings()  # type: ignore[call-arg]  # values come from env
-    dsn = settings.postgres_dsn.get_secret_value()
-    directory = PostgresIdentityDirectory(dsn)
-    service = PostgresAnalystService(dsn)
+    settings = Settings()
+    errors = canonical_configuration_errors(settings)
+    if errors:
+        raise RuntimeError(f"Canonical API is not configured: {'; '.join(errors)}")
+    validate_settings_runtime(
+        settings,
+        RuntimeCapabilities(
+            execution_path=ExecutionPath.UNIFIED_PIPELINE,
+            uses_fixture_data=False,
+            uses_hashing_embeddings=False,
+            all_models_registry_routed=True,
+            coverage_computed_server_side=True,
+            durable_step_store=True,
+        ),
+    )
+    oidc_issuer = settings.oidc_issuer
+    oidc_audience = settings.oidc_audience
+    oidc_jwks_url = settings.oidc_jwks_url
+    if oidc_issuer is None or oidc_audience is None or oidc_jwks_url is None:
+        raise RuntimeError("canonical OIDC configuration disappeared after preflight")
+    postgres = SharedPostgresPool(settings)
+    directory = PostgresIdentityDirectory(settings.postgres_dsn, pool_provider=postgres)
+    service = PostgresAnalystService(settings.postgres_dsn, pool_provider=postgres)
     telemetry = Telemetry(
         TelemetryConfig(
             service_name="fi-intel-analyst-api",
-            service_version=settings.service_version,
-            environment=settings.environment,
+            service_version="0.1.0",
+            environment=settings.analysis_mode,
             trace_endpoint=settings.telemetry_trace_endpoint,
             metric_endpoint=settings.telemetry_metric_endpoint,
         )
     )
+    stage_one = PostgresStageOneService(
+        settings.postgres_dsn,
+        settings=settings,
+        telemetry=telemetry,
+        mode=settings.analysis_mode,
+        pool_provider=postgres,
+    )
     return create_app(
         Authenticator(
-            OIDCTokenVerifier(
-                settings.oidc_issuer,
-                settings.oidc_audience,
-                settings.oidc_jwks_url,
-            ),
+            OIDCTokenVerifier(oidc_issuer, oidc_audience, oidc_jwks_url),
             directory,
         ),
         service,
         telemetry,
+        stage_one_service=stage_one,
+        canonical_stage_one_only=True,
         owns_telemetry=True,
-        owned_resources=(directory, service),
+        owned_resources=(postgres, directory, service, stage_one),
     )

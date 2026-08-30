@@ -231,9 +231,7 @@ async def test_document_corrections_are_contiguous_atomic_and_idempotent() -> No
 
     conflicting_raw = raw_two.model_copy(update={"media_type": "application/pdf"})
     with pytest.raises(LedgerConflictError, match="immutable ID"):
-        await ledger.commit_document_version(
-            conflicting_raw, document, version_two, event_two
-        )
+        await ledger.commit_document_version(conflicting_raw, document, version_two, event_two)
 
 
 def test_evidence_span_hash_is_bound_to_the_exact_quote() -> None:
@@ -373,9 +371,7 @@ async def test_claim_to_signal_flow_has_provenance_and_guarded_lifecycle() -> No
         _event(candidate.candidate_id, policy.policy_id, "claim.decided.v1"),
     )
 
-    signal_id = signal_identity_id(
-        "capital-raise", "2", entity.entity_id, scope_key="capital"
-    )
+    signal_id = signal_identity_id("capital-raise", "2", entity.entity_id, scope_key="capital")
     signal = SignalIdentity(
         signal_id=signal_id,
         pattern_id="capital-raise",
@@ -398,9 +394,7 @@ async def test_claim_to_signal_flow_has_provenance_and_guarded_lifecycle() -> No
         actor="pattern-engine",
         policy_id=policy.policy_id,
     )
-    candidate_event = _event(
-        signal_id, policy.policy_id, "signal.transitioned.v1"
-    )
+    candidate_event = _event(signal_id, policy.policy_id, "signal.transitioned.v1")
     await ledger.commit_signal_transition(
         signal,
         candidate_transition,
@@ -428,9 +422,7 @@ async def test_claim_to_signal_flow_has_provenance_and_guarded_lifecycle() -> No
         policy_id=policy.policy_id,
     )
     with pytest.raises(LedgerInvariantError, match="not allowed"):
-        await ledger.commit_signal_transition(
-            signal, invalid_transition, invalid_event
-        )
+        await ledger.commit_signal_transition(signal, invalid_transition, invalid_event)
     assert await ledger.signal_history(signal_id) == [candidate_transition]
     assert invalid_event not in await ledger.pending_events()
 

@@ -33,10 +33,8 @@ from fi_intel.sources.transport import (
 )
 
 _ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
-_FORBIDDEN_XML = re.compile(br"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
-_SEC_TITLE_RE = re.compile(
-    r"^\S+(?:/\S+)?\s+-\s+(?P<name>.+)\s+\((?P<cik>\d+)\)\s+\([^)]+\)$"
-)
+_FORBIDDEN_XML = re.compile(rb"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
+_SEC_TITLE_RE = re.compile(r"^\S+(?:/\S+)?\s+-\s+(?P<name>.+)\s+\((?P<cik>\d+)\)\s+\([^)]+\)$")
 _FED_ENTITY_MARKER_RE = re.compile(
     r"\b(?:application by|actions? with)\s+(?:the\s+)?(?P<names>.+)$",
     re.IGNORECASE,
@@ -147,9 +145,7 @@ class FeedDetailRawAdapter:
             )
             if detail.not_modified:
                 if previous is None:
-                    raise SourceTransportError(
-                        "detail returned 304 without prior validator state"
-                    )
+                    raise SourceTransportError("detail returned 304 without prior validator state")
                 current[entry.external_id] = previous
                 unchanged += 1
                 continue
@@ -168,9 +164,7 @@ class FeedDetailRawAdapter:
                 unchanged += 1
                 continue
             sequence += 1
-            headers = tuple(
-                RawHeader(name=name, value=value) for name, value in detail.headers
-            ) + (
+            headers = tuple(RawHeader(name=name, value=value) for name, value in detail.headers) + (
                 RawHeader(name="content-location", value=detail.final_url),
                 RawHeader(name="x-fi-intel-discovery-title", value=entry.title),
             )
@@ -188,17 +182,13 @@ class FeedDetailRawAdapter:
             acquired.append(
                 RawAcquiredItem(
                     envelope=envelope,
-                    cursor_position=cursor_position(
-                        self.source_id, entry.external_id, revision
-                    ),
+                    cursor_position=cursor_position(self.source_id, entry.external_id, revision),
                     sequence_number=sequence,
                 )
             )
 
         history = self._bounded_history(current, prior)
-        previous_latest = (
-            cursor.latest_source_published_at if cursor is not None else None
-        )
+        previous_latest = cursor.latest_source_published_at if cursor is not None else None
         publication_times = [item.published_at for item in discovered]
         if previous_latest is not None:
             publication_times.append(previous_latest)
@@ -231,9 +221,7 @@ class FeedDetailRawAdapter:
 
     def _validate_cursor(self, cursor: RawSourceCursor | None) -> None:
         if cursor is not None and cursor.source_id != self.source_id:
-            raise ValueError(
-                f"cursor for {cursor.source_id!r} passed to {self.source_id!r}"
-            )
+            raise ValueError(f"cursor for {cursor.source_id!r} passed to {self.source_id!r}")
 
     def _bounded_history(
         self,
@@ -253,9 +241,7 @@ def parse_fed_discovery(payload: bytes, source_id: str) -> tuple[DiscoveredDetai
         link = item.findtext("link")
         published_raw = item.findtext("pubDate")
         if not title or not link or not published_raw:
-            raise MalformedDiscoveryError(
-                "Fed feed item is missing title, link, or pubDate"
-            )
+            raise MalformedDiscoveryError("Fed feed item is missing title, link, or pubDate")
         try:
             published_at = parsedate_to_datetime(published_raw)
         except (TypeError, ValueError) as exc:
@@ -349,11 +335,7 @@ class GovernmentDetailCanonicalizer:
         if len(body) < 20:
             raise PartialDetailError("detail body is too short to be complete")
         location = next(
-            (
-                header.value
-                for header in envelope.headers
-                if header.name == "content-location"
-            ),
+            (header.value for header in envelope.headers if header.name == "content-location"),
             None,
         )
         discovery_title = next(
@@ -469,7 +451,7 @@ def _unique_entries(entries: list[DiscoveredDetail]) -> tuple[DiscoveredDetail, 
 
 def _decode_text(payload: bytes, media_type: str) -> str:
     match = re.search(r"charset=([^;\s]+)", media_type, flags=re.IGNORECASE)
-    charset = match.group(1).strip('"\'') if match else "utf-8"
+    charset = match.group(1).strip("\"'") if match else "utf-8"
     try:
         return payload.decode(charset, errors="strict")
     except (LookupError, UnicodeDecodeError) as exc:

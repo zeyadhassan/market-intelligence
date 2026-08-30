@@ -68,9 +68,7 @@ class OpportunityQualityThresholds:
             min_summary_chars=_env_int(f"{prefix}MIN_SUMMARY_CHARS", 40),
             min_falsifier_chars=_env_int(f"{prefix}MIN_FALSIFIER_CHARS", 20),
             min_positive_model_calls=_env_int(f"{prefix}MIN_POSITIVE_MODEL_CALLS", 1),
-            min_case_lower_bound=float(
-                os.environ.get(f"{prefix}MIN_CASE_LOWER_BOUND", "0.80")
-            ),
+            min_case_lower_bound=float(os.environ.get(f"{prefix}MIN_CASE_LOWER_BOUND", "0.80")),
             min_rate_samples=_env_int(f"{prefix}MIN_RATE_SAMPLES", 100),
         )
 
@@ -169,9 +167,7 @@ def assess_opportunity_quality(  # noqa: C901
             minimum_samples=thresholds.min_rate_samples,
         ),
     )
-    failures.extend(
-        f"{compliance.name}: {failure}" for failure in compliance.failures
-    )
+    failures.extend(f"{compliance.name}: {failure}" for failure in compliance.failures)
 
     return OpportunityQualityReport(
         positive_citations=len(positive.evidence_ids),

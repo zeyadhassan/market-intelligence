@@ -19,6 +19,10 @@ class RetrievalService:
         self._audit = audit
         self._run_id = run_id
 
+    @property
+    def model_version(self) -> str:
+        return self._search.model_version
+
     async def search(
         self,
         query: str,
@@ -71,9 +75,7 @@ class RetrievalService:
         as_of: datetime | None,
     ) -> tuple[CanonicalDocument, str] | None:
         """Resolve and audit one graph-backed evidence span."""
-        resolved = await self._search.resolve_span(
-            principal, source_id, doc_id, start, end, as_of
-        )
+        resolved = await self._search.resolve_span(principal, source_id, doc_id, start, end, as_of)
         await self._audit.record(
             [
                 AccessEvent(
@@ -86,6 +88,33 @@ class RetrievalService:
                     result_count=int(resolved is not None),
                     accessed_at=datetime.now(tz=UTC),
                 )
+            ]
+        )
+        return resolved
+
+    async def resolve_spans(
+        self,
+        principal: Principal,
+        spans: tuple[tuple[str, str, int, int], ...],
+        *,
+        as_of: datetime | None,
+    ) -> dict[tuple[str, str, int, int], tuple[CanonicalDocument, str]]:
+        """Resolve and audit a bounded evidence batch through one store read."""
+
+        resolved = await self._search.resolve_spans(principal, spans, as_of)
+        await self._audit.record(
+            [
+                AccessEvent(
+                    run_id=self._run_id,
+                    principal=principal.principal_id,
+                    entitlement_group=principal.entitlement_group,
+                    source_id=span[0] if span in resolved else None,
+                    doc_id=span[1] if span in resolved else None,
+                    operation="evidence_resolve_batch",
+                    result_count=int(span in resolved),
+                    accessed_at=datetime.now(tz=UTC),
+                )
+                for span in spans
             ]
         )
         return resolved

@@ -4,7 +4,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from fi_intel.governance.policy import GraphAccessContext
 from fi_intel.graph.client import GraphClient
@@ -43,6 +43,13 @@ _ACTIVE_STATES = (
     SignalLifecycleState.STRENGTHENED,
     SignalLifecycleState.WEAKENED,
 )
+
+
+@runtime_checkable
+class SignalAuthority(Protocol):
+    """Authoritative store invoked before the graph signal projection."""
+
+    async def record(self, signal: Signal, score_anchor: float) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -122,6 +129,8 @@ class PatternRegistry:
         access: GraphAccessContext,
         coverage: CoverageProvider | None = None,
         precision: PatternPrecisionProvider | None = None,
+        signal_authority: SignalAuthority | None = None,
+        defer_signal_projection: bool = False,
     ) -> None:
         self._client = client
         self._patterns = {pattern.name: pattern for pattern in patterns}
@@ -138,6 +147,10 @@ class PatternRegistry:
         else:
             self._coverage = FailClosedCoverageProvider()
         self._precision = precision or UnavailablePatternPrecisionProvider()
+        self._signal_authority = signal_authority
+        if defer_signal_projection and signal_authority is None:
+            raise ValueError("deferred signal projection requires an authoritative store")
+        self._defer_signal_projection = defer_signal_projection
         self._last_coverage_gaps: list[DetectorCoverageGap] = []
         self._authorization_scope = signal_authorization_scope(
             access.principal.entitlement_group,
@@ -212,7 +225,7 @@ class PatternRegistry:
         active = self._active_patterns(enabled)
         self._last_coverage_gaps = []
         signals: list[Signal] = []
-        async with self._client._driver.session() as session:  # noqa: SLF001
+        async with self._client.session() as session:
             for pattern in active:
                 preflight_gap = await self._coverage_preflight(pattern, as_of)
                 if preflight_gap is not None:
@@ -296,6 +309,7 @@ class PatternRegistry:
                 freshness_days=pattern.freshness_days,
                 allowed_source_ids=self._access.allowed_source_ids,
                 scopes=pattern.computed_coverage_scopes,
+                factual_subject_key=None,
             )
         )
         if decision.complete:
@@ -322,6 +336,7 @@ class PatternRegistry:
                 freshness_days=pattern.freshness_days,
                 allowed_source_ids=self._access.allowed_source_ids,
                 scopes=pattern.computed_coverage_scopes,
+                factual_subject_key=(candidate.evidence.get("instrument") or candidate.entity_key),
             )
         )
         if decision.complete:
@@ -539,6 +554,24 @@ class PatternRegistry:
         signal: Signal,
         score_anchor: float,
     ) -> None:
+        if self._signal_authority is not None:
+            await self._signal_authority.record(signal, score_anchor)
+        if self._defer_signal_projection:
+            return
+        await self._project_signal(session, signal, score_anchor)
+
+    async def project_signal(self, signal: Signal, score_anchor: float) -> None:
+        """Idempotently rebuild one signal projection from an authority event."""
+
+        async with self._client.session() as session:
+            await self._project_signal(session, signal, score_anchor)
+
+    async def _project_signal(
+        self,
+        session: Any,
+        signal: Signal,
+        score_anchor: float,
+    ) -> None:
         observation_id = _observation_id(
             signal.signal_id,
             signal.as_of,
@@ -710,7 +743,7 @@ class PatternRegistry:
 
     async def explain(self, signal_id: str, *, as_of: datetime | None = None) -> Signal | None:
         """Return an authorized signal at the latest lifecycle observation."""
-        async with self._client._driver.session() as session:  # noqa: SLF001
+        async with self._client.session() as session:
             result = await session.run(
                 """
                 MATCH (s:Signal {signal_id: $id, authorization_scope: $scope})
@@ -779,7 +812,7 @@ class PatternRegistry:
                 "analyst_reason": reason.strip(),
             }
         )
-        async with self._client._driver.session() as session:  # noqa: SLF001
+        async with self._client.session() as session:
             await self._persist_signal(
                 session,
                 suppressed,
@@ -906,4 +939,5 @@ __all__ = [
     "ScoreContribution",
     "Signal",
     "SignalLifecycleState",
+    "SignalAuthority",
 ]

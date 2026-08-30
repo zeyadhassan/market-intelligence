@@ -100,8 +100,40 @@ class SourceCatalog:
 def production_source_catalog(settings: Settings | None = None) -> SourceCatalog:
     """Return the checked-in production-source policy catalog."""
     active = settings or Settings()
+    from fi_intel.sources.adapters.gcc_official import GCC_OFFICIAL_SOURCES
+
+    gcc_sources = tuple(
+        SourceRegistration(
+            source_id=source.source_id,
+            catalog_version="gcc-official-source-catalog-v1",
+            display_name=source.display_name,
+            kind=SourceKind.FEED_DETAIL,
+            discovery_url=source.url,
+            allowed_origins=source.allowed_origins,
+            cadence_seconds=900,
+            freshness_sla_seconds=3_600,
+            silence_sla_seconds=86_400,
+            expected_min_items=1,
+            expected_max_items=1 + active.gcc_source_max_detail_pages,
+            licence_group="open_web_public",
+            licence_class=LicenceClass.OPEN_GOVERNMENT,
+            raw_retention_days=active.source_raw_retention_days,
+            barrier_side=BarrierSide.PUBLIC,
+            allowed_entitlement_groups=frozenset(
+                {"fi_gcc_private", "fi_gcc_public", "open_web_public"}
+            ),
+            max_feed_bytes=active.source_max_detail_bytes,
+            max_detail_bytes=active.source_max_detail_bytes,
+            request_timeout_seconds=active.source_http_timeout_seconds,
+            max_attempts=active.source_http_max_attempts,
+            max_redirects=active.source_http_max_redirects,
+            cursor_history_limit=active.source_cursor_history_limit,
+        )
+        for source in GCC_OFFICIAL_SOURCES
+    )
     return SourceCatalog(
-        (
+        gcc_sources
+        + (
             SourceRegistration(
                 source_id="sec_edgar_8k",
                 catalog_version="source-catalog-v1",
@@ -118,9 +150,7 @@ def production_source_catalog(settings: Settings | None = None) -> SourceCatalog
                 licence_class=LicenceClass.OPEN_GOVERNMENT,
                 raw_retention_days=active.source_raw_retention_days,
                 barrier_side=BarrierSide.PUBLIC,
-                allowed_entitlement_groups=frozenset(
-                    {"fi_gcc_public", "open_web_public"}
-                ),
+                allowed_entitlement_groups=frozenset({"fi_gcc_public", "open_web_public"}),
                 max_feed_bytes=active.source_max_feed_bytes,
                 max_detail_bytes=active.source_max_detail_bytes,
                 request_timeout_seconds=active.source_http_timeout_seconds,
@@ -145,9 +175,7 @@ def production_source_catalog(settings: Settings | None = None) -> SourceCatalog
                 licence_class=LicenceClass.OPEN_GOVERNMENT,
                 raw_retention_days=active.source_raw_retention_days,
                 barrier_side=BarrierSide.PUBLIC,
-                allowed_entitlement_groups=frozenset(
-                    {"fi_gcc_public", "open_web_public"}
-                ),
+                allowed_entitlement_groups=frozenset({"fi_gcc_public", "open_web_public"}),
                 max_feed_bytes=active.source_max_feed_bytes,
                 max_detail_bytes=active.source_max_detail_bytes,
                 request_timeout_seconds=active.source_http_timeout_seconds,

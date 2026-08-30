@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -22,13 +21,27 @@ from fi_intel.api.models import (
     OpportunityResultView,
     ResultEvaluationReceipt,
     ResultEvaluationRequest,
+    SearchCreateRequest,
+    SearchView,
     TopicResultsView,
     TopicSubscriptionUpdate,
     TopicSubscriptionView,
     TopicTagView,
 )
 from fi_intel.api.service import InMemoryAnalystService, ResourceNotFoundError
-from fi_intel.api.stage_one_page import STAGE_ONE_FIXTURE_HTML
+from fi_intel.api.stage_one_page import STAGE_ONE_FIXTURE_HTML, STAGE_ONE_FIXTURE_JS
+from fi_intel.application.topics import (
+    TOPIC_BY_PATTERN as _TOPIC_BY_PATTERN,
+)
+from fi_intel.application.topics import (
+    TOPICS as _TOPICS,
+)
+from fi_intel.application.topics import (
+    TOPICS_BY_ID as _TOPICS_BY_ID,
+)
+from fi_intel.application.topics import (
+    TopicDefinition as _TopicDefinition,
+)
 from fi_intel.demo.runner import POCDemoArtifacts, run_poc_demo
 from fi_intel.retrieval.entitlement import Principal, Side
 
@@ -38,42 +51,6 @@ DEMO_DESK = "fi_gcc"
 FIXTURE_NOTICE = "Synthetic deterministic fixture - not a production quality or coverage estimate."
 
 
-@dataclass(frozen=True)
-class _TopicDefinition:
-    topic_id: str
-    label: str
-    description: str
-    patterns: frozenset[str]
-
-
-_TOPICS = (
-    _TopicDefinition(
-        topic_id="upcoming-maturities",
-        label="Upcoming maturities",
-        description="Funding needs where a material maturity has no announced refinancing.",
-        patterns=frozenset({"maturity_wall_no_refi"}),
-    ),
-    _TopicDefinition(
-        topic_id="issuance-programmes",
-        label="New funding programmes",
-        description="Approved programmes that may create a future issuance window.",
-        patterns=frozenset({"board_approved_issuance_programme"}),
-    ),
-    _TopicDefinition(
-        topic_id="ratings-capital-pressure",
-        label="Rating and capital pressure",
-        description="Rating deterioration combined with a material capital movement.",
-        patterns=frozenset({"negative_rating_action_with_capital_decline"}),
-    ),
-    _TopicDefinition(
-        topic_id="treasury-leadership",
-        label="Treasury leadership changes",
-        description="Senior treasury changes that may open a timely coverage conversation.",
-        patterns=frozenset({"leadership_change_treasury"}),
-    ),
-)
-_TOPICS_BY_ID = {topic.topic_id: topic for topic in _TOPICS}
-_TOPIC_BY_PATTERN = {pattern: topic.topic_id for topic in _TOPICS for pattern in topic.patterns}
 _FRESHNESS_REASONS = {
     "maturity_wall_no_refi": (
         "New in the selected analysis window: the maturity is inside the governed horizon and no "
@@ -102,6 +79,15 @@ class _DemoTokenVerifier:
 
 
 class _DemoIdentityDirectory:
+    def __init__(
+        self,
+        *,
+        entitlement_group: str = "poc-fixture-public",
+        side: Side | str = Side.PUBLIC,
+    ) -> None:
+        self._entitlement_group = entitlement_group
+        self._side = Side(side)
+
     async def resolve(self, subject: str) -> RequestPrincipal | None:
         if subject != DEMO_PRINCIPAL_ID:
             return None
@@ -109,8 +95,8 @@ class _DemoIdentityDirectory:
             subject=subject,
             principal=Principal(
                 principal_id=DEMO_PRINCIPAL_ID,
-                entitlement_group="poc-fixture-public",
-                side=Side.PUBLIC,
+                entitlement_group=self._entitlement_group,
+                side=self._side,
             ),
             desks=frozenset({DEMO_DESK}),
             roles=frozenset({"analyst"}),
@@ -131,6 +117,7 @@ class StageOneDemoService:
         self._results_by_topic: dict[str, tuple[OpportunityResultView, ...]] = {}
         self._results_by_id: dict[str, OpportunityResultView] = {}
         self._latest_evaluations: dict[tuple[str, str], str] = {}
+        self._searches: dict[str, SearchView] = {}
         self.evaluation_events: list[ResultEvaluationReceipt] = []
 
     @staticmethod
@@ -246,6 +233,35 @@ class StageOneDemoService:
         self._latest_evaluations[(principal_id, result_id)] = request.verdict.value
         return receipt
 
+    async def create_search(
+        self, principal: RequestPrincipal, request: SearchCreateRequest
+    ) -> SearchView:
+        self._authorize(principal)
+        now = datetime.now(UTC)
+        search_id = str(uuid4())
+        search = SearchView(
+            search_id=search_id,
+            state="complete",
+            route="thematic",
+            query=request.query,
+            temporal_pin=now,
+            answer={
+                "summary": "Synthetic fixture search only; no current-market claim is made.",
+                "claims": [],
+                "citations": [],
+                "unknowns": ["The fixture search is not connected to live sources."],
+            },
+        )
+        self._searches[search_id] = search
+        return search
+
+    async def get_search(self, principal: RequestPrincipal, search_id: str) -> SearchView:
+        self._authorize(principal)
+        search = self._searches.get(search_id)
+        if search is None:
+            raise ResourceNotFoundError(f"unknown search {search_id!r}")
+        return search
+
     async def _ensure_analysis(self) -> None:
         if self._artifacts is not None:
             return
@@ -297,6 +313,54 @@ class StageOneDemoService:
                     changed_at=item.signal.updated_at or item.signal.as_of,
                     coverage_state=coverage_state,
                     falsifier=item.opportunity.falsifier,
+                    why_now=next(
+                        (
+                            claim.text
+                            for claim in item.opportunity.claims
+                            if claim.claim_type.value == "timing"
+                        ),
+                        _FRESHNESS_REASONS[item.signal.pattern],
+                    ),
+                    commercial_angle=next(
+                        (
+                            claim.text
+                            for claim in item.opportunity.claims
+                            if claim.claim_type.value == "commercial_angle"
+                        ),
+                        "",
+                    ),
+                    materiality=next(
+                        (
+                            claim.text
+                            for claim in item.opportunity.claims
+                            if claim.claim_type.value == "materiality"
+                        ),
+                        "",
+                    ),
+                    contradictions=tuple(
+                        claim.text
+                        for claim in item.opportunity.claims
+                        if claim.claim_type.value == "contradiction"
+                    ),
+                    uncertainty=item.opportunity.uncertainty_category,
+                    coverage_details=(
+                        "Complete within the declared fixture scope"
+                        if artifacts.report.brief.coverage_complete
+                        else "Incomplete; no absence conclusion is permitted"
+                    ),
+                    change_summary=item.signal.lifecycle_state.value,
+                    investigation_trace=(
+                        tuple(
+                            {
+                                "operation": step.operation,
+                                "status": step.status.value,
+                                "reason": step.safe_error_summary or "completed within policy",
+                            }
+                            for step in item.investigation.steps
+                        )
+                        if item.investigation is not None
+                        else ()
+                    ),
                     evidence=evidence,
                 )
                 results_by_topic[topic_id].append(result)
@@ -318,5 +382,7 @@ def create_stage_one_demo_app() -> FastAPI:
         InMemoryAnalystService(),
         stage_one_service=StageOneDemoService(),
         stage_one_html=STAGE_ONE_FIXTURE_HTML,
+        stage_one_javascript=STAGE_ONE_FIXTURE_JS,
+        canonical_stage_one_only=True,
         owned_resources=(directory,),
     )

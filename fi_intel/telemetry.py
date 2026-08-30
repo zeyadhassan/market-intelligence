@@ -36,6 +36,7 @@ class PipelineStage(StrEnum):
     RESEARCH = "research"
     PUBLISH = "publish"
     REVIEW = "review"
+    ANALYZE = "analyze"
 
 
 class PolicyDecision(StrEnum):
@@ -183,6 +184,34 @@ class Telemetry:
             unit="s",
             description="Age of pending human-review work",
         )
+        self._source_operations: Counter = self.meter.create_counter(
+            "fi_intel.source.operations",
+            description="Source poll outcomes by bounded source and state",
+        )
+        self._queue_transitions: Counter = self.meter.create_counter(
+            "fi_intel.queue.transitions",
+            description="Durable queue transitions by queue and state",
+        )
+        self._coverage_decisions: Counter = self.meter.create_counter(
+            "fi_intel.coverage.decisions",
+            description="Fail-closed coverage outcomes",
+        )
+        self._retrieval_candidates: Histogram = self.meter.create_histogram(
+            "fi_intel.retrieval.candidates",
+            description="Candidate counts by governed route and evidence side",
+        )
+        self._model_outcomes: Counter = self.meter.create_counter(
+            "fi_intel.model.outcomes",
+            description="Governed model-call outcomes by component",
+        )
+        self._result_transitions: Counter = self.meter.create_counter(
+            "fi_intel.result.transitions",
+            description="Opportunity result lifecycle transitions",
+        )
+        self._delivery_transitions: Counter = self.meter.create_counter(
+            "fi_intel.delivery.transitions",
+            description="Digest delivery transitions",
+        )
 
     @contextmanager
     def stage(
@@ -242,6 +271,36 @@ class Telemetry:
         if age_seconds < 0:
             raise ValueError("review queue age cannot be negative")
         self._queue_age.record(age_seconds, {"subject.type": subject_type})
+
+    def record_source_operation(self, source_id: str, status: str) -> None:
+        self._source_operations.add(1, {"source.id": source_id, "status": status})
+
+    def record_queue_transition(self, queue: str, state: str, count: int = 1) -> None:
+        if count < 0:
+            raise ValueError("queue transition count cannot be negative")
+        self._queue_transitions.add(count, {"queue": queue, "state": state})
+
+    def record_coverage(self, *, complete: bool, reason_class: str = "none") -> None:
+        self._coverage_decisions.add(
+            1,
+            {"complete": str(complete).lower(), "reason.class": reason_class},
+        )
+
+    def record_retrieval(self, route: str, side: str, candidates: int) -> None:
+        if candidates < 0:
+            raise ValueError("retrieval candidate count cannot be negative")
+        self._retrieval_candidates.record(candidates, {"route": route, "side": side})
+
+    def record_model_outcome(self, component: str, outcome: str) -> None:
+        self._model_outcomes.add(1, {"component": component, "outcome": outcome})
+
+    def record_result_transition(self, lifecycle: str, decision: str) -> None:
+        self._result_transitions.add(1, {"lifecycle": lifecycle, "decision": decision})
+
+    def record_delivery_transition(self, state: str, count: int = 1) -> None:
+        if count < 0:
+            raise ValueError("delivery transition count cannot be negative")
+        self._delivery_transitions.add(count, {"state": state})
 
     def shutdown(self) -> None:
         """Flush telemetry before terminating a worker or API process."""

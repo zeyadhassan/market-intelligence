@@ -63,9 +63,7 @@ def test_capacity_limits_every_measurable_axis() -> None:
 
 
 def test_gpu_budget_fails_closed_without_gpu_measurement() -> None:
-    assert not ModelCapacityLimits(max_gpu_seconds=100.0).allows(
-        ModelUsageSnapshot(), FALLBACK
-    )
+    assert not ModelCapacityLimits(max_gpu_seconds=100.0).allows(ModelUsageSnapshot(), FALLBACK)
 
 
 async def test_usage_snapshots_are_run_and_component_scoped() -> None:

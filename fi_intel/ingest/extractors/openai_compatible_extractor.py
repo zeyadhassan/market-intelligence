@@ -25,8 +25,10 @@ from openai.types.shared_params.response_format_json_schema import (
 from pydantic import BaseModel, ConfigDict, Field
 
 from fi_intel.config import Settings
+from fi_intel.governance.model_registry import ModelArtifact, ModelComponent
 from fi_intel.governance.model_usage import ModelCallEvent, ModelUsageLog, estimate_cost_usd
 from fi_intel.ingest.extract import (
+    PROMPT_VERSION,
     ClaimProperties,
     ExtractionRequest,
     ExtractionResponse,
@@ -104,14 +106,29 @@ class OpenAICompatibleStructuredExtractor:
         reasoning_effort: str | None,
         usage_log: ModelUsageLog,
         run_id: str,
+        artifact: ModelArtifact | None = None,
     ) -> None:
+        if artifact is not None and (
+            artifact.component is not ModelComponent.EXTRACTION or artifact.model_id != model
+        ):
+            raise ValueError("extraction artifact does not match the configured serving model")
         self._client = client
         self._model = model
         self._temperature = temperature
         self._reasoning_effort = reasoning_effort
         self._usage_log = usage_log
         self._run_id = run_id
+        self._artifact = artifact
         self._log = get_logger(component="ingest.extractors.openai_compatible")
+
+    @property
+    def model_version(self) -> str:
+        if self._artifact is None:
+            return self._model
+        return (
+            f"release:{self._artifact.release_id}:"
+            f"{self._artifact.artifact_digest}:{self._artifact.model_id}"
+        )
 
     async def extract(self, request: ExtractionRequest) -> ExtractionResponse:
         # .create(), not the .parse() convenience method: .parse() would
@@ -123,9 +140,7 @@ class OpenAICompatibleStructuredExtractor:
         # completed HTTP call, unconditionally.
         started = time.monotonic()
         messages: list[ChatCompletionMessageParam] = [
-            ChatCompletionSystemMessageParam(
-                role="system", content=request.system_instruction
-            ),
+            ChatCompletionSystemMessageParam(role="system", content=request.system_instruction),
             ChatCompletionUserMessageParam(
                 role="user",
                 content=f"<document>\n{request.document_text}\n</document>",
@@ -149,14 +164,40 @@ class OpenAICompatibleStructuredExtractor:
                 temperature=self._temperature,
                 reasoning_effort=effort,
             )
-        except openai.APIError:
-            self._log.warning(
-                "extract.api_error", doc_id=request.doc_id, model=self._model
+        except Exception as exc:
+            await self._usage_log.record(
+                ModelCallEvent(
+                    run_id=self._run_id,
+                    component="extract",
+                    model=self._model,
+                    input_tokens=0,
+                    output_tokens=0,
+                    cost_usd=0.0,
+                    latency_ms=(time.monotonic() - started) * 1_000.0,
+                    subject_id=request.doc_id,
+                    recorded_at=datetime.now(UTC),
+                    status=("timed_out" if isinstance(exc, openai.APITimeoutError) else "failed"),
+                    error_type=type(exc).__name__,
+                    release_id=self._artifact.release_id if self._artifact else None,
+                    artifact_digest=(self._artifact.artifact_digest if self._artifact else None),
+                    prompt_version=PROMPT_VERSION,
+                    schema_version="extraction-response-v1",
+                )
             )
+            self._log.warning("extract.api_error", doc_id=request.doc_id, model=self._model)
             raise
         latency_ms = (time.monotonic() - started) * 1000.0
 
         usage = completion.usage
+        content = completion.choices[0].message.content
+        refusal = completion.choices[0].message.refusal
+        wire: _WireExtractionOut | None = None
+        parse_error: Exception | None = None
+        if content is not None:
+            try:
+                wire = _WireExtractionOut.model_validate(json.loads(content))
+            except Exception as exc:
+                parse_error = exc
         await self._usage_log.record(
             ModelCallEvent(
                 run_id=self._run_id,
@@ -172,18 +213,26 @@ class OpenAICompatibleStructuredExtractor:
                 latency_ms=latency_ms,
                 subject_id=request.doc_id,
                 recorded_at=datetime.now(UTC),
+                status=(
+                    "refused" if content is None else "malformed" if parse_error else "succeeded"
+                ),
+                error_type=type(parse_error).__name__ if parse_error else None,
+                release_id=self._artifact.release_id if self._artifact else None,
+                artifact_digest=(self._artifact.artifact_digest if self._artifact else None),
+                prompt_version=PROMPT_VERSION,
+                schema_version="extraction-response-v1",
             )
         )
 
-        content = completion.choices[0].message.content
         if content is None:
-            refusal = completion.choices[0].message.refusal
-            msg = (
-                f"extraction response for {request.doc_id!r} had no content"
-                + (f" (refusal: {refusal})" if refusal else "")
+            msg = f"extraction response for {request.doc_id!r} had no content" + (
+                f" (refusal: {refusal})" if refusal else ""
             )
             raise ValueError(msg)
-        wire = _WireExtractionOut.model_validate(json.loads(content))
+        if parse_error is not None:
+            raise parse_error
+        if wire is None:
+            raise RuntimeError("extraction response parsing produced no typed result")
 
         # Reassembling into the real RawClaim re-applies its actual
         # constraints (confidence bounds) that the wire schema above could
@@ -204,9 +253,7 @@ class OpenAICompatibleStructuredExtractor:
                 confidence=c.confidence,
                 snippet_offset=(c.snippet_start, c.snippet_end),
                 snippet_text=c.snippet_text,
-                properties=ClaimProperties.model_validate(
-                    c.properties.model_dump(by_alias=True)
-                ),
+                properties=ClaimProperties.model_validate(c.properties.model_dump(by_alias=True)),
             )
             for c in wire.claims
         ]
@@ -214,9 +261,14 @@ class OpenAICompatibleStructuredExtractor:
 
 
 def build_structured_extractor(
-    settings: Settings, usage_log: ModelUsageLog, run_id: str
+    settings: Settings,
+    usage_log: ModelUsageLog,
+    run_id: str,
+    artifact: ModelArtifact | None = None,
 ) -> OpenAICompatibleStructuredExtractor:
     """Build the configured extractor, raising when no endpoint is set."""
+    if settings.analysis_mode in {"shadow", "pilot", "production"} and artifact is None:
+        raise RuntimeError("governed analysis requires a registry-routed extraction release")
     if not settings.llm_base_url:
         msg = (
             "FI_INTEL_LLM_BASE_URL is not set; cannot construct a real "
@@ -232,4 +284,5 @@ def build_structured_extractor(
         reasoning_effort=settings.extraction_reasoning_effort,
         usage_log=usage_log,
         run_id=run_id,
+        artifact=artifact,
     )

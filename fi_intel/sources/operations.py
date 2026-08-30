@@ -11,8 +11,9 @@ from uuid import UUID, uuid5
 import asyncpg
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
+from fi_intel.logging import safe_error_summary
 from fi_intel.sources.acquisition import RawSourceCursor, RawSourcePoll
-from fi_intel.sources.catalog import SourceRegistration
+from fi_intel.sources.catalog import SourceKind, SourceRegistration
 
 _OBSERVATION_NAMESPACE = UUID("b54ecada-c7b4-5ddb-8f79-ac5adba13f02")
 
@@ -68,9 +69,7 @@ class SourceObservation(OperationsModel):
     def _consistent(self) -> Self:
         if self.finished_at < self.started_at:
             raise ValueError("source observation finishes before it starts")
-        terminal_count = (
-            self.committed_count + self.not_novel_count + self.quarantine_count
-        )
+        terminal_count = self.committed_count + self.not_novel_count + self.quarantine_count
         if self.acquired_count != terminal_count:
             raise ValueError("source result counts do not reconcile")
         if self.health is SourceHealth.FAILED and self.error_type is None:
@@ -95,21 +94,19 @@ def assess_source_poll(
     quarantine_count: int,
 ) -> tuple[SourceObservation, SourceOperationalState]:
     latest = poll.next_cursor.latest_source_published_at
+    freshness_anchor = poll.polled_at if registration.kind is SourceKind.REFERENCE_API else latest
     lag = (
-        max((finished_at - latest).total_seconds(), 0.0)
-        if latest is not None
+        max((finished_at - freshness_anchor).total_seconds(), 0.0)
+        if freshness_anchor is not None
         else None
     )
     fresh = lag is not None and lag <= registration.freshness_sla_seconds
     silent = lag is None or lag > registration.silence_sla_seconds
     volume_ok = (not poll.feed_modified) or (
-        registration.expected_min_items
-        <= poll.discovered_count
-        <= registration.expected_max_items
+        registration.expected_min_items <= poll.discovered_count <= registration.expected_max_items
     )
     complete = (
-        poll.discovered_count == len(poll.items) + poll.unchanged_count
-        and quarantine_count == 0
+        poll.discovered_count == len(poll.items) + poll.unchanged_count and quarantine_count == 0
     )
     health = (
         SourceHealth.HEALTHY
@@ -164,11 +161,7 @@ def failed_source_observation(
     previous: SourceOperationalState | None,
 ) -> tuple[SourceObservation, SourceOperationalState]:
     latest = previous.latest_source_published_at if previous is not None else None
-    lag = (
-        max((finished_at - latest).total_seconds(), 0.0)
-        if latest is not None
-        else None
-    )
+    lag = max((finished_at - latest).total_seconds(), 0.0) if latest is not None else None
     observation = SourceObservation(
         observation_id=source_observation_id(registration.source_id, run_id),
         run_id=run_id,
@@ -193,7 +186,7 @@ def failed_source_observation(
         freshness_lag_seconds=lag,
         latest_source_published_at=latest,
         error_type=type(error).__name__,
-        error_message=str(error) or type(error).__name__,
+        error_message=safe_error_summary(error),
     )
     state = SourceOperationalState(
         source_id=registration.source_id,
@@ -233,9 +226,7 @@ class InMemorySourceOperationsStore:
     ) -> SourceOperationalState | None:
         return self._states.get((source_id, partition_key))
 
-    async def record(
-        self, observation: SourceObservation, state: SourceOperationalState
-    ) -> None:
+    async def record(self, observation: SourceObservation, state: SourceOperationalState) -> None:
         if (observation.source_id, observation.partition_key) != (
             state.source_id,
             state.partition_key,
@@ -263,9 +254,10 @@ class InMemorySourceOperationsStore:
 class PostgresSourceOperationsStore:
     """PostgreSQL implementation targeting migration 0007."""
 
-    def __init__(self, dsn: str) -> None:
+    def __init__(self, dsn: str, *, pool: asyncpg.Pool | None = None) -> None:
         self._dsn = dsn
-        self._pool: asyncpg.Pool | None = None
+        self._pool = pool
+        self._owns_pool = pool is None
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is None:
@@ -291,9 +283,7 @@ class PostgresSourceOperationsStore:
             source_id=row["source_id"],
             partition_key=row["partition_key"],
             cursor=(
-                RawSourceCursor.model_validate(cursor_data)
-                if cursor_data is not None
-                else None
+                RawSourceCursor.model_validate(cursor_data) if cursor_data is not None else None
             ),
             last_successful_poll_at=row["last_successful_poll_at"],
             latest_source_published_at=row["latest_source_published_at"],
@@ -301,9 +291,7 @@ class PostgresSourceOperationsStore:
             updated_at=row["updated_at"],
         )
 
-    async def record(
-        self, observation: SourceObservation, state: SourceOperationalState
-    ) -> None:
+    async def record(self, observation: SourceObservation, state: SourceOperationalState) -> None:
         if (observation.source_id, observation.partition_key) != (
             state.source_id,
             state.partition_key,
@@ -390,9 +378,9 @@ class PostgresSourceOperationsStore:
         return [self._observation_from_row(row) for row in rows]
 
     async def close(self) -> None:
-        if self._pool is not None:
+        if self._pool is not None and self._owns_pool:
             await self._pool.close()
-            self._pool = None
+        self._pool = None
 
     @staticmethod
     def _observation_from_row(row: asyncpg.Record) -> SourceObservation:

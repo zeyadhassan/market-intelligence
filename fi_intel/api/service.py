@@ -18,6 +18,8 @@ from fi_intel.api.models import (
     ReviewDecisionRequest,
     ReviewReceipt,
     RunView,
+    SearchCreateRequest,
+    SearchView,
     SignalCloseReceipt,
     SignalCloseRequest,
     SignalView,
@@ -30,6 +32,10 @@ from fi_intel.api.models import (
 
 class ResourceNotFoundError(LookupError):
     pass
+
+
+class PublicationNotReadyError(RuntimeError):
+    """Server-computed run coverage does not permit publication."""
 
 
 @runtime_checkable
@@ -120,6 +126,12 @@ class StageOneService(Protocol):
         result_id: str,
         request: ResultEvaluationRequest,
     ) -> ResultEvaluationReceipt: ...
+
+    async def create_search(
+        self, principal: RequestPrincipal, request: SearchCreateRequest
+    ) -> SearchView: ...
+
+    async def get_search(self, principal: RequestPrincipal, search_id: str) -> SearchView: ...
 
 
 class InMemoryAnalystService:
@@ -272,11 +284,15 @@ class InMemoryAnalystService:
     ) -> BriefView:
         principal.require_role("publisher", "admin")
         brief = await self.get_brief(principal, brief_id)
+        if not brief.coverage_complete:
+            raise PublicationNotReadyError(
+                "brief publication requires server-computed complete coverage"
+            )
         now = datetime.now(UTC)
         published = brief.model_copy(
             update={
                 "status": "published",
-                "coverage_complete": request.coverage_complete,
+                "coverage_complete": brief.coverage_complete,
                 "html": request.html,
                 "publication_id": str(uuid4()),
                 "published_at": now,

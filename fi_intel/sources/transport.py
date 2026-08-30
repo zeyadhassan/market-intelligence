@@ -248,9 +248,7 @@ class HardenedSourceClient:
         if parsed.scheme.lower() != "https" or parsed.hostname is None:
             raise DisallowedSourceUrlError("source URL must be absolute HTTPS")
         if parsed.username is not None or parsed.password is not None or parsed.fragment:
-            raise DisallowedSourceUrlError(
-                "source URL cannot contain credentials or a fragment"
-            )
+            raise DisallowedSourceUrlError("source URL cannot contain credentials or a fragment")
         origin = _origin(parsed.scheme, parsed.hostname, parsed.port)
         if origin not in self._allowed_origins:
             raise DisallowedSourceUrlError(f"source origin is not allowed: {origin}")

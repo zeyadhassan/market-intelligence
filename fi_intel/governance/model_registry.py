@@ -18,6 +18,7 @@ class ModelComponent(StrEnum):
     REASONING = "reasoning"
     EMBEDDING = "embedding"
     RERANKER = "reranker"
+    ENTAILMENT = "entailment"
 
 
 class ReleaseState(StrEnum):
@@ -135,17 +136,19 @@ def _validate_transition(
         )
     if previous is not None and transition.occurred_at <= previous.occurred_at:
         raise RegistryInvariantError("release transition time must increase")
-    if transition.to_state in {
-        ReleaseState.SHADOW,
-        ReleaseState.CANARY,
-        ReleaseState.ACTIVE,
-    } and not artifact.quality_gate_passed:
+    if (
+        transition.to_state
+        in {
+            ReleaseState.SHADOW,
+            ReleaseState.CANARY,
+            ReleaseState.ACTIVE,
+        }
+        and not artifact.quality_gate_passed
+    ):
         raise RegistryInvariantError("a failed evaluation cannot enter a serving workflow")
 
 
-def _snapshot(
-    artifact: ModelArtifact, transition: ReleaseTransition
-) -> ModelReleaseSnapshot:
+def _snapshot(artifact: ModelArtifact, transition: ReleaseTransition) -> ModelReleaseSnapshot:
     return ModelReleaseSnapshot(
         artifact=artifact,
         state=transition.to_state,
@@ -271,9 +274,10 @@ ORDER BY latest.occurred_at, r.release_id
 class PostgresModelRegistry:
     """Concurrent promotion store targeting migration 0006."""
 
-    def __init__(self, dsn: str) -> None:
+    def __init__(self, dsn: str, *, pool: asyncpg.Pool | None = None) -> None:
         self._dsn = dsn
-        self._pool: asyncpg.Pool | None = None
+        self._pool = pool
+        self._owns_pool = pool is None
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is None:
@@ -398,14 +402,12 @@ class PostgresModelRegistry:
         return _select_route(component, subject_id, await self.current(component))
 
     async def close(self) -> None:
-        if self._pool is not None:
+        if self._pool is not None and self._owns_pool:
             await self._pool.close()
-            self._pool = None
+        self._pool = None
 
 
-async def _insert_transition(
-    connection: asyncpg.Connection, transition: ReleaseTransition
-) -> None:
+async def _insert_transition(connection: asyncpg.Connection, transition: ReleaseTransition) -> None:
     await connection.execute(
         """
         INSERT INTO model_release_transition

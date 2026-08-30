@@ -27,9 +27,7 @@ def test_manifest_rejects_checksum_tampering(tmp_path: Path) -> None:
     fixture = tmp_path / "fixture.json"
     fixture.write_text("{}", encoding="utf-8")
     raw = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    raw["splits"][0]["files"] = [
-        {"path": "fixture.json", "sha256": "0" * 64, "records": 1}
-    ]
+    raw["splits"][0]["files"] = [{"path": "fixture.json", "sha256": "0" * 64, "records": 1}]
     candidate = tmp_path / "manifest.json"
     candidate.write_text(json.dumps(raw), encoding="utf-8")
 

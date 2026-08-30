@@ -105,8 +105,11 @@ def _evaluate_query(case: RankingCase, k: int) -> QueryMetrics:
     recall = len(set(ranked) & relevant) / len(relevant)
 
     first_relevant_rank = next(
-        (rank for rank, document_id in enumerate(case.ranked_document_ids, start=1)
-         if document_id in relevant),
+        (
+            rank
+            for rank, document_id in enumerate(case.ranked_document_ids, start=1)
+            if document_id in relevant
+        ),
         None,
     )
     reciprocal_rank = 0.0 if first_relevant_rank is None else 1.0 / first_relevant_rank
@@ -124,7 +127,4 @@ def _evaluate_query(case: RankingCase, k: int) -> QueryMetrics:
 
 
 def _dcg(grades: list[int]) -> float:
-    return sum(
-        (2**grade - 1) / math.log2(rank + 1)
-        for rank, grade in enumerate(grades, start=1)
-    )
+    return sum((2**grade - 1) / math.log2(rank + 1) for rank, grade in enumerate(grades, start=1))

@@ -12,10 +12,10 @@ no-op, not a duplicate.
 
 import hashlib
 import json
-from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
+from fi_intel.ledger.models import knowledge_assertion_id
 from fi_intel.ontology.vocab import EdgeType, NodeType
 from fi_intel.sources.canonical import BarrierSide
 
@@ -52,11 +52,39 @@ class Assertion(BaseModel):
 
     # Both time axes: when the fact is true in the world, and when the
     # system learned it. Backtests pin on recorded_at.
-    valid_from: datetime
-    valid_to: datetime | None = None
-    recorded_at: datetime
+    valid_from: AwareDatetime
+    valid_to: AwareDatetime | None = None
+    recorded_at: AwareDatetime
 
     properties: dict[str, str] = Field(default_factory=dict)
+
+    def state_key(self) -> str | None:
+        """Stable key for mutable real-world state, or ``None`` for events.
+
+        The dimensions are deterministic and predicate-specific.  They keep,
+        for example, a rating outlook separate from a rating grade and one
+        leadership role separate from another.
+        """
+
+        dimensions: dict[EdgeType, tuple[str, ...]] = {
+            EdgeType.RATING_ACTION_ON: ("rating_type",),
+            EdgeType.LEADERSHIP_CHANGE_AT: ("role",),
+            EdgeType.PROGRAMME_APPROVED_BY: ("programme",),
+            EdgeType.MATURES_ON: (),
+            EdgeType.CALLABLE_ON: (),
+            EdgeType.REPORTS_METRIC: ("metric",),
+            EdgeType.REFINANCES: ("status",),
+        }
+        keys = dimensions.get(self.predicate)
+        if keys is None:
+            return None
+        owner = (
+            self.object.key
+            if self.predicate in {EdgeType.RATING_ACTION_ON, EdgeType.LEADERSHIP_CHANGE_AT}
+            else self.subject.key
+        )
+        values = [self.properties.get(key, "").strip().casefold() for key in keys]
+        return "|".join([str(self.predicate), owner, *values])
 
     def assertion_id(self) -> str:
         """Deterministic identity of the claim+evidence, for idempotency."""
@@ -75,4 +103,5 @@ class Assertion(BaseModel):
                 self.valid_from.isoformat(),
             ]
         )
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        content_identity = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        return str(knowledge_assertion_id(content_identity))

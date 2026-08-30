@@ -24,7 +24,7 @@ def _render_empty(brief: Brief) -> str:
     parts: list[str] = []
     if brief.coverage_complete:
         parts.append(
-            "<p class='empty'>No supported material developments for this desk "
+            "<p class='empty'>No material developments were supported for this desk "
             "in the completed coverage window.</p>"
         )
     else:
@@ -33,6 +33,8 @@ def _render_empty(brief: Brief) -> str:
             reasons.append("one or more detectors were gated by incomplete coverage")
         if brief.deferred_signals:
             reasons.append("research capacity was exhausted")
+        if brief.failed_signals:
+            reasons.append("one or more signal investigations failed")
         detail = " and ".join(reasons) or "coverage was incomplete"
         parts.append(f"<p class='empty'>Brief incomplete: {detail}.</p>")
     if brief.abstained_signals:
@@ -42,6 +44,10 @@ def _render_empty(brief: Brief) -> str:
     if brief.deferred_signals:
         parts.append(
             f"<p class='meta'>Signals deferred by capacity: {len(brief.deferred_signals)}.</p>"
+        )
+    if brief.failed_signals:
+        parts.append(
+            f"<p class='meta'>Failed signal investigations: {len(brief.failed_signals)}.</p>"
         )
     return "".join(parts)
 
@@ -68,7 +74,7 @@ def _render_claims(item: BriefItem) -> str:
         parts.append(
             f"<li><strong>{escape(str(claim.claim_type).replace('_', ' '))}:</strong> "
             f"{escape(claim.text)} "
-            f"<span class='meta'>(confidence {claim.confidence:.0%})</span></li>"
+            f"<span class='meta'>(entailment {escape(claim.entailment_status.value)})</span></li>"
         )
     parts.append("</ul>")
     return "".join(parts)
@@ -115,6 +121,7 @@ def _render_funnel(brief: Brief) -> str:
         + len(brief.abstained_signals)
         + len(brief.deferred_signals)
         + len(brief.unresearched_signals)
+        + len(brief.failed_signals)
     )
     scores = brief.triage_scores
     if scores.signal_count:
@@ -132,6 +139,7 @@ def _render_funnel(brief: Brief) -> str:
         f"deferred on capacity {len(brief.deferred_signals)}; "
         f"below triage threshold {len(brief.unresearched_signals)}; "
         f"dark detectors {len(brief.dark_detectors)}."
+        f" Failed investigations {len(brief.failed_signals)}."
         f"{distribution}"
         "</p>"
     )
@@ -166,7 +174,12 @@ def render_html(brief: Brief) -> str:
     parts.extend(_render_item(item) for item in brief.items)
     parts.append(_render_dark_detectors(brief))
     parts.append(_render_funnel(brief))
-    if brief.unresearched_signals or brief.deferred_signals or brief.abstained_signals:
+    if (
+        brief.unresearched_signals
+        or brief.deferred_signals
+        or brief.abstained_signals
+        or brief.failed_signals
+    ):
         parts.append(
             "<p class='meta'>"
             f"Below-threshold: {len(brief.unresearched_signals)}; "

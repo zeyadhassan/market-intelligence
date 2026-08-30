@@ -127,13 +127,14 @@ async def test_model_version_fingerprints_vector_space_configuration() -> None:
 
 
 def test_build_embedder_falls_back_to_hashing_when_unconfigured() -> None:
-    settings = Settings(embedding_base_url=None, embedding_model=None)
+    settings = Settings(analysis_mode="fixture", embedding_base_url=None, embedding_model=None)
     embedder = build_embedder(settings)
     assert isinstance(embedder, HashingEmbedder)
 
 
 def test_build_embedder_returns_real_embedder_when_configured() -> None:
     settings = Settings(
+        analysis_mode="fixture",
         embedding_base_url="http://localhost:9998/v1",
         embedding_model="local-embedder",
         embedding_dim=768,
@@ -145,7 +146,11 @@ def test_build_embedder_returns_real_embedder_when_configured() -> None:
 
 
 def test_build_embedder_raises_on_partial_config() -> None:
-    settings = Settings(embedding_base_url="http://localhost:9998/v1", embedding_model=None)
+    settings = Settings(
+        analysis_mode="fixture",
+        embedding_base_url="http://localhost:9998/v1",
+        embedding_model=None,
+    )
     try:
         build_embedder(settings)
         raise AssertionError("expected RuntimeError")

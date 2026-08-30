@@ -127,9 +127,7 @@ def _normalize_global_identifier(
     normalized_value = canonical.upper()
     if scheme is IdentifierScheme.LEI:
         if _LEI.fullmatch(normalized_value) is None or _mod_97(normalized_value) != 1:
-            raise IdentifierValidationError(
-                f"invalid LEI checksum or format {original!r}"
-            )
+            raise IdentifierValidationError(f"invalid LEI checksum or format {original!r}")
     elif scheme is IdentifierScheme.BIC:
         if _BIC.fullmatch(normalized_value) is None:
             raise IdentifierValidationError(f"invalid BIC {original!r}")
@@ -139,12 +137,8 @@ def _normalize_global_identifier(
             raise IdentifierValidationError(f"invalid CIK {original!r}")
         normalized_value = normalized_value.zfill(10)
     elif scheme is IdentifierScheme.ISIN:
-        if _ISIN.fullmatch(normalized_value) is None or not _valid_isin_checksum(
-            normalized_value
-        ):
-            raise IdentifierValidationError(
-                f"invalid ISIN checksum or format {original!r}"
-            )
+        if _ISIN.fullmatch(normalized_value) is None or not _valid_isin_checksum(normalized_value):
+            raise IdentifierValidationError(f"invalid ISIN checksum or format {original!r}")
     return NormalizedIdentifier(scheme, normalized_value)
 
 

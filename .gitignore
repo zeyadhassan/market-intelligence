@@ -8,3 +8,6 @@ __pycache__/
 .brief*.html
 docker-compose.override.yml
 .docker-build-config/
+# Operator-owned runtime configuration can contain endpoint credentials,
+# OIDC identities, recipient addresses, and encryption keys.
+deploy/app.env

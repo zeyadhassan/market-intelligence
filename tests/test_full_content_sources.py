@@ -128,9 +128,7 @@ async def test_sec_correction_and_conditional_restart_use_raw_v2_path() -> None:
             (SEC_FEED, source_response(304)),
         ]
     )
-    adapter = sec_edgar_full_content(
-        policy, ENABLED_SETTINGS, transport=transport, clock=clock
-    )
+    adapter = sec_edgar_full_content(policy, ENABLED_SETTINGS, transport=transport, clock=clock)
     ledger = InMemoryIntelligenceLedger()
     control = InMemoryIngestionControlStore()
     archive = InMemoryRawArchive()
@@ -156,8 +154,7 @@ async def test_sec_correction_and_conditional_restart_use_raw_v2_path() -> None:
     assert unchanged.observation.acquired_count == 0
     assert unchanged.observation.feed_modified is False
     assert all(
-        result.observation.health is SourceHealth.HEALTHY
-        for result in (first, second, unchanged)
+        result.observation.health is SourceHealth.HEALTHY for result in (first, second, unchanged)
     )
     identity = document_identity_id(
         "sec_edgar_8k",
@@ -190,9 +187,7 @@ async def test_full_detail_canonicalization_keeps_narrative_and_resolvable_names
     sec_poll = await sec_edgar_full_content(
         _policy(), ENABLED_SETTINGS, transport=sec_transport, clock=lambda: NOW
     ).poll()
-    sec_document = await GovernmentDetailCanonicalizer().canonicalize(
-        sec_poll.items[0].envelope
-    )
+    sec_document = await GovernmentDetailCanonicalizer().canonicalize(sec_poll.items[0].envelope)
     assert "USD 500 million senior funding transaction" in sec_document.body
     assert sec_document.mentioned_names == ("Example Bank",)
     assert sec_document.identifiers == {"cik": "0000000001"}
@@ -217,9 +212,7 @@ async def test_full_detail_canonicalization_keeps_narrative_and_resolvable_names
     fed_poll = await fed_press_full_content(
         _policy(), ENABLED_SETTINGS, transport=fed_transport, clock=lambda: NOW
     ).poll()
-    fed_document = await GovernmentDetailCanonicalizer().canonicalize(
-        fed_poll.items[0].envelope
-    )
+    fed_document = await GovernmentDetailCanonicalizer().canonicalize(fed_poll.items[0].envelope)
     assert "statutory review" in fed_document.body
     assert fed_document.mentioned_names == ("National Westminster Bank Plc",)
 
@@ -244,9 +237,7 @@ async def test_full_detail_canonicalization_keeps_narrative_and_resolvable_names
     await EntityResolver(resolution_store).resolve_document(
         fed_document, recorded_at=fed_document.recorded_at
     )
-    assert {item.lei for item in await resolution_store.resolutions()} == {
-        "NATWEST-LEI"
-    }
+    assert {item.lei for item in await resolution_store.resolutions()} == {"NATWEST-LEI"}
 
 
 async def test_malformed_full_content_is_archived_then_quarantined() -> None:
@@ -272,9 +263,7 @@ async def test_malformed_full_content_is_archived_then_quarantined() -> None:
             ),
         ]
     )
-    adapter = sec_edgar_full_content(
-        policy, ENABLED_SETTINGS, transport=transport, clock=clock
-    )
+    adapter = sec_edgar_full_content(policy, ENABLED_SETTINGS, transport=transport, clock=clock)
     archive = InMemoryRawArchive()
     operations = InMemorySourceOperationsStore()
     coordinator = SourceIngestionCoordinator(

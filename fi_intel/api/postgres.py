@@ -29,7 +29,8 @@ from fi_intel.api.models import (
     SignalCloseRequest,
     SignalView,
 )
-from fi_intel.api.service import ResourceNotFoundError
+from fi_intel.api.service import PublicationNotReadyError, ResourceNotFoundError
+from fi_intel.application.runtime_resources import PostgresPoolProvider
 from fi_intel.ledger.models import outbox_event_id
 
 LIST_SIGNALS_SQL = """
@@ -407,25 +408,28 @@ WHERE request.brief_id = $1::uuid
 PUBLISH_BRIEF_SQL = """
 WITH authorized AS (
     SELECT request.brief_id, request.run_id, request.desk, request.as_of,
-           request.policy_id
+           request.policy_id, completion.complete AS coverage_complete
     FROM analyst_brief_request request
     JOIN access_policy policy ON policy.policy_id = request.policy_id
+    JOIN analysis_run_completion_v3 completion
+      ON completion.run_id = request.run_id::text
     WHERE request.brief_id = $2::uuid
-      AND request.desk = ANY($9::text[])
-      AND $7::text = ANY(policy.allowed_entitlement_groups)
-      AND (policy.barrier_side = 'public' OR $8::text = 'private')
+      AND request.desk = ANY($8::text[])
+      AND $6::text = ANY(policy.allowed_entitlement_groups)
+      AND (policy.barrier_side = 'public' OR $7::text = 'private')
+      AND completion.complete
 ), publication AS (
     INSERT INTO analyst_brief_publication (
         publication_id, brief_id, html, coverage_complete,
         published_by, published_at, policy_id
     )
-    SELECT $1::uuid, authorized.brief_id, $3::text, $4::boolean,
-           $5::text, $6::timestamptz, authorized.policy_id
+    SELECT $1::uuid, authorized.brief_id, $3::text, authorized.coverage_complete,
+           $4::text, $5::timestamptz, authorized.policy_id
     FROM authorized
     RETURNING publication_id, brief_id, html, coverage_complete, published_at
 ), run_update AS (
     UPDATE analyst_run run
-    SET status = 'completed', finished_at = $6::timestamptz
+    SET status = 'completed', finished_at = $5::timestamptz
     FROM authorized
     WHERE run.run_id = authorized.run_id
     RETURNING run.run_id
@@ -523,15 +527,27 @@ def _brief_view(row: Any) -> BriefView:
 class PostgresAnalystService:
     """Production analyst service backed by the versioned evidence ledger."""
 
-    def __init__(self, dsn: str) -> None:
+    def __init__(
+        self,
+        dsn: str,
+        *,
+        pool: asyncpg.Pool | None = None,
+        pool_provider: PostgresPoolProvider | None = None,
+    ) -> None:
         if not dsn.strip():
             raise ValueError("Postgres DSN is required")
         self._dsn = dsn
-        self._pool: asyncpg.Pool | None = None
+        self._pool = pool
+        self._pool_provider = pool_provider
+        self._owns_pool = pool is None and pool_provider is None
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is None:
-            self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=8)
+            self._pool = (
+                await self._pool_provider.get_pool()
+                if self._pool_provider is not None
+                else await asyncpg.create_pool(self._dsn, min_size=1, max_size=8)
+            )
         return self._pool
 
     @staticmethod
@@ -814,6 +830,7 @@ class PostgresAnalystService:
         request: BriefPublicationRequest,
     ) -> BriefView:
         principal.require_role("publisher", "admin")
+        await self.get_brief(principal, brief_id)
         group, side = self._access_args(principal)
         now = datetime.now(UTC)
         pool = await self._get_pool()
@@ -822,7 +839,6 @@ class PostgresAnalystService:
             uuid4(),
             _uuid(brief_id),
             request.html,
-            request.coverage_complete,
             principal.principal.principal_id,
             now,
             group,
@@ -830,7 +846,9 @@ class PostgresAnalystService:
             sorted(principal.desks),
         )
         if row is None:
-            raise ResourceNotFoundError(brief_id)
+            raise PublicationNotReadyError(
+                "brief publication requires server-computed complete coverage"
+            )
         return _brief_view(row)
 
     async def get_run(self, principal: RequestPrincipal, run_id: str) -> RunView:
@@ -872,6 +890,6 @@ class PostgresAnalystService:
             return False
 
     async def close(self) -> None:
-        if self._pool is not None:
+        if self._pool is not None and self._owns_pool:
             await self._pool.close()
-            self._pool = None
+        self._pool = None

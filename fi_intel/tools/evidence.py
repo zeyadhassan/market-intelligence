@@ -15,6 +15,8 @@ class OpportunityStatus(StrEnum):
     WATCH = "watch"
     INSUFFICIENT_EVIDENCE = "insufficient_evidence"
     REJECTED = "rejected"
+    HELD = "held"
+    CONTRADICTED = "contradicted"
 
 
 class OpportunityClaimKind(StrEnum):
@@ -23,6 +25,41 @@ class OpportunityClaimKind(StrEnum):
     TIMING = "timing"
     MATERIALITY = "materiality"
     CONTRADICTION = "contradiction"
+
+
+class EvidenceStrength(StrEnum):
+    STRONG = "strong"
+    MIXED = "mixed"
+    LIMITED = "limited"
+    INSUFFICIENT = "insufficient"
+
+
+class EntailmentStatus(StrEnum):
+    SUPPORTED = "supported"
+    CONTRADICTED = "contradicted"
+    NEEDS_SEMANTIC_REVIEW = "needs_semantic_review"
+    REJECTED = "rejected"
+
+
+class FieldEvidenceMapping(BaseModel):
+    """Evidence ownership for one displayed material field."""
+
+    model_config = ConfigDict(frozen=True)
+
+    field_name: str = Field(min_length=1)
+    value: str = Field(min_length=1)
+    evidence_ids: tuple[str, ...] = Field(min_length=1)
+    derivation: str | None = None
+
+
+class FalsifierTest(BaseModel):
+    """A testable condition, rather than unconstrained narrative prose."""
+
+    model_config = ConfigDict(frozen=True)
+
+    condition: str = Field(min_length=1)
+    observation: str = Field(default="authoritative contradictory evidence")
+    deadline: str | None = None
 
 
 class EvidenceItem(BaseModel):
@@ -35,6 +72,14 @@ class EvidenceItem(BaseModel):
     char_end: int
     excerpt: str
     source_url: str | None = None
+    source_version_id: str | None = None
+    content_hash: str | None = None
+    extraction_version: str | None = None
+    lexical_score: float | None = None
+    vector_score: float | None = None
+    reranker_score: float | None = None
+    fallback_tier: str = "canonical_entity"
+    admission_reason: str = "entitlement-safe hybrid candidate"
 
     @classmethod
     def make_id(cls, source_id: str, doc_id: str, start: int, end: int) -> str:
@@ -65,11 +110,27 @@ class GraphFact(BaseModel):
     object_type: str
     object_key: str
     object_name: str
-    properties: dict[str, str] = Field(default_factory=dict)
+    properties: dict[str, str | int | float | bool] = Field(default_factory=dict)
     valid_from: str
+    valid_to: str | None = None
+    recorded_at: str | None = None
     confidence: float = Field(ge=0.0, le=1.0)
     evidence_id: str
     evidence_index: int | None = None
+
+
+class GraphPath(BaseModel):
+    """One bounded typed path retaining topology and edge provenance."""
+
+    model_config = ConfigDict(frozen=True)
+
+    path_id: str
+    hop_count: int = Field(ge=1, le=2)
+    start_key: str
+    end_key: str
+    assertions: tuple[GraphFact, ...]
+    contradiction: bool = False
+    ambiguous: bool = False
 
 
 class PrecedentEpisode(BaseModel):
@@ -84,6 +145,7 @@ class PrecedentEpisode(BaseModel):
     resolved_at: str
     outcome_ids: tuple[str, ...] = ()
     evidence_ids: tuple[str, ...] = ()
+    outcome_status: str = "unknown_outcome"
 
 
 class OpportunityClaim(BaseModel):
@@ -96,6 +158,8 @@ class OpportunityClaim(BaseModel):
     evidence_ids: list[str]
     confidence: float = Field(ge=0.0, le=1.0)
     uncertainty: str = ""
+    field_evidence: tuple[FieldEvidenceMapping, ...] = ()
+    entailment_status: EntailmentStatus = EntailmentStatus.NEEDS_SEMANTIC_REVIEW
 
 
 class Opportunity(BaseModel):
@@ -112,9 +176,12 @@ class Opportunity(BaseModel):
         min_length=1,
         description="What would prove this hypothesis wrong.",
     )
+    falsifier_test: FalsifierTest | None = None
     evidence_ids: list[str]
     claims: list[OpportunityClaim] = Field(default_factory=list)
     prompt_version: str = "unknown"
     model_version: str = "unknown"
     schema_version: str = "opportunity-v2"
     insufficient_evidence: bool = False
+    evidence_strength: EvidenceStrength = EvidenceStrength.LIMITED
+    uncertainty_category: str = "uncalibrated"

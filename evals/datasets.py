@@ -101,6 +101,7 @@ class DatasetManifest(ManifestModel):
             raise ValueError("governed release dataset requires a locked holdout")
         if len(self.splits) < 2:
             raise ValueError("governed release dataset requires at least two splits")
+
     def _validate_governed_scale(self) -> None:
         required_axes = {
             SeparationAxis.TIME,

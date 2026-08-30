@@ -151,3 +151,5 @@ async def test_out_of_vocabulary_predicate_raises_validation_error_after_recordi
 
     # Usage was recorded before the (post-response) parsing step failed.
     assert len(usage_log.events) == 1
+    assert usage_log.events[0].status == "malformed"
+    assert usage_log.events[0].prompt_version == PROMPT_VERSION

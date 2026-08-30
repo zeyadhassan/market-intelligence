@@ -1,0 +1,28 @@
+{
+  "dataset_id": "developer-mvp-readiness",
+  "version": "1.0.0",
+  "purpose": "Bounded deterministic coverage of developer-MVP failure and lifecycle contracts",
+  "tier": "regression_fixture",
+  "schema_version": "developer-mvp-readiness-v1",
+  "annotation_guidelines_version": "engineering-contract-v1",
+  "licence_class": "repository-test-data",
+  "data_owner": "engineering",
+  "evaluation_owner": "engineering",
+  "created_at": "2026-08-27T00:00:00Z",
+  "document_count": 15,
+  "institution_count": 0,
+  "separation_axes": [],
+  "splits": [
+    {
+      "split_id": "bounded-contracts",
+      "role": "test",
+      "files": [
+        {
+          "path": "evals/data/developer_mvp_cases_v1.json",
+          "sha256": "4d8bc1706ba70521972d29e0dcd532d07ffa76bfb2924d9661d04118a5168270",
+          "records": 15
+        }
+      ]
+    }
+  ]
+}

@@ -78,6 +78,7 @@ class PostgresPatternPrecisionProvider:
         self,
         dsn: str,
         *,
+        pool: asyncpg.Pool | None = None,
         full_weight_samples: int = 30,
         prior_alpha: float = 1.0,
         prior_beta: float = 1.0,
@@ -90,7 +91,8 @@ class PostgresPatternPrecisionProvider:
         self._full_weight_samples = full_weight_samples
         self._prior_alpha = prior_alpha
         self._prior_beta = prior_beta
-        self._pool: asyncpg.Pool | None = None
+        self._pool = pool
+        self._owns_pool = pool is None
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is None:
@@ -125,6 +127,6 @@ class PostgresPatternPrecisionProvider:
         )
 
     async def close(self) -> None:
-        if self._pool is not None:
+        if self._pool is not None and self._owns_pool:
             await self._pool.close()
-            self._pool = None
+        self._pool = None

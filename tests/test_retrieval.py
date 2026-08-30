@@ -21,7 +21,7 @@ from fi_intel.ingest.pipeline import IngestPipeline
 from fi_intel.ingest.resolve import EntityResolver, InMemoryResolutionStore
 from fi_intel.ingest.store import InMemoryDocumentStore
 from fi_intel.retrieval.chunking import HashingEmbedder
-from fi_intel.retrieval.corpus import CorpusSearch
+from fi_intel.retrieval.corpus import CorpusSearch, normalize_retrieval_text
 from fi_intel.retrieval.entitlement import Principal, Side
 from fi_intel.retrieval.service import RetrievalService
 from fi_intel.retrieval.store import InMemoryCorpusStore
@@ -53,12 +53,16 @@ LABELLED_SET = [
 ]
 
 
+def test_arabic_english_normalization_is_diacritic_safe_and_preserves_compounds() -> None:
+    assert normalize_retrieval_text("إِصْدَار صُكُوك") == "اصدار صكوك"
+    assert normalize_retrieval_text("مصرف-الرَّاجحي") == "مصرف-الراجحي"
+    assert normalize_retrieval_text("  CAPITAL   Programme ") == "capital programme"
+
+
 async def _service() -> RetrievalService:
     documents = [document async for document in synthetic_wire().fetch()]
     resolution_store = InMemoryResolutionStore()
-    await resolution_store.load_reference(
-        [document async for document in gleif_fixture().fetch()]
-    )
+    await resolution_store.load_reference([document async for document in gleif_fixture().fetch()])
     resolver = EntityResolver(resolution_store)
     for document in documents:
         await resolver.resolve_document(document, recorded_at=document.recorded_at)
@@ -198,9 +202,7 @@ async def test_recency_weighting_prefers_recent_among_equals() -> None:
     # exactly, so the recency term is the only differentiator — but the
     # near-duplicate 0003 outranks both on relevance, so we compare the
     # pair directly rather than asserting absolute positions.
-    results = await service.search(
-        "outlook revised to negative", PRINCIPAL, mode="bm25", limit=10
-    )
+    results = await service.search("outlook revised to negative", PRINCIPAL, mode="bm25", limit=10)
     pair = {r.doc.doc_id: r for r in results if r.doc.doc_id in {"SW-2024-0001", "SW-2024-0002"}}
     assert len(pair) == 2, results
     assert pair["SW-2024-0002"].score > pair["SW-2024-0001"].score

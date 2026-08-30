@@ -89,9 +89,7 @@ PREDICATE_PROPERTY_REQUIREMENTS: dict[EdgeType, frozenset[str]] = {
             "currency",
         }
     ),
-    EdgeType.REPORTS_METRIC: frozenset(
-        {"metric", "value", "prior", "unit", "direction"}
-    ),
+    EdgeType.REPORTS_METRIC: frozenset({"metric", "value", "prior", "unit", "direction"}),
 }
 
 

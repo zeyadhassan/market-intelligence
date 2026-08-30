@@ -101,7 +101,11 @@ class IntelligenceLedger(Protocol):
 
     async def document_head(self, document_id: UUID) -> DocumentVersion | None: ...
 
+    async def document_version(self, document_version_id: UUID) -> DocumentVersion | None: ...
+
     async def document_identity(self, document_id: UUID) -> DocumentIdentity | None: ...
+
+    async def raw_asset(self, raw_asset_id: UUID) -> RawAsset | None: ...
 
     async def close(self) -> None: ...
 
@@ -374,8 +378,14 @@ class InMemoryIntelligenceLedger:
         version_id = self._current_document_versions.get(document_id)
         return self._document_versions.get(version_id) if version_id is not None else None
 
+    async def document_version(self, document_version_id: UUID) -> DocumentVersion | None:
+        return self._document_versions.get(document_version_id)
+
     async def document_identity(self, document_id: UUID) -> DocumentIdentity | None:
         return self._documents.get(document_id)
+
+    async def raw_asset(self, raw_asset_id: UUID) -> RawAsset | None:
+        return self._raw_assets.get(raw_asset_id)
 
     async def close(self) -> None:
         return None
@@ -713,9 +723,10 @@ def _json(value: BaseModel | Mapping[str, object]) -> str:
 class PostgresIntelligenceLedger:
     """PostgreSQL implementation with one transaction per domain commit."""
 
-    def __init__(self, dsn: str) -> None:
+    def __init__(self, dsn: str, *, pool: asyncpg.Pool | None = None) -> None:
         self._dsn = dsn
-        self._pool: asyncpg.Pool | None = None
+        self._pool = pool
+        self._owns_pool = pool is None
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is None:
@@ -1098,7 +1109,9 @@ class PostgresIntelligenceLedger:
             UPDATE transactional_outbox
             SET published_at = COALESCE(published_at, $2),
                 publish_attempts = publish_attempts + 1,
-                last_error = NULL
+                last_error = NULL,
+                lease_owner = NULL,
+                lease_expires_at = NULL
             WHERE event_id = $1
             """,
             event_id,
@@ -1135,8 +1148,18 @@ class PostgresIntelligenceLedger:
             """,
             document_id,
         )
-        if row is None:
-            return None
+        return self._document_version_from_row(row) if row is not None else None
+
+    async def document_version(self, document_version_id: UUID) -> DocumentVersion | None:
+        pool = await self._get_pool()
+        row = await pool.fetchrow(
+            "SELECT * FROM document_version WHERE document_version_id = $1",
+            document_version_id,
+        )
+        return self._document_version_from_row(row) if row is not None else None
+
+    @staticmethod
+    def _document_version_from_row(row: asyncpg.Record) -> DocumentVersion:
         return DocumentVersion(
             document_version_id=row["document_version_id"],
             document_id=row["document_id"],
@@ -1173,10 +1196,29 @@ class PostgresIntelligenceLedger:
             created_at=row["created_at"],
         )
 
+    async def raw_asset(self, raw_asset_id: UUID) -> RawAsset | None:
+        pool = await self._get_pool()
+        row = await pool.fetchrow("SELECT * FROM raw_asset WHERE raw_asset_id = $1", raw_asset_id)
+        if row is None:
+            return None
+        metadata = row["metadata"]
+        return RawAsset(
+            raw_asset_id=row["raw_asset_id"],
+            source_id=row["source_id"],
+            external_id=row["external_id"],
+            source_revision=row["source_revision"],
+            object_uri=row["object_uri"],
+            content_hash=row["content_hash"],
+            media_type=row["media_type"],
+            fetched_at=row["fetched_at"],
+            policy_id=row["policy_id"],
+            metadata=json.loads(metadata) if isinstance(metadata, str) else dict(metadata),
+        )
+
     async def close(self) -> None:
-        if self._pool is not None:
+        if self._pool is not None and self._owns_pool:
             await self._pool.close()
-            self._pool = None
+        self._pool = None
 
     @staticmethod
     async def _insert_outbox(conn: asyncpg.Connection, event: OutboxEvent) -> None:
@@ -1185,8 +1227,8 @@ class PostgresIntelligenceLedger:
             INSERT INTO transactional_outbox (
                 event_id, event_type, aggregate_type, aggregate_id,
                 aggregate_version, occurred_at, correlation_id, causation_id,
-                policy_id, payload
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+                policy_id, payload, next_attempt_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
             ON CONFLICT (event_id) DO NOTHING
             """,
             event.event_id,
@@ -1199,6 +1241,7 @@ class PostgresIntelligenceLedger:
             event.causation_id,
             event.policy_id,
             _json(event.payload),
+            event.occurred_at,
         )
 
     @staticmethod

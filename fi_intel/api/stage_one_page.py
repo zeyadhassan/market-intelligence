@@ -17,7 +17,7 @@ STAGE_ONE_HTML = """<!doctype html>
       <span><strong>Opportunity Watch</strong><small>Fresh signals for the topics you follow</small></span>
     </a>
     <div class="header-meta">
-      <span class="demo-badge">Live GCC POC</span>
+      <span class="demo-badge">Governed GCC intelligence</span>
       <span class="analyst-name">Demo analyst</span>
     </div>
   </header>
@@ -32,7 +32,7 @@ STAGE_ONE_HTML = """<!doctype html>
       </div>
       <div class="freshness-card" aria-label="Live analysis status">
         <span class="pulse" aria-hidden="true"></span>
-        <span><strong>Live analysis on demand</strong><small>Official sources + configured LLM</small></span>
+        <span><strong>Live analysis on demand</strong><small>Authorized sources + governed models</small></span>
       </div>
     </section>
 
@@ -73,9 +73,9 @@ STAGE_ONE_HTML = """<!doctype html>
 """
 
 STAGE_ONE_FIXTURE_HTML = (
-    STAGE_ONE_HTML.replace("Live GCC POC", "Synthetic fixture")
+    STAGE_ONE_HTML.replace("Governed GCC intelligence", "Synthetic fixture")
     .replace("Live analysis on demand", "Fixture analysis ready")
-    .replace("Official sources + configured LLM", "No network or LLM calls")
+    .replace("Authorized sources + governed models", "No network or LLM calls")
     .replace("Live-source scope", "Fixture scope")
     .replace(
         "Each run fetches official public GCC sources and calls the configured LLM. The source\n"
@@ -236,10 +236,10 @@ h1 { margin: 0; max-width: 680px; font-size: clamp(30px, 4vw, 48px); line-height
 """
 
 
-STAGE_ONE_JS = """(() => {
+_STAGE_ONE_JS_TEMPLATE = """(() => {
   "use strict";
 
-  const DEMO_TOKEN = "stage-one-demo";
+__FI_INTEL_TOKEN_PROVIDER__
   const state = { topics: [], selectedTopic: null, resultSets: new Map() };
   const byId = (id) => document.getElementById(id);
   const toast = byId("toast");
@@ -252,10 +252,11 @@ STAGE_ONE_JS = """(() => {
 
   async function api(path, options = {}) {
     const headers = new Headers(options.headers || {});
-    headers.set("Authorization", `Bearer ${DEMO_TOKEN}`);
+    headers.set("Authorization", `Bearer ${bearerToken()}`);
     if (options.body) headers.set("Content-Type", "application/json");
     const response = await fetch(path, { ...options, headers });
     if (!response.ok) {
+      if (response.status === 401) clearBearerToken();
       let detail = `Request failed (${response.status})`;
       try { detail = (await response.json()).detail || detail; } catch (_) { /* non-JSON error */ }
       throw new Error(detail);
@@ -359,6 +360,12 @@ STAGE_ONE_JS = """(() => {
       }
       if (state.selectedTopic !== topicId) return;
       renderResultSet(resultSet);
+      if (["queued", "running"].includes(resultSet.analysis_status)) {
+        window.setTimeout(() => {
+          state.resultSets.delete(topicId);
+          if (state.selectedTopic === topicId) selectTopic(topicId);
+        }, 2000);
+      }
     } catch (error) {
       setAnalysisState("failed", "Analysis could not be shown", error.message);
       notify(error.message);
@@ -424,6 +431,31 @@ STAGE_ONE_JS = """(() => {
     summary.className = "summary";
     summary.textContent = result.summary;
 
+    const analystContext = document.createElement("div");
+    analystContext.className = "analyst-context";
+    [
+      ["Why now", result.why_now],
+      ["Commercial angle", result.commercial_angle],
+      ["Materiality", result.materiality],
+      ["What changed", result.change_summary],
+      ["Coverage and freshness", result.coverage_details],
+      ["Uncertainty", result.uncertainty]
+    ].forEach(([label, value]) => {
+      if (!value) return;
+      const line = document.createElement("p");
+      const strong = document.createElement("strong");
+      strong.textContent = `${label}: `;
+      line.append(strong, document.createTextNode(value));
+      analystContext.append(line);
+    });
+    if (result.contradictions?.length) {
+      const line = document.createElement("p");
+      const strong = document.createElement("strong");
+      strong.textContent = "Contradictions: ";
+      line.append(strong, document.createTextNode(result.contradictions.join("; ")));
+      analystContext.append(line);
+    }
+
     const meta = document.createElement("div");
     meta.className = "result-meta";
     [
@@ -475,7 +507,21 @@ STAGE_ONE_JS = """(() => {
     note.setAttribute("aria-label", `Optional evaluation note for ${result.title}`);
     evaluation.append(evaluationTitle, actions, note);
 
-    article.append(topline, title, summary, meta, freshness, details, evaluation);
+    if (result.investigation_trace?.length) {
+      const trace = document.createElement("details");
+      trace.className = "evidence-details";
+      const traceSummary = document.createElement("summary");
+      traceSummary.textContent = "View bounded investigation trace";
+      const list = document.createElement("ol");
+      result.investigation_trace.forEach((step) => {
+        const item = document.createElement("li");
+        item.textContent = `${step.operation || "step"}: ${step.reason || step.status || "complete"}`;
+        list.append(item);
+      });
+      trace.append(traceSummary, list);
+      details.append(trace);
+    }
+    article.append(topline, title, summary, analystContext, meta, freshness, details, evaluation);
     return article;
   }
 
@@ -500,8 +546,8 @@ STAGE_ONE_JS = """(() => {
       resultSet.message,
       `Analysis as of ${formatDate(resultSet.as_of)} · ${resultSet.coverage_state.replaceAll("_", " ")} coverage`
     );
-    if (resultSet.mode === "live") renderCoverageLedger(resultSet);
-    else byId("coverage-ledger").hidden = true;
+    if (resultSet.mode === "fixture") byId("coverage-ledger").hidden = true;
+    else renderCoverageLedger(resultSet);
     const scopeParagraph = byId("scope-note").querySelector("p");
     if (resultSet.scope_notice) scopeParagraph.textContent = resultSet.scope_notice;
     byId("results-heading").textContent = resultSet.label;
@@ -514,9 +560,9 @@ STAGE_ONE_JS = """(() => {
       strong.textContent = complete ? "Nothing new for this topic" : "No result can be claimed";
       const detail = document.createElement("span");
       detail.textContent = complete
-        ? (resultSet.mode === "live"
-          ? "All registered live POC sources completed and produced no supported result for this topic."
-          : "The deterministic fixture produced no result above its triage threshold.")
+        ? (resultSet.mode === "fixture"
+          ? "The deterministic fixture produced no result above its triage threshold."
+          : "All required authorized sources completed and produced no supported result for this topic.")
         : "Required coverage did not complete, so silence is not treated as a result.";
       empty.append(strong, detail);
       list.append(empty);
@@ -573,3 +619,29 @@ STAGE_ONE_JS = """(() => {
   loadTopics();
 })();
 """
+
+_CANONICAL_AUTH_SCRIPT = """  const TOKEN_STORAGE_KEY = "fi_intel_oidc_access_token";
+  function bearerToken() {
+    let token = window.sessionStorage.getItem(TOKEN_STORAGE_KEY);
+    if (!token) {
+      token = window.prompt("Paste your OIDC access token for this browser session:");
+      if (!token) throw new Error("OIDC bearer token is required");
+      window.sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+    }
+    return token;
+  }
+  function clearBearerToken() {
+    window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+  }"""
+
+_FIXTURE_AUTH_SCRIPT = """  function bearerToken() {
+    return "stage-one-demo";
+  }
+  function clearBearerToken() {
+    return undefined;
+  }"""
+
+STAGE_ONE_JS = _STAGE_ONE_JS_TEMPLATE.replace("__FI_INTEL_TOKEN_PROVIDER__", _CANONICAL_AUTH_SCRIPT)
+STAGE_ONE_FIXTURE_JS = _STAGE_ONE_JS_TEMPLATE.replace(
+    "__FI_INTEL_TOKEN_PROVIDER__", _FIXTURE_AUTH_SCRIPT
+)

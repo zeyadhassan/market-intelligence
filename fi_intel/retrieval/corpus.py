@@ -16,7 +16,9 @@ tests). This module only ever sees documents the caller may read.
 """
 
 import math
-from datetime import UTC, datetime
+import re
+import unicodedata
+from datetime import UTC, date, datetime
 from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
@@ -53,6 +55,7 @@ class ScoredChunk(BaseModel):
     vector_rank: int | None
     bm25_score: float | None = None
     vector_score: float | None = None
+    reranker_score: float | None = None
 
 
 class IndexedCandidate(BaseModel):
@@ -78,6 +81,8 @@ class CorpusStore(Protocol):
         as_of: datetime | None,
         entity_lei: str | None = None,
         source_ids: set[str] | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
     ) -> list[tuple[CanonicalDocument, list[Chunk], list[list[float]]]]:
         """(document, its chunks, chunk embeddings) the caller may see."""
         ...
@@ -98,6 +103,8 @@ class IndexedCorpusStore(Protocol):
         as_of: datetime | None,
         entity_lei: str | None,
         source_ids: set[str] | None,
+        date_from: date | None,
+        date_to: date | None,
         mode: str,
         candidate_limit: int,
     ) -> list[IndexedCandidate]: ...
@@ -116,8 +123,40 @@ class SpanCorpusStore(Protocol):
     ) -> CanonicalDocument | None: ...
 
 
+@runtime_checkable
+class BatchSpanCorpusStore(Protocol):
+    """Resolve several documents through one entitlement-safe store call."""
+
+    async def resolve_documents(
+        self,
+        principal: Principal,
+        document_keys: tuple[tuple[str, str], ...],
+        as_of: datetime | None,
+    ) -> dict[tuple[str, str], CanonicalDocument]: ...
+
+
+_ARABIC_DIACRITICS = re.compile(r"[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed]")
+_ARABIC_TRANSLATION: dict[str, str | int | None] = {
+    "أ": "ا",
+    "إ": "ا",
+    "آ": "ا",
+    "ٱ": "ا",
+    "ى": "ي",
+    "ـ": "",
+}
+
+
+def normalize_retrieval_text(text: str) -> str:
+    """Normalize English/Arabic text without changing stored citation offsets."""
+
+    normalized = unicodedata.normalize("NFKC", text).casefold()
+    normalized = _ARABIC_DIACRITICS.sub("", normalized)
+    normalized = normalized.translate(str.maketrans(_ARABIC_TRANSLATION))
+    return " ".join(re.findall(r"[\w]+(?:-[\w]+)*", normalized, flags=re.UNICODE))
+
+
 def _tokenize(text: str) -> list[str]:
-    return text.lower().split()
+    return normalize_retrieval_text(text).split()
 
 
 def bm25_rank(
@@ -210,6 +249,10 @@ class CorpusSearch:
         self._min_normalized_bm25_score = min_normalized_bm25_score
         self._min_cosine_similarity = min_cosine_similarity
 
+    @property
+    def model_version(self) -> str:
+        return self._embedder.model_version
+
     async def resolve_span(
         self,
         principal: Principal,
@@ -231,6 +274,34 @@ class CorpusSearch:
             return None
         return doc, text[start:end]
 
+    async def resolve_spans(
+        self,
+        principal: Principal,
+        spans: tuple[tuple[str, str, int, int], ...],
+        as_of: datetime | None,
+    ) -> dict[tuple[str, str, int, int], tuple[CanonicalDocument, str]]:
+        keys = tuple(dict.fromkeys((source_id, doc_id) for source_id, doc_id, _, _ in spans))
+        if isinstance(self._store, BatchSpanCorpusStore):
+            documents = await self._store.resolve_documents(principal, keys, as_of)
+        elif isinstance(self._store, SpanCorpusStore):
+            documents = {}
+            for source_id, doc_id in keys:
+                document = await self._store.resolve_document(principal, source_id, doc_id, as_of)
+                if document is not None:
+                    documents[(source_id, doc_id)] = document
+        else:
+            raise TypeError("corpus store cannot resolve evidence spans")
+        resolved: dict[tuple[str, str, int, int], tuple[CanonicalDocument, str]] = {}
+        for span in spans:
+            source_id, doc_id, start, end = span
+            document = documents.get((source_id, doc_id))
+            if document is None:
+                continue
+            text = document_text(document)
+            if 0 <= start < end <= len(text):
+                resolved[span] = (document, text[start:end])
+        return resolved
+
     async def search(
         self,
         query: str,
@@ -238,6 +309,8 @@ class CorpusSearch:
         as_of: datetime | None = None,
         entity_lei: str | None = None,
         source_ids: set[str] | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
         limit: int = DEFAULT_LIMIT,
         mode: str = "hybrid",
     ) -> list[ScoredChunk]:
@@ -255,6 +328,8 @@ class CorpusSearch:
                 as_of,
                 entity_lei,
                 source_ids,
+                date_from,
+                date_to,
                 limit,
                 mode,
             )
@@ -265,6 +340,8 @@ class CorpusSearch:
             as_of,
             entity_lei,
             source_ids,
+            date_from,
+            date_to,
             limit,
             mode,
         )
@@ -276,6 +353,8 @@ class CorpusSearch:
         as_of: datetime | None,
         entity_lei: str | None,
         source_ids: set[str] | None,
+        date_from: date | None,
+        date_to: date | None,
         limit: int,
         mode: str,
     ) -> list[ScoredChunk]:
@@ -288,6 +367,8 @@ class CorpusSearch:
             as_of,
             entity_lei=entity_lei,
             source_ids=source_ids,
+            date_from=date_from,
+            date_to=date_to,
         )
 
         chunks: list[Chunk] = []
@@ -312,9 +393,7 @@ class CorpusSearch:
         bm25_positive = [(pos, s) for pos, s in bm25 if s > 0.0]
         vector_positive = [(pos, s) for pos, s in vector if s > 0.0]
         max_bm25 = max((score for _pos, score in bm25_positive), default=0.0)
-        bm25_scores = {
-            pos: score / max_bm25 for pos, score in bm25_positive if max_bm25 > 0.0
-        }
+        bm25_scores = {pos: score / max_bm25 for pos, score in bm25_positive if max_bm25 > 0.0}
         vector_scores = dict(vector_positive)
         bm25_ranks = _competition_ranks(bm25_positive)
         vector_ranks = _competition_ranks(vector_positive)
@@ -352,6 +431,8 @@ class CorpusSearch:
         as_of: datetime | None,
         entity_lei: str | None,
         source_ids: set[str] | None,
+        date_from: date | None,
+        date_to: date | None,
         limit: int,
         mode: str,
     ) -> list[ScoredChunk]:
@@ -372,6 +453,8 @@ class CorpusSearch:
             as_of=as_of,
             entity_lei=entity_lei,
             source_ids=source_ids,
+            date_from=date_from,
+            date_to=date_to,
             mode=mode,
             candidate_limit=candidate_limit,
         )

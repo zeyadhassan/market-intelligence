@@ -9,7 +9,7 @@ not left to the caller's discipline.
 from datetime import UTC, datetime
 from typing import Any
 
-from neo4j import AsyncDriver, AsyncGraphDatabase
+from neo4j import AsyncDriver, AsyncGraphDatabase, AsyncSession
 
 from fi_intel.governance.audit import AccessEvent, AuditLog
 from fi_intel.governance.policy import GraphAccessContext
@@ -17,7 +17,7 @@ from fi_intel.logging import get_logger
 from fi_intel.ontology.schema import Assertion, EntityRef
 from fi_intel.ontology.vocab import EdgeType, NodeType
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
 
 # Versioned migrations. Applied in order, each exactly once, recorded in a
 # SchemaVersion node. Never edit an applied migration; add a new one.
@@ -46,6 +46,15 @@ MIGRATIONS: dict[int, list[str]] = {
         "CREATE INDEX signal_pattern_version IF NOT EXISTS "
         "FOR (s:Signal) ON (s.pattern, s.pattern_version)",
     ],
+    4: [
+        "CREATE INDEX assertion_state_key IF NOT EXISTS FOR (a:Assertion) ON (a.state_key)",
+        "CREATE INDEX assertion_valid_interval IF NOT EXISTS "
+        "FOR (a:Assertion) ON (a.valid_from, a.valid_to)",
+    ],
+    5: [
+        "CREATE INDEX assertion_asserted_valid_to IF NOT EXISTS "
+        "FOR (a:Assertion) ON (a.asserted_valid_to)",
+    ],
 }
 
 
@@ -64,6 +73,15 @@ class GraphClient:
 
     async def close(self) -> None:
         await self._driver.close()
+
+    def session(self) -> AsyncSession:
+        """Return a managed Neo4j session for typed graph adapters.
+
+        Application and projection modules use this public boundary instead
+        of coupling themselves to the driver's private storage attribute.
+        """
+
+        return self._driver.session()
 
     async def migrate(self) -> int:
         """Apply pending migrations in order. Returns the schema version."""
@@ -99,6 +117,7 @@ class GraphClient:
         subject_key: str | None = None,
         predicate: EdgeType | None = None,
         endpoint_key: str | None = None,
+        limit: int = 250,
     ) -> list[dict[str, Any]]:
         """Assertions visible at as_of: recorded on/before it and not yet
         superseded at it. The pin is here, in Cypher, not in Python."""
@@ -106,6 +125,33 @@ class GraphClient:
             MATCH (a:Assertion)-[:SUBJECT]->(s:Entity), (a)-[:OBJECT]->(o:Entity)
             WHERE a.recorded_at <= datetime($as_of)
               AND (a.superseded_at IS NULL OR a.superseded_at > datetime($as_of))
+              AND a.valid_from <= datetime($as_of)
+              AND (
+                    CASE WHEN a.asserted_valid_to IS NULL
+                         THEN a.valid_to ELSE a.asserted_valid_to END IS NULL
+                    OR datetime(CASE WHEN a.asserted_valid_to IS NULL
+                                     THEN a.valid_to ELSE a.asserted_valid_to END)
+                       > datetime($as_of)
+                  )
+              AND (
+                    a.state_key IS NULL OR NOT EXISTS {
+                        MATCH (newer:Assertion {state_key: a.state_key})
+                        WHERE newer.assertion_id <> a.assertion_id
+                          AND newer.recorded_at <= datetime($as_of)
+                          AND (newer.superseded_at IS NULL
+                               OR newer.superseded_at > datetime($as_of))
+                          AND newer.valid_from <= datetime($as_of)
+                          AND newer.valid_from > a.valid_from
+                          AND (
+                                CASE WHEN newer.asserted_valid_to IS NULL
+                                     THEN newer.valid_to ELSE newer.asserted_valid_to END IS NULL
+                                OR datetime(CASE WHEN newer.asserted_valid_to IS NULL
+                                                 THEN newer.valid_to
+                                                 ELSE newer.asserted_valid_to END)
+                                   > datetime($as_of)
+                              )
+                    }
+                  )
               AND a.source_id IN $allowed_source_ids
               AND (a.barrier_side = 'public' OR $side = 'private')
         """
@@ -123,7 +169,10 @@ class GraphClient:
         if endpoint_key is not None:
             query += " AND (s.key = $endpoint_key OR o.key = $endpoint_key)"
             params["endpoint_key"] = endpoint_key
-        query += " RETURN a, s, o ORDER BY a.recorded_at"
+        if not 1 <= limit <= 1_000:
+            raise ValueError("assertion read limit must be in [1, 1000]")
+        params["limit"] = limit
+        query += " RETURN a, s, o ORDER BY a.recorded_at, a.assertion_id LIMIT $limit"
         async with self._driver.session() as session:
             result = await session.run(query, params)
             rows = [record.data() async for record in result]
@@ -213,13 +262,7 @@ class GraphClient:
         limit: int = 5,
     ) -> list[dict[str, Any]]:
         """Search resolved signal episodes, never the raw document corpus."""
-        terms = sorted(
-            {
-                token.lower()
-                for token in query.split()
-                if len(token) >= 3
-            }
-        )
+        terms = sorted({token.lower() for token in query.split() if len(token) >= 3})
         if not terms:
             raise ValueError("precedent query must contain a material search term")
         if not 1 <= limit <= 50:
@@ -230,6 +273,13 @@ class GraphClient:
                 MATCH (s:Signal)
                 WHERE s.lifecycle_state = 'resolved'
                   AND s.resolved_at <= datetime($as_of)
+                  AND (
+                      size(coalesce(s.outcome_ids, [])) > 0 OR
+                      s.analyst_disposition IN [
+                          'opportunity_won', 'opportunity_lost',
+                          'not_actionable', 'unknown_outcome'
+                      ]
+                  )
                   AND size(coalesce(s.source_ids, [])) > 0
                   AND all(source_id IN s.source_ids
                           WHERE source_id IN $allowed_source_ids)
@@ -258,11 +308,7 @@ class GraphClient:
                 limit=limit,
             )
             rows = [record.data() async for record in result]
-        refs = [
-            (str(ref["source_id"]), str(ref["doc_id"]))
-            for row in rows
-            for ref in row["refs"]
-        ]
+        refs = [(str(ref["source_id"]), str(ref["doc_id"])) for row in rows for ref in row["refs"]]
         await self.audit_access(access, refs)
         return rows
 
@@ -272,10 +318,27 @@ class GraphClient:
             row = await result.single()
             return int(row["n"]) if row is not None else 0
 
-    async def delete_all(self) -> None:
-        """Test-only teardown. Never called by pipeline code."""
+    async def signal_count(self) -> int:
+        async with self._driver.session() as session:
+            result = await session.run("MATCH (s:Signal) RETURN count(s) AS n")
+            row = await result.single()
+            return int(row["n"]) if row is not None else 0
+
+    async def entity_count(self) -> int:
+        async with self._driver.session() as session:
+            result = await session.run("MATCH (e:Entity) RETURN count(e) AS n")
+            row = await result.single()
+            return int(row["n"]) if row is not None else 0
+
+    async def clear_projection(self) -> None:
+        """Clear only the rebuildable graph store under explicit operator control."""
+
         async with self._driver.session() as session:
             await session.run("MATCH (n) DETACH DELETE n")
+
+    async def delete_all(self) -> None:
+        """Test-only teardown. Never called by pipeline code."""
+        await self.clear_projection()
 
 
 __all__ = [

@@ -5,7 +5,8 @@ logging is best-effort and does not fail the model call that produced it.
 """
 
 from datetime import datetime
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
+from uuid import UUID
 
 import asyncpg
 from pydantic import BaseModel, ConfigDict, Field
@@ -17,6 +18,7 @@ _log = get_logger(component="governance.model_usage")
 # Optional per-million-token rates for internal cost estimates. Unknown
 # models are recorded at zero cost rather than assigned a guessed rate.
 MODEL_PRICING: dict[str, tuple[float, float]] = {}
+ModelCallStatus = Literal["succeeded", "failed", "timed_out", "refused", "malformed"]
 
 
 def estimate_cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
@@ -33,15 +35,21 @@ class ModelCallEvent(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     run_id: str
-    component: str  # 'extract' | 'research'
+    component: str  # extraction, reasoning, embedding, reranking, or entailment
     model: str
     input_tokens: int
     output_tokens: int
     cost_usd: float
     latency_ms: float
     gpu_seconds: float | None = None
-    subject_id: str  # doc_id for extraction, signal_id for research
+    subject_id: str  # governed, component-specific work-item identifier
     recorded_at: datetime
+    status: ModelCallStatus = "succeeded"
+    error_type: str | None = None
+    release_id: UUID | None = None
+    artifact_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    prompt_version: str | None = None
+    schema_version: str | None = None
 
 
 class ModelUsageSnapshot(BaseModel):
@@ -177,17 +185,16 @@ class InMemoryModelUsageLog:
         self, component: str, model: str, fallback: ModelCallEstimate
     ) -> ModelCallEstimate:
         events = [
-            event
-            for event in self.events
-            if event.component == component and event.model == model
+            event for event in self.events if event.component == component and event.model == model
         ][-100:]
         return _estimate_from_events(events, fallback)
 
 
 class PostgresModelUsageLog:
-    def __init__(self, dsn: str) -> None:
+    def __init__(self, dsn: str, *, pool: asyncpg.Pool | None = None) -> None:
         self._dsn = dsn
-        self._pool: asyncpg.Pool | None = None
+        self._pool = pool
+        self._owns_pool = pool is None
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is None:
@@ -201,8 +208,11 @@ class PostgresModelUsageLog:
                 """
                 INSERT INTO model_call_log
                     (run_id, component, model, input_tokens, output_tokens,
-                     cost_usd, latency_ms, gpu_seconds, subject_id, recorded_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                     cost_usd, latency_ms, gpu_seconds, subject_id, recorded_at,
+                     status, error_type, release_id, artifact_digest,
+                     prompt_version, schema_version)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                        $11, $12, $13, $14, $15, $16)
                 """,
                 event.run_id,
                 event.component,
@@ -214,6 +224,12 @@ class PostgresModelUsageLog:
                 event.gpu_seconds,
                 event.subject_id,
                 event.recorded_at,
+                event.status,
+                event.error_type,
+                event.release_id,
+                event.artifact_digest,
+                event.prompt_version,
+                event.schema_version,
             )
         except Exception:  # best-effort by design, see module docstring
             _log.exception(
@@ -299,9 +315,9 @@ class PostgresModelUsageLog:
         )
 
     async def close(self) -> None:
-        if self._pool is not None:
+        if self._pool is not None and self._owns_pool:
             await self._pool.close()
-            self._pool = None
+        self._pool = None
 
 
 def _estimate_from_events(
@@ -324,12 +340,8 @@ def _estimate_from_events(
             int(percentile_90([float(event.output_tokens) for event in events])),
             fallback.output_tokens,
         ),
-        cost_usd=max(
-            percentile_90([event.cost_usd for event in events]), fallback.cost_usd
-        ),
-        latency_ms=max(
-            percentile_90([event.latency_ms for event in events]), fallback.latency_ms
-        ),
+        cost_usd=max(percentile_90([event.cost_usd for event in events]), fallback.cost_usd),
+        latency_ms=max(percentile_90([event.latency_ms for event in events]), fallback.latency_ms),
         gpu_seconds=(
             max(percentile_90(gpu_values), fallback.gpu_seconds or 0.0)
             if gpu_values

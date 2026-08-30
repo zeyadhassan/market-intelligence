@@ -3,15 +3,14 @@
 from datetime import UTC, datetime
 from typing import cast
 
-import pytest
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
 
 from fi_intel.api.app import create_app
 from fi_intel.api.auth import Authenticator, RequestPrincipal, VerifiedToken
-from fi_intel.api.config import AnalystApiSettings
 from fi_intel.api.models import EntityView, EvidenceSpanView, SignalView
 from fi_intel.api.service import InMemoryAnalystService
+from fi_intel.application.preflight import canonical_configuration_errors
+from fi_intel.config import Settings
 from fi_intel.retrieval.entitlement import Principal, Side
 from fi_intel.telemetry import Telemetry
 
@@ -166,17 +165,21 @@ def test_workbench_decisions_and_lifecycle_close_are_operational() -> None:
 
 
 def test_brief_request_and_append_only_publication_contract() -> None:
-    client = TestClient(_app())
+    service = _service()
+    client = TestClient(_app(service))
     requested = client.post(
         "/v1/briefs",
         headers=_headers(),
         json={"desk": "fi_gcc", "as_of": NOW.isoformat()},
     )
     brief_id = requested.json()["brief_id"]
+    service.briefs[brief_id] = service.briefs[brief_id].model_copy(
+        update={"coverage_complete": True}
+    )
     published = client.post(
         f"/v1/briefs/{brief_id}/publication",
         headers=_headers(),
-        json={"html": "<article>Grounded brief</article>", "coverage_complete": True},
+        json={"html": "<article>Grounded brief</article>"},
     )
 
     assert requested.status_code == 202
@@ -209,14 +212,16 @@ def test_http_telemetry_uses_normalized_route_and_owned_resources_close() -> Non
     assert resource.closed
 
 
-def test_production_settings_refuse_missing_database_and_oidc(monkeypatch) -> None:
-    for name in (
-        "FI_INTEL_API_POSTGRES_DSN",
-        "FI_INTEL_API_OIDC_ISSUER",
-        "FI_INTEL_API_OIDC_AUDIENCE",
-        "FI_INTEL_API_OIDC_JWKS_URL",
-    ):
-        monkeypatch.delenv(name, raising=False)
+def test_canonical_settings_refuse_missing_oidc() -> None:
+    errors = canonical_configuration_errors(
+        Settings(
+            llm_base_url="http://model.test/v1",
+            embedding_base_url="http://embedding.test/v1",
+            embedding_model="embedding-v1",
+            rss_user_agent="FI Intel contact@example.test",
+        )
+    )
 
-    with pytest.raises(ValidationError):
-        AnalystApiSettings(_env_file=None)
+    assert "FI_INTEL_OIDC_ISSUER is required" in errors
+    assert "FI_INTEL_OIDC_AUDIENCE is required" in errors
+    assert "FI_INTEL_OIDC_JWKS_URL is required" in errors

@@ -43,24 +43,14 @@ JUDGMENTS = (
         "CET1 capital ratio decline",
         {"SW-2024-0004": 3, "SW-2024-0001": 2, "SW-2024-0003": 2},
     ),
-    RetrievalJudgment(
-        "treasurer-change", "treasurer departure leadership", {"SW-2024-0005": 3}
-    ),
-    RetrievalJudgment(
-        "programme-approval", "EMTN programme board approval", {"SW-2024-0006": 3}
-    ),
-    RetrievalJudgment(
-        "maturity-wall", "sukuk maturity refinancing", {"SW-2024-0007": 3}
-    ),
-    RetrievalJudgment(
-        "mandate-outcome", "bond mandate banks appointed", {"SW-2024-0008": 3}
-    ),
+    RetrievalJudgment("treasurer-change", "treasurer departure leadership", {"SW-2024-0005": 3}),
+    RetrievalJudgment("programme-approval", "EMTN programme board approval", {"SW-2024-0006": 3}),
+    RetrievalJudgment("maturity-wall", "sukuk maturity refinancing", {"SW-2024-0007": 3}),
+    RetrievalJudgment("mandate-outcome", "bond mandate banks appointed", {"SW-2024-0008": 3}),
     RetrievalJudgment(
         "steady-results", "Northern Harbour steady CET1 results", {"SW-2024-0009": 3}
     ),
-    RetrievalJudgment(
-        "stable-rating", "Northern Harbour stable outlook", {"SW-2024-0011": 3}
-    ),
+    RetrievalJudgment("stable-rating", "Northern Harbour stable outlook", {"SW-2024-0011": 3}),
     RetrievalJudgment(
         "similar-name-trap", "Gulf Meridian Capital private credit fund", {"SW-2024-0012": 3}
     ),

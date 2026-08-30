@@ -48,9 +48,7 @@ class SourceAdapter(Protocol):
         """Stable identifier joining documents to the source registry."""
         ...
 
-    async def fetch(
-        self, cursor: FetchCursor | None = None
-    ) -> AsyncIterator[CanonicalDocument]:
+    async def fetch(self, cursor: FetchCursor | None = None) -> AsyncIterator[CanonicalDocument]:
         """Yield canonical documents after the cursor position.
 
         Must be resumable: passing back the cursor emitted alongside the

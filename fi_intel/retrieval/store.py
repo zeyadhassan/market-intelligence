@@ -6,7 +6,7 @@ candidate generation; it never loads the entitled corpus into Python.
 """
 
 import json
-from datetime import UTC, datetime
+from datetime import date, datetime
 from typing import Any
 
 import asyncpg
@@ -19,9 +19,13 @@ from fi_intel.retrieval.chunking import (
     Embedder,
     chunk_document,
 )
-from fi_intel.retrieval.corpus import MAX_INDEXED_CANDIDATES, IndexedCandidate
+from fi_intel.retrieval.corpus import (
+    MAX_INDEXED_CANDIDATES,
+    IndexedCandidate,
+    normalize_retrieval_text,
+)
 from fi_intel.retrieval.entitlement import Principal, Side, grants_for
-from fi_intel.sources.canonical import CanonicalDocument, DocumentClass
+from fi_intel.sources.canonical import CanonicalDocument
 
 
 class InMemoryCorpusStore:
@@ -52,6 +56,8 @@ class InMemoryCorpusStore:
         as_of: datetime | None,
         entity_lei: str | None = None,
         source_ids: set[str] | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
     ) -> list[tuple[CanonicalDocument, list[Chunk], list[list[float]]]]:
         allowed_sources = grants_for(principal.entitlement_group, self._grants)
         out = []
@@ -65,6 +71,10 @@ class InMemoryCorpusStore:
             if as_of is not None and doc.recorded_at > as_of:
                 continue
             if source_ids is not None and doc.source_id not in source_ids:
+                continue
+            if date_from is not None and doc.published_at.date() < date_from:
+                continue
+            if date_to is not None and doc.published_at.date() > date_to:
                 continue
             if entity_lei is not None and not any(
                 link.source_id == doc.source_id
@@ -101,6 +111,19 @@ class InMemoryCorpusStore:
             return doc
         return None
 
+    async def resolve_documents(
+        self,
+        principal: Principal,
+        document_keys: tuple[tuple[str, str], ...],
+        as_of: datetime | None,
+    ) -> dict[tuple[str, str], CanonicalDocument]:
+        resolved: dict[tuple[str, str], CanonicalDocument] = {}
+        for source_id, doc_id in document_keys:
+            document = await self.resolve_document(principal, source_id, doc_id, as_of)
+            if document is not None:
+                resolved[(source_id, doc_id)] = document
+        return resolved
+
 
 INDEX_STATE_NAME = "document_chunk"
 INDEX_BUILD_LOCK_ID = 750_521_801_934_774_611
@@ -130,15 +153,32 @@ WHERE index_name = $1
 # access path instead of materializing every entitled chunk first.
 INDEXED_CANDIDATE_SQL = """
 WITH eligible AS NOT MATERIALIZED (
-    SELECT c.chunk_id, c.search_vector, c.embedding
+    SELECT c.chunk_id, c.normalized_search_vector AS search_vector, c.embedding
     FROM document_chunk c
     JOIN document d
       ON d.source_id = c.source_id AND d.doc_id = c.doc_id
     JOIN source_registry sr ON sr.source_id = d.source_id
+    JOIN access_policy chunk_policy ON chunk_policy.policy_id = c.policy_id
     JOIN entitlement_grant eg
       ON eg.source_id = d.source_id AND eg.entitlement_group = $1
     WHERE sr.licensed
       AND (d.barrier_side = 'public' OR $2::text = 'private')
+      AND $1::text = ANY(chunk_policy.allowed_entitlement_groups)
+      AND (chunk_policy.barrier_side = 'public' OR $2::text = 'private')
+      AND c.canonical_lineage
+      AND c.document_version_id IS NOT NULL
+      AND EXISTS (
+          SELECT 1 FROM document_chunk_assertion_v4 linked_assertion
+          JOIN access_policy assertion_policy USING (policy_id)
+          JOIN knowledge_assertion assertion USING (assertion_id)
+          WHERE linked_assertion.chunk_id = c.chunk_id
+            AND $1::text = ANY(assertion_policy.allowed_entitlement_groups)
+            AND (assertion_policy.barrier_side='public' OR $2::text='private')
+            AND ($3::timestamptz IS NULL OR assertion.recorded_at <= $3::timestamptz)
+            AND ($3::timestamptz IS NULL OR assertion.valid_from <= $3::timestamptz)
+            AND ($3::timestamptz IS NULL OR assertion.valid_to IS NULL
+                 OR assertion.valid_to > $3::timestamptz)
+      )
       AND ($3::timestamptz IS NULL OR d.recorded_at <= $3::timestamptz)
       AND (
           $4::text IS NULL OR EXISTS (
@@ -150,19 +190,21 @@ WITH eligible AS NOT MATERIALIZED (
           )
       )
       AND ($5::text[] IS NULL OR d.source_id = ANY($5::text[]))
-      AND c.embed_model_version = $8::text
+      AND ($6::date IS NULL OR d.published_at >= $6::date)
+      AND ($7::date IS NULL OR d.published_at < ($7::date + 1))
+      AND c.embed_model_version = $10::text
 ),
 lexical_nearest AS (
     SELECT e.chunk_id,
            ts_rank_cd(
                e.search_vector,
-               websearch_to_tsquery('simple', $6::text)
+               websearch_to_tsquery('simple', $8::text)
            ) AS lexical_score
     FROM eligible e
-    WHERE $10::text IN ('hybrid', 'bm25')
-      AND e.search_vector @@ websearch_to_tsquery('simple', $6::text)
+    WHERE $12::text IN ('hybrid', 'bm25')
+      AND e.search_vector @@ websearch_to_tsquery('simple', $8::text)
     ORDER BY lexical_score DESC, e.chunk_id
-    LIMIT $9::int
+    LIMIT $11::int
 ),
 lexical_ranked AS (
     SELECT chunk_id,
@@ -173,12 +215,12 @@ lexical_ranked AS (
 ),
 vector_nearest AS (
     SELECT e.chunk_id,
-           1.0 - (e.embedding <=> $7::vector) AS vector_score
+           1.0 - (e.embedding <=> $9::vector) AS vector_score
     FROM eligible e
-    WHERE $10::text IN ('hybrid', 'vector')
+    WHERE $12::text IN ('hybrid', 'vector')
       AND e.embedding IS NOT NULL
-    ORDER BY e.embedding <=> $7::vector
-    LIMIT $9::int
+    ORDER BY e.embedding <=> $9::vector
+    LIMIT $11::int
 ),
 vector_candidates AS (
     SELECT chunk_id, vector_score
@@ -203,12 +245,62 @@ candidate_ids AS (
 SELECT d.doc_id, d.source_id, d.published_at, d.recorded_at,
        d.title, d.body, d.language, d.document_class, d.barrier_side,
        d.mentioned_names, d.identifiers, d.url,
-       c.chunk_index, c.char_start, c.char_end, c.text,
+       c.chunk_id, c.chunk_index, c.char_start, c.char_end, c.text,
+       c.document_version_id, c.policy_id, c.chunker_version,
+       c.section_path, c.content_hash, c.embed_model_version,
+       lineage.entity_ids, lineage.assertion_ids, lineage.evidence_span_ids,
+       lineage.valid_from, lineage.valid_to,
        candidate_ids.bm25_rank, candidate_ids.vector_rank,
        candidate_ids.bm25_score, candidate_ids.vector_score
 FROM candidate_ids
 JOIN document_chunk c ON c.chunk_id = candidate_ids.chunk_id
 JOIN document d ON d.source_id = c.source_id AND d.doc_id = c.doc_id
+LEFT JOIN LATERAL (
+    SELECT
+      coalesce(array_agg(DISTINCT ce.entity_id::text)
+               FILTER (WHERE ce.entity_id IS NOT NULL
+                         AND $1::text = ANY(ce_policy.allowed_entitlement_groups)
+                         AND (ce_policy.barrier_side='public' OR $2::text='private')
+                         AND ($3::timestamptz IS NULL OR ce.recorded_at <= $3::timestamptz)),
+               '{}') AS entity_ids,
+      coalesce(array_agg(DISTINCT ca.assertion_id::text)
+               FILTER (WHERE ca.assertion_id IS NOT NULL
+                         AND $1::text = ANY(ca_policy.allowed_entitlement_groups)
+                         AND (ca_policy.barrier_side='public' OR $2::text='private')
+                         AND ($3::timestamptz IS NULL OR ka.recorded_at <= $3::timestamptz)
+                         AND ($3::timestamptz IS NULL OR ka.valid_from <= $3::timestamptz)
+                         AND ($3::timestamptz IS NULL OR ka.valid_to IS NULL
+                              OR ka.valid_to > $3::timestamptz)), '{}') AS assertion_ids,
+      coalesce(array_agg(DISTINCT cv.evidence_span_id::text)
+               FILTER (WHERE cv.evidence_span_id IS NOT NULL
+                         AND $1::text = ANY(cv_policy.allowed_entitlement_groups)
+                         AND (cv_policy.barrier_side='public' OR $2::text='private')),
+               '{}') AS evidence_span_ids,
+      min(ka.valid_from) FILTER (
+          WHERE $1::text = ANY(ca_policy.allowed_entitlement_groups)
+            AND (ca_policy.barrier_side='public' OR $2::text='private')
+            AND ($3::timestamptz IS NULL OR ka.recorded_at <= $3::timestamptz)
+            AND ($3::timestamptz IS NULL OR ka.valid_from <= $3::timestamptz)
+            AND ($3::timestamptz IS NULL OR ka.valid_to IS NULL
+                 OR ka.valid_to > $3::timestamptz)
+      ) AS valid_from,
+      max(ka.valid_to) FILTER (
+          WHERE $1::text = ANY(ca_policy.allowed_entitlement_groups)
+            AND (ca_policy.barrier_side='public' OR $2::text='private')
+            AND ($3::timestamptz IS NULL OR ka.recorded_at <= $3::timestamptz)
+            AND ($3::timestamptz IS NULL OR ka.valid_from <= $3::timestamptz)
+            AND ($3::timestamptz IS NULL OR ka.valid_to IS NULL
+                 OR ka.valid_to > $3::timestamptz)
+      ) AS valid_to
+    FROM (SELECT c.chunk_id) seed
+    LEFT JOIN document_chunk_entity_v4 ce ON ce.chunk_id = seed.chunk_id
+    LEFT JOIN access_policy ce_policy ON ce_policy.policy_id = ce.policy_id
+    LEFT JOIN document_chunk_assertion_v4 ca ON ca.chunk_id = seed.chunk_id
+    LEFT JOIN access_policy ca_policy ON ca_policy.policy_id = ca.policy_id
+    LEFT JOIN knowledge_assertion ka ON ka.assertion_id = ca.assertion_id
+    LEFT JOIN document_chunk_evidence_v4 cv ON cv.chunk_id = seed.chunk_id
+    LEFT JOIN access_policy cv_policy ON cv_policy.policy_id = cv.policy_id
+) lineage ON TRUE
 ORDER BY least(
              coalesce(candidate_ids.bm25_rank, 2147483647),
              coalesce(candidate_ids.vector_rank, 2147483647)
@@ -255,22 +347,37 @@ def _row_to_indexed_candidate(row: Any) -> IndexedCandidate:
             char_start=row["char_start"],
             char_end=row["char_end"],
             text=row["text"],
+            structure_path=tuple(row["section_path"] or ()),
+            chunk_id=str(row["chunk_id"]),
+            document_version_id=(
+                str(row["document_version_id"]) if row["document_version_id"] is not None else None
+            ),
+            entity_ids=tuple(str(item) for item in (row["entity_ids"] or ())),
+            assertion_ids=tuple(str(item) for item in (row["assertion_ids"] or ())),
+            evidence_span_ids=tuple(str(item) for item in (row["evidence_span_ids"] or ())),
+            policy_id=str(row["policy_id"]) if row["policy_id"] is not None else None,
+            valid_from=row["valid_from"],
+            valid_to=row["valid_to"],
+            content_hash=(str(row["content_hash"]) if row["content_hash"] is not None else None),
+            chunker_version=(
+                str(row["chunker_version"]) if row["chunker_version"] is not None else None
+            ),
+            embedding_release=str(row["embed_model_version"]),
         ),
         bm25_rank=int(row["bm25_rank"]) if row["bm25_rank"] is not None else None,
         vector_rank=(int(row["vector_rank"]) if row["vector_rank"] is not None else None),
         bm25_score=(float(row["bm25_score"]) if row["bm25_score"] is not None else None),
-        vector_score=(
-            float(row["vector_score"]) if row["vector_score"] is not None else None
-        ),
+        vector_score=(float(row["vector_score"]) if row["vector_score"] is not None else None),
     )
 
 
 class PostgresCorpusStore:
     """Production store using bounded GIN/HNSW candidate generation."""
 
-    def __init__(self, dsn: str) -> None:
+    def __init__(self, dsn: str, *, pool: asyncpg.Pool | None = None) -> None:
         self._dsn = dsn
-        self._pool: asyncpg.Pool | None = None
+        self._pool = pool
+        self._owns_pool = pool is None
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is None:
@@ -313,6 +420,8 @@ class PostgresCorpusStore:
         as_of: datetime | None,
         entity_lei: str | None,
         source_ids: set[str] | None,
+        date_from: date | None = None,
+        date_to: date | None = None,
         mode: str,
         candidate_limit: int,
     ) -> list[IndexedCandidate]:
@@ -343,7 +452,9 @@ class PostgresCorpusStore:
                 as_of,
                 entity_lei,
                 sorted(source_ids) if source_ids is not None else None,
-                query,
+                date_from,
+                date_to,
+                normalize_retrieval_text(query),
                 str(query_embedding),
                 embed_model_version,
                 candidate_limit,
@@ -382,6 +493,41 @@ class PostgresCorpusStore:
         )
         return _row_to_document(row) if row is not None else None
 
+    async def resolve_documents(
+        self,
+        principal: Principal,
+        document_keys: tuple[tuple[str, str], ...],
+        as_of: datetime | None,
+    ) -> dict[tuple[str, str], CanonicalDocument]:
+        if not document_keys:
+            return {}
+        pool = await self._get_pool()
+        rows = await pool.fetch(
+            """
+            WITH requested AS (
+                SELECT * FROM unnest($2::text[], $3::text[]) AS item(source_id, doc_id)
+            )
+            SELECT d.doc_id, d.source_id, d.published_at, d.recorded_at,
+                   d.title, d.body, d.language, d.document_class,
+                   d.barrier_side, d.mentioned_names, d.identifiers, d.url
+            FROM requested request
+            JOIN document d USING (source_id, doc_id)
+            JOIN source_registry sr ON sr.source_id = d.source_id
+            JOIN entitlement_grant eg
+              ON eg.source_id = d.source_id AND eg.entitlement_group = $1
+            WHERE sr.licensed
+              AND (d.barrier_side = 'public' OR $4::text = 'private')
+              AND ($5::timestamptz IS NULL OR d.recorded_at <= $5::timestamptz)
+            """,
+            principal.entitlement_group,
+            [item[0] for item in document_keys],
+            [item[1] for item in document_keys],
+            principal.side.value,
+            as_of,
+        )
+        documents = (_row_to_document(row) for row in rows)
+        return {(item.source_id, item.doc_id): item for item in documents}
+
     async def _validate_build_request(
         self,
         conn: asyncpg.Connection,
@@ -412,15 +558,16 @@ class PostgresCorpusStore:
         row: Any,
         embedder: Embedder,
     ) -> int:
-        now = datetime.now(tz=UTC)
         doc = CanonicalDocument(
             doc_id=row["doc_id"],
             source_id=row["source_id"],
-            published_at=now,
-            recorded_at=now,
+            published_at=row["published_at"],
+            recorded_at=row["recorded_at"],
             title=row["title"],
             body=row["body"],
-            document_class=DocumentClass.NEWS_WIRE,
+            language=row["language"],
+            document_class=row["document_class"],
+            barrier_side=row["barrier_side"],
         )
         chunks = chunk_document(doc)
         if not chunks:
@@ -438,13 +585,22 @@ class PostgresCorpusStore:
                     f"match configured dimension {embedder.dim}"
                 )
                 raise RetrievalIndexVersionError(msg)
-            status = await conn.execute(
+            chunk_id = await conn.fetchval(
                 """
                 INSERT INTO document_chunk
                     (source_id, doc_id, chunk_index, char_start, char_end,
-                     text, embedding, embed_model_version)
-                VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8)
-                ON CONFLICT (source_id, doc_id, chunk_index) DO NOTHING
+                     text, embedding, embed_model_version, document_version_id,
+                     policy_id, chunker_version, section_path, content_hash,
+                     canonical_lineage)
+                VALUES ($1,$2,$3,$4,$5,$6,$7::vector,$8,$9,$10,$11,$12,$13,$14)
+                ON CONFLICT (source_id, doc_id, chunk_index) DO UPDATE SET
+                    document_version_id = EXCLUDED.document_version_id,
+                    policy_id = EXCLUDED.policy_id,
+                    chunker_version = EXCLUDED.chunker_version,
+                    section_path = EXCLUDED.section_path,
+                    content_hash = EXCLUDED.content_hash,
+                    canonical_lineage = EXCLUDED.canonical_lineage
+                RETURNING chunk_id
                 """,
                 chunk.source_id,
                 chunk.doc_id,
@@ -454,10 +610,86 @@ class PostgresCorpusStore:
                 chunk.text,
                 str(embedding),
                 embedder.model_version,
+                row["document_version_id"],
+                row["policy_id"],
+                CHUNKER_VERSION,
+                list(chunk.structure_path),
+                row["content_hash"],
+                row["document_version_id"] is not None,
             )
-            if status.endswith(" 1"):
-                written += 1
+            if chunk_id is None:
+                raise RuntimeError("chunk upsert returned no identity")
+            if row["document_version_id"] is not None:
+                await PostgresCorpusStore._link_chunk_authority(
+                    conn,
+                    int(chunk_id),
+                    row["document_version_id"],
+                    chunk.char_start,
+                    chunk.char_end,
+                )
+            written += 1
         return written
+
+    @staticmethod
+    async def _link_chunk_authority(
+        conn: asyncpg.Connection,
+        chunk_id: int,
+        document_version_id: object,
+        char_start: int,
+        char_end: int,
+    ) -> None:
+        await conn.execute(
+            """
+            INSERT INTO document_chunk_evidence_v4 (chunk_id, evidence_span_id, policy_id)
+            SELECT $1, evidence_span_id, policy_id FROM evidence_span
+            WHERE document_version_id = $2
+              AND char_start < $4 AND char_end > $3
+            ON CONFLICT DO NOTHING
+            """,
+            chunk_id,
+            document_version_id,
+            char_start,
+            char_end,
+        )
+        await conn.execute(
+            """
+            INSERT INTO document_chunk_assertion_v4 (chunk_id, assertion_id, policy_id)
+            SELECT DISTINCT $1, link.assertion_id, assertion.policy_id
+            FROM knowledge_assertion_evidence link
+            JOIN knowledge_assertion assertion USING (assertion_id)
+            JOIN evidence_span evidence USING (evidence_span_id)
+            WHERE evidence.document_version_id = $2
+              AND evidence.char_start < $4 AND evidence.char_end > $3
+            ON CONFLICT DO NOTHING
+            """,
+            chunk_id,
+            document_version_id,
+            char_start,
+            char_end,
+        )
+        await conn.execute(
+            """
+            INSERT INTO document_chunk_entity_v4 (
+                chunk_id, entity_id, resolution_confidence, policy_id, recorded_at
+            )
+            SELECT DISTINCT $1, linked.entity_id, linked.confidence,
+                   linked.policy_id, linked.recorded_at
+            FROM (
+              SELECT assertion.subject_entity_id AS entity_id, 1.0 AS confidence,
+                     assertion.policy_id, assertion.recorded_at
+              FROM knowledge_assertion assertion
+              JOIN knowledge_assertion_evidence ae USING (assertion_id)
+              JOIN evidence_span evidence USING (evidence_span_id)
+              WHERE evidence.document_version_id = $2
+                AND evidence.char_start < $4 AND evidence.char_end > $3
+            ) linked
+            ON CONFLICT DO NOTHING
+            """,
+            chunk_id,
+            document_version_id,
+            char_start,
+            char_end,
+        )
 
     async def index_chunks(self, embedder: Embedder, *, force: bool = False) -> int:
         """Build a version-homogeneous chunk index.
@@ -477,8 +709,17 @@ class PostgresCorpusStore:
             await self._validate_build_request(conn, embedder, force)
             rows = await conn.fetch(
                 """
-                SELECT d.source_id, d.doc_id, d.title, d.body
+                SELECT d.source_id, d.doc_id, d.title, d.body, d.language,
+                       d.document_class, d.barrier_side, d.published_at,
+                       d.recorded_at, d.content_hash,
+                       version.document_version_id, version.policy_id
                 FROM document d
+                LEFT JOIN document_version version
+                  ON version.document_version_id = CASE
+                    WHEN d.metadata->>'ledger_document_version_id' ~
+                         '^[0-9a-fA-F-]{36}$'
+                    THEN (d.metadata->>'ledger_document_version_id')::uuid
+                    ELSE NULL END
                 WHERE $1 OR NOT EXISTS (
                     SELECT 1 FROM document_chunk c
                     WHERE c.source_id = d.source_id AND c.doc_id = d.doc_id
@@ -512,6 +753,6 @@ class PostgresCorpusStore:
         return written
 
     async def close(self) -> None:
-        if self._pool is not None:
+        if self._pool is not None and self._owns_pool:
             await self._pool.close()
-            self._pool = None
+        self._pool = None

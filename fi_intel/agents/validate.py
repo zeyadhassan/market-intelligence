@@ -2,10 +2,11 @@
 
 from datetime import datetime
 
+from fi_intel.agents.grounding import ground_claim, title_agrees_with_claims
 from fi_intel.governance.policy import GraphAccessContext
 from fi_intel.ingest.store import DocumentStore
 from fi_intel.sources.canonical import document_text
-from fi_intel.tools.evidence import EvidenceItem, Opportunity
+from fi_intel.tools.evidence import EntailmentStatus, EvidenceItem, Opportunity
 
 
 class EvidenceValidationError(ValueError):
@@ -58,7 +59,8 @@ async def _validate_resolvable(
     expected: dict[str, EvidenceItem],
     as_of: datetime | None,
     access: GraphAccessContext | None,
-) -> None:
+) -> dict[str, EvidenceItem]:
+    resolved_items: dict[str, EvidenceItem] = {}
     for evidence_id in evidence_ids:
         source_id, doc_id, start, end = EvidenceItem.parse_id(evidence_id)
         if access is not None and source_id not in access.allowed_source_ids:
@@ -86,6 +88,17 @@ async def _validate_resolvable(
         if expected_item is not None and text[start:end] != expected_item.excerpt:
             msg = f"unresolvable evidence_id {evidence_id!r}: excerpt does not match span"
             raise EvidenceValidationError(msg)
+        resolved_items[evidence_id] = expected_item or EvidenceItem(
+            evidence_id=evidence_id,
+            source_id=source_id,
+            doc_id=doc_id,
+            source_url=doc.url,
+            char_start=start,
+            char_end=end,
+            excerpt=text[start:end],
+            content_hash=doc.content_hash(),
+        )
+    return resolved_items
 
 
 async def validate_opportunity(
@@ -95,6 +108,7 @@ async def validate_opportunity(
     *,
     as_of: datetime | None = None,
     access: GraphAccessContext | None = None,
+    require_semantic_entailment: bool = False,
 ) -> Opportunity:
     """Resolve every atomic citation against persisted source text."""
     if opportunity.insufficient_evidence:
@@ -105,5 +119,23 @@ async def validate_opportunity(
 
     global_ids = _validate_claim_citations(opportunity)
     expected = _expected_evidence(evidence, global_ids)
-    await _validate_resolvable(opportunity.evidence_ids, store, expected, as_of, access)
+    resolved = await _validate_resolvable(opportunity.evidence_ids, store, expected, as_of, access)
+    for claim in opportunity.claims:
+        decision = ground_claim(claim.text, [resolved[item] for item in claim.evidence_ids])
+        if not decision.supported:
+            msg = f"claim {claim.text!r} is not entailed: {'; '.join(decision.reasons)}"
+            raise EvidenceValidationError(msg)
+        if require_semantic_entailment and (
+            decision.requires_semantic_review
+            or claim.entailment_status is EntailmentStatus.NEEDS_SEMANTIC_REVIEW
+        ):
+            raise EvidenceValidationError(
+                f"claim {claim.text!r} requires a governed semantic entailment decision"
+            )
+        if claim.entailment_status is EntailmentStatus.REJECTED:
+            raise EvidenceValidationError(f"claim {claim.text!r} failed semantic verification")
+    if not title_agrees_with_claims(
+        opportunity.title, [claim.text for claim in opportunity.claims]
+    ):
+        raise EvidenceValidationError("opportunity title disagrees with its validated claims")
     return opportunity

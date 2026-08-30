@@ -1,5 +1,8 @@
 """Deterministic admission checks for extracted claim candidates."""
 
+from datetime import date
+from decimal import Decimal
+
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from fi_intel.ingest.extract import PREDICATE_PROPERTY_REQUIREMENTS, RawClaim
@@ -81,13 +84,41 @@ _DOMAIN_RANGE: dict[EdgeType, tuple[frozenset[NodeType], frozenset[NodeType]]] =
     ),
 }
 
-def _semantic_reasons(claim: RawClaim) -> tuple[str, ...]:
+
+def _literal_variants(field_name: str, value: object) -> tuple[str, ...]:
+    if isinstance(value, bool):
+        return ("marketed",) if value else ("not marketed", "unmarketed", "not yet marketed")
+    if field_name == "unit" and str(value).casefold() == "percent":
+        return ("percent", "%", "percentage")
+    if field_name == "direction":
+        direction = str(getattr(value, "value", value)).casefold()
+        synonyms = {
+            "flat": ("flat", "unchanged", "stable"),
+            "down": ("down", "fell", "declined", "decreased"),
+            "up": ("up", "rose", "increased"),
+            "negative": ("negative", "downgraded"),
+            "positive": ("positive", "upgraded"),
+            "affirmed": ("affirmed", "reaffirmed"),
+        }
+        return synonyms.get(direction, (direction,))
+    if isinstance(value, date):
+        return (
+            value.isoformat(),
+            value.strftime("%d %B %Y"),
+            f"{value.day} {value.strftime('%B %Y')}",
+        )
+    if isinstance(value, Decimal):
+        normalized = format(value, "f")
+        return (normalized, normalized.rstrip("0").rstrip("."))
+    rendered = str(getattr(value, "value", value))
+    return (rendered,)
+
+
+def _semantic_reasons(claim: RawClaim, document_text_value: str) -> tuple[str, ...]:
     reasons: list[str] = []
     allowed_subjects, allowed_objects = _DOMAIN_RANGE[claim.predicate]
     if claim.subject.node_type not in allowed_subjects:
-        reasons.append(
-            f"subject type {claim.subject.node_type} is invalid for {claim.predicate}"
-        )
+        reasons.append(f"subject type {claim.subject.node_type} is invalid for {claim.predicate}")
     if claim.object.node_type not in allowed_objects:
         reasons.append(f"object type {claim.object.node_type} is invalid for {claim.predicate}")
 
@@ -110,11 +141,17 @@ def _semantic_reasons(claim: RawClaim) -> tuple[str, ...]:
         claim.properties.currency is not None
         and claim.properties.currency != "USD"
         and (
-            claim.properties.limit_usd_bn is not None
-            or claim.properties.amount_usd_mn is not None
+            claim.properties.limit_usd_bn is not None or claim.properties.amount_usd_mn is not None
         )
     ):
         reasons.append("USD-denominated amount fields require currency USD")
+    lowered = document_text_value.casefold().replace(",", "")
+    for field_name, value in claim.properties.model_dump(exclude_none=True, by_alias=True).items():
+        variants = tuple(
+            item.casefold().replace(",", "") for item in _literal_variants(field_name, value)
+        )
+        if not any(item and item in lowered for item in variants):
+            reasons.append(f"material property {field_name}={value!s} is absent from source text")
     return tuple(reasons)
 
 
@@ -135,7 +172,7 @@ def validate_claims(
             rejected_offsets.append(claim)
             continue
 
-        reasons = _semantic_reasons(claim)
+        reasons = _semantic_reasons(claim, text)
         if reasons:
             rejected_semantics.append(SemanticRejection(claim=claim, reasons=reasons))
             continue

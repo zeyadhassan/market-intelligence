@@ -19,6 +19,7 @@ def test_repository_migration_plan_is_contiguous_and_checksummed() -> None:
     plan = discover_migrations()
     assert [item.version for item in plan] == list(range(1, len(plan) + 1))
     assert plan[0].filename == "init.sql"
+    assert plan[-1].filename == "0022_developer_mvp_runtime.sql"
     assert all(len(item.checksum) == 64 for item in plan)
     assert any(item.filename == "0004_replayable_ingestion.sql" for item in plan)
 
@@ -39,9 +40,7 @@ def test_discovery_rejects_embedded_transaction_control(tmp_path: Path) -> None:
     migrations = deploy / "migrations"
     migrations.mkdir(parents=True)
     (deploy / "init.sql").write_text("SELECT 1;", encoding="utf-8")
-    (migrations / "0002_bad.sql").write_text(
-        "BEGIN;\nSELECT 2;\nCOMMIT;", encoding="utf-8"
-    )
+    (migrations / "0002_bad.sql").write_text("BEGIN;\nSELECT 2;\nCOMMIT;", encoding="utf-8")
     with pytest.raises(MigrationPlanError, match="runner owns transactions"):
         discover_migrations(deploy)
 

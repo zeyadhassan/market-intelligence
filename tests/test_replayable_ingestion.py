@@ -110,9 +110,7 @@ async def test_raw_first_corrections_and_non_novel_watermark_progress() -> None:
 
     # Retrying the same item in the same run returns the terminal job and does
     # not create a new version, archive object, or outbox event.
-    first_retry = await service.ingest(
-        run.run_id, first_envelope, _watermark("1", 1)
-    )
+    first_retry = await service.ingest(run.run_id, first_envelope, _watermark("1", 1))
     assert first_retry == first
     assert archive.object_count() == 2
 
@@ -124,9 +122,7 @@ async def test_raw_first_corrections_and_non_novel_watermark_progress() -> None:
         source_revision="revision-2",
         access_policy=policy,
     )
-    correction = await service.ingest(
-        run.run_id, correction_envelope, _watermark("2", 2)
-    )
+    correction = await service.ingest(run.run_id, correction_envelope, _watermark("2", 2))
     assert correction.disposition is IngestionDisposition.COMMITTED
     head_two = await ledger.document_head(identity_id)
     assert head_two is not None and head_two.version_number == 2
@@ -135,9 +131,7 @@ async def test_raw_first_corrections_and_non_novel_watermark_progress() -> None:
     second_run = await service.begin_run(
         source_id="synthetic_wire", access_policy=policy, requested_by="test-replay"
     )
-    repeated = await service.ingest(
-        second_run.run_id, correction_envelope, _watermark("3", 3)
-    )
+    repeated = await service.ingest(second_run.run_id, correction_envelope, _watermark("3", 3))
     assert repeated.disposition is IngestionDisposition.NOT_NOVEL
     assert repeated.document_version_id == head_two.document_version_id
     assert (await ledger.document_head(identity_id)) == head_two
@@ -165,9 +159,7 @@ async def test_quarantine_advances_watermark_and_replay_uses_archived_bytes() ->
         source_revision="revision-bad",
         access_policy=policy,
     )
-    failed = await failing_service.ingest(
-        failed_run.run_id, envelope, _watermark("bad-1", 1)
-    )
+    failed = await failing_service.ingest(failed_run.run_id, envelope, _watermark("bad-1", 1))
     assert failed.disposition is IngestionDisposition.QUARANTINED
     assert failed.quarantine_id is not None
     failed_job = await control.load_job(failed.job_id)

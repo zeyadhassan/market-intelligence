@@ -9,6 +9,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field
 
 from fi_intel.graph.queries import Pattern
+from fi_intel.ledger.models import entity_identity_id, signal_identity_id
 from fi_intel.sources.canonical import BarrierSide
 
 MATERIAL_CHANGE_THRESHOLD = 0.05
@@ -131,19 +132,29 @@ def stable_signal_id(
     authorization_scope: str,
 ) -> str:
     """Identify a signal episode independently from its changing evidence set."""
-    payload = json.dumps(
+    scope_key = signal_scope_key(material_arguments, authorization_scope)
+    subject_entity_id = entity_identity_id("Organization", entity_key)
+    return str(
+        signal_identity_id(
+            pattern.name,
+            pattern.version,
+            subject_entity_id,
+            scope_key,
+        )
+    )
+
+
+def signal_scope_key(material_arguments: Mapping[str, str], authorization_scope: str) -> str:
+    """Bind a signal episode to material arguments and authorization scope."""
+
+    return json.dumps(
         {
-            "pattern": pattern.name,
-            "version": pattern.version,
-            "entity_key": entity_key,
             "material_arguments": dict(sorted(material_arguments.items())),
             "authorization_scope": authorization_scope,
         },
         sort_keys=True,
         separators=(",", ":"),
     )
-    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
-    return f"{pattern.name}:{digest}"
 
 
 def rescore_for_lifecycle(

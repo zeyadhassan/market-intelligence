@@ -129,7 +129,10 @@ def gulf_meridian_assertions() -> list[Assertion]:
             ),
             gm,
             "SW-2024-0006",
-            (67, 98),
+            # Bind the assertion to the complete material sentence fragment:
+            # approval, programme size, and unmarketed status all remain
+            # independently resolvable by the grounding gate.
+            (41, 198),
             datetime(2024, 4, 25, tzinfo=UTC),
             datetime(2024, 4, 25, 9, tzinfo=UTC),
             properties={

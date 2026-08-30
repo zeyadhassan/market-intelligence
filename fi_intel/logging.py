@@ -5,6 +5,7 @@ run can be traced end-to-end during an audit. We bind run_id as context
 rather than passing loggers around, which keeps call sites honest.
 """
 
+import hashlib
 import logging
 import uuid
 from typing import Any
@@ -44,3 +45,10 @@ def bind_run_id(run_id: str) -> None:
 
 def get_logger(**initial_values: Any) -> Any:
     return structlog.get_logger(**initial_values)
+
+
+def safe_error_summary(error: BaseException) -> str:
+    """Identify an error without persisting credentials or source/model payloads."""
+
+    digest = hashlib.sha256(str(error).encode("utf-8", errors="replace")).hexdigest()
+    return f"{type(error).__name__} (message_sha256={digest})"

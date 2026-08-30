@@ -25,8 +25,9 @@ class AssertionWriter:
         for ref in (assertion.subject, assertion.object):
             await self._client.upsert_entity(ref)
         assertion_id = assertion.assertion_id()
+        state_key = assertion.state_key()
         typed_properties = project_typed_properties(assertion.properties)
-        async with self._client._driver.session() as session:  # noqa: SLF001
+        async with self._client.session() as session:
             await session.run(
                 """
                 MATCH (s:Entity {node_type: $s_type, key: $s_key})
@@ -44,8 +45,10 @@ class AssertionWriter:
                     a.confidence = $confidence,
                     a.valid_from = datetime($valid_from),
                     a.valid_to = $valid_to,
+                    a.asserted_valid_to = $valid_to,
                     a.recorded_at = datetime($recorded_at),
                     a.properties_json = $properties_json,
+                    a.state_key = $state_key,
                     a.superseded_at = null
                 SET a += $typed_properties
                 MERGE (a)-[:SUBJECT]->(s)
@@ -89,6 +92,7 @@ class AssertionWriter:
                 # assertion's extra properties travel as a JSON document.
                 properties_json=json.dumps(assertion.properties),
                 typed_properties=typed_properties,
+                state_key=state_key,
             )
         self._log.info(
             "graph.assertion_written",
@@ -102,7 +106,7 @@ class AssertionWriter:
         stays visible to as-of reads before `corrected_at`."""
         new_id = await self.write(new)
         old_id = old.assertion_id()
-        async with self._client._driver.session() as session:  # noqa: SLF001
+        async with self._client.session() as session:
             result = await session.run(
                 """
                 MATCH (old:Assertion {assertion_id: $old_id})

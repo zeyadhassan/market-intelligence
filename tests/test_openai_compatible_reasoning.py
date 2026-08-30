@@ -107,6 +107,8 @@ async def test_research_parses_response_and_records_usage() -> None:
     (event,) = usage_log.events
     assert event.component == "research"
     assert event.input_tokens == 300
+    assert event.status == "succeeded"
+    assert event.prompt_version == RESEARCH_PROMPT_VERSION
 
 
 async def test_research_with_no_evidence_still_produces_a_prompt() -> None:
