@@ -33,7 +33,8 @@ Copy-Item deploy\app.env.example deploy\app.env
 Open `deploy/app.env` and replace every `REPLACE_WITH_*` or all-zero value. Its sections cover all
 configuration that was previously missing:
 
-- model and embedding endpoint URLs, API keys, exact model IDs, embedding dimension and prefixes;
+- model and embedding endpoint URLs, proxy/TLS policy, Basic Auth, exact model IDs, embedding
+  dimension and prefixes;
 - immutable release UUIDs and SHA-256 digests for the five governed serving roles;
 - the evaluation dataset/report digests, timestamps, responsible operator, and explicit passed gate;
 - the real source-request organization/contact, required official-source IDs, and covered-entity
@@ -51,6 +52,51 @@ when enabling email:
 ```powershell
 .\.venv\Scripts\python.exe -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
+
+### Configure the server models
+
+The checked-in template now matches the two UAT connection examples:
+
+- chat uses `https://cbq2-svd-dsgpu2.cbq.com.qa:8443/v1` with
+  `openai/gpt-oss-120b` for all four chat roles;
+- embeddings use native Ollama at `https://10.1.94.110:8443/ollama/api/` with
+  `nomic-embed-text:v1.5`, 768 dimensions, and Nomic's `search_query: ` /
+  `search_document: ` task prefixes; and
+- both endpoints bypass environment proxy variables, matching the UAT scripts.
+
+Only one model secret is intentionally left in the template:
+`FI_INTEL_EMBEDDING_BASIC_AUTH_PASSWORD`. Rotate the credential that was committed in
+`UAT_LLM_test_ollama.py`, put the newly issued value in the ignored `deploy/app.env`, and do not
+copy it back into a tracked Python file. Confirm with the Ollama administrator that
+`nomic-embed-text:v1.5` is already pulled on that server.
+
+The UAT scripts disable certificate verification. The template preserves that behavior only so a
+`shadow` demo can connect immediately. For `pilot` or `production`, install the internal CA in the
+application container trust store and set both `FI_INTEL_LLM_TLS_VERIFY=true` and
+`FI_INTEL_EMBEDDING_TLS_VERIFY=true`; preflight rejects insecure TLS in those modes.
+
+After filling the rotated password, test only the two model connections. This check reads
+`deploy/app.env`, does not require the database, and never prints credentials or model output:
+
+```powershell
+.\.venv\Scripts\python.exe deploy\model_smoke.py
+```
+
+On a Linux server, use the equivalent commands:
+
+```bash
+cp deploy/app.env.example deploy/app.env
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[dev]'
+python deploy/model_smoke.py
+python deploy/podman_infra.py preflight
+python deploy/podman_infra.py app-up
+```
+
+Migration 0023 changes pgvector to 768 dimensions and clears only the rebuildable chunk/index
+projection. The projection worker automatically re-embeds authoritative documents with Nomic;
+source documents, evidence, and assertions are retained.
 
 `FI_INTEL_MODEL_QUALITY_GATE_PASSED=true` is an operator assertion about the two configured
 evaluation digests. Do not set it before that report has actually passed. `MODEL_EVALUATED_AT`
@@ -183,10 +229,11 @@ Run code-only checks:
 .\.venv\Scripts\python.exe -m pip check
 ```
 
-Run the release-equivalent suite, with PostgreSQL and Neo4j skips forbidden:
+Run the complete local suite, with PostgreSQL and Neo4j skips forbidden:
 
 ```powershell
 .\.venv\Scripts\python.exe deploy\podman_infra.py test
 ```
 
-Do not record passing test counts in documentation; CI and version control are the status record.
+Use the local Podman-backed command above as the verification authority; this repository does not
+require a hosted CI/CD workflow.

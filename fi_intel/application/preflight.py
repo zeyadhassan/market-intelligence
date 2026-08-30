@@ -54,12 +54,23 @@ def _validate_model_endpoints(settings: Settings, errors: list[str]) -> None:
         errors.append("FI_INTEL_LLM_BASE_URL is required")
     elif not _valid_http_url(settings.llm_base_url):
         errors.append("FI_INTEL_LLM_BASE_URL must be an http(s) URL")
+    _validate_embedding_endpoint(settings, errors)
+    _validate_model_names(settings, errors)
+    _validate_model_transport(settings, errors)
+
+
+def _validate_embedding_endpoint(settings: Settings, errors: list[str]) -> None:
     if not _configured(settings.embedding_base_url):
         errors.append("FI_INTEL_EMBEDDING_BASE_URL is required")
     elif not _valid_http_url(settings.embedding_base_url):
         errors.append("FI_INTEL_EMBEDDING_BASE_URL must be an http(s) URL")
+    elif not urlsplit(settings.embedding_base_url or "").path.rstrip("/").endswith("/api"):
+        errors.append("FI_INTEL_EMBEDDING_BASE_URL must end with Ollama's /api path")
     if not _configured(settings.embedding_model):
         errors.append("FI_INTEL_EMBEDDING_MODEL is required")
+
+
+def _validate_model_names(settings: Settings, errors: list[str]) -> None:
     for name, value in (
         ("FI_INTEL_EXTRACTION_MODEL", settings.extraction_model),
         ("FI_INTEL_RESEARCH_MODEL", settings.research_model),
@@ -68,8 +79,56 @@ def _validate_model_endpoints(settings: Settings, errors: list[str]) -> None:
     ):
         if not _configured(value):
             errors.append(f"{name} is required")
-    if settings.embedding_dim != 1024:
-        errors.append("FI_INTEL_EMBEDDING_DIM must be 1024 until the pgvector schema is migrated")
+    if settings.embedding_dim != 768:
+        errors.append(
+            "FI_INTEL_EMBEDDING_DIM must be 768 for nomic-embed-text:v1.5 and migration 0023"
+        )
+    if settings.embedding_model != "nomic-embed-text:v1.5":
+        errors.append("FI_INTEL_EMBEDDING_MODEL must be nomic-embed-text:v1.5")
+    if settings.embedding_query_prefix != "search_query: ":
+        errors.append('FI_INTEL_EMBEDDING_QUERY_PREFIX must be "search_query: "')
+    if settings.embedding_document_prefix != "search_document: ":
+        errors.append('FI_INTEL_EMBEDDING_DOCUMENT_PREFIX must be "search_document: "')
+
+
+def _validate_model_transport(settings: Settings, errors: list[str]) -> None:
+    _validate_basic_auth_pair(
+        "FI_INTEL_LLM",
+        settings.llm_basic_auth_username,
+        (
+            settings.llm_basic_auth_password.get_secret_value()
+            if settings.llm_basic_auth_password is not None
+            else None
+        ),
+        errors,
+    )
+    _validate_basic_auth_pair(
+        "FI_INTEL_EMBEDDING",
+        settings.embedding_basic_auth_username,
+        (
+            settings.embedding_basic_auth_password.get_secret_value()
+            if settings.embedding_basic_auth_password is not None
+            else None
+        ),
+        errors,
+    )
+    if settings.analysis_mode in {"pilot", "production"}:
+        if not settings.llm_tls_verify:
+            errors.append("FI_INTEL_LLM_TLS_VERIFY must be true outside shadow mode")
+        if not settings.embedding_tls_verify:
+            errors.append("FI_INTEL_EMBEDDING_TLS_VERIFY must be true outside shadow mode")
+
+
+def _validate_basic_auth_pair(
+    prefix: str,
+    username: str | None,
+    password: str | None,
+    errors: list[str],
+) -> None:
+    if _configured(username) != _configured(password):
+        errors.append(
+            f"{prefix}_BASIC_AUTH_USERNAME and {prefix}_BASIC_AUTH_PASSWORD are required together"
+        )
 
 
 def _validate_identity(settings: Settings, errors: list[str]) -> None:

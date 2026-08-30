@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from fi_intel.config import Settings
 from fi_intel.governance.model_registry import ModelArtifact, ModelComponent
+from fi_intel.governance.model_transport import build_llm_client
 from fi_intel.governance.model_usage import (
     ModelCallEvent,
     ModelCallStatus,
@@ -208,10 +209,7 @@ def build_entailment_verifier(
 ) -> OpenAICompatibleEntailmentVerifier:
     if not settings.llm_base_url:
         raise RuntimeError("FI_INTEL_LLM_BASE_URL is required for semantic entailment")
-    client = openai.AsyncOpenAI(
-        base_url=settings.llm_base_url,
-        api_key=settings.llm_api_key,
-    )
+    client = build_llm_client(settings)
     return OpenAICompatibleEntailmentVerifier(
         client=client,
         model=settings.entailment_model,

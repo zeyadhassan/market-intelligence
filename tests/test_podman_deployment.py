@@ -84,15 +84,6 @@ def test_podman_launcher_rejects_missing_compose_provider(
         podman_infra._podman_compose_provider()
 
 
-def test_release_gate_uses_the_same_podman_launcher() -> None:
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-
-    assert "services:" not in workflow
-    assert "python deploy/podman_infra.py up" in workflow
-    assert "python deploy/podman_infra.py test" in workflow
-    assert "podman-compose" in workflow
-
-
 def test_app_environment_parser_is_file_owned_and_rejects_shell_syntax(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

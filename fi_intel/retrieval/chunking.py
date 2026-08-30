@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict
 
 from fi_intel.sources.canonical import CanonicalDocument, document_text
 
-EMBEDDING_DIM = 1024  # matches deploy/init.sql document_chunk.embedding
+EMBEDDING_DIM = 768  # migration 0023 document_chunk.embedding / nomic-embed-text:v1.5
 CHUNK_SIZE = 512
 CHUNK_OVERLAP = 64
 CHUNKER_VERSION = f"structure-aware-v2:{CHUNK_SIZE}:{CHUNK_OVERLAP}"

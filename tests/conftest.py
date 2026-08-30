@@ -1,4 +1,4 @@
-"""Suite-level gates used by CI without making local infrastructure mandatory."""
+"""Suite-level gates for explicit complete local infrastructure verification."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pytest
 
 
 def pytest_sessionfinish(session: pytest.Session) -> None:
-    """Turn only missing-infrastructure skips into CI failures."""
+    """Turn only missing-infrastructure skips into complete-suite failures."""
     if os.getenv("FI_INTEL_REQUIRE_INFRA", "").lower() != "true":
         return
     reporter = session.config.pluginmanager.get_plugin("terminalreporter")

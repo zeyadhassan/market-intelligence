@@ -32,6 +32,7 @@ from fi_intel.agents.opportunity_research import (
 )
 from fi_intel.config import Settings
 from fi_intel.governance.model_registry import ModelArtifact, ModelComponent
+from fi_intel.governance.model_transport import build_llm_client
 from fi_intel.governance.model_usage import ModelCallEvent, ModelUsageLog, estimate_cost_usd
 from fi_intel.logging import get_logger
 from fi_intel.tools.evidence import OpportunityClaimKind, OpportunityStatus
@@ -259,7 +260,7 @@ def build_reasoning_model(
             "endpoint, or wire a stub explicitly for tests."
         )
         raise RuntimeError(msg)
-    client = openai.AsyncOpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key)
+    client = build_llm_client(settings)
     return OpenAICompatibleReasoningModel(
         client=client,
         model=settings.research_model,

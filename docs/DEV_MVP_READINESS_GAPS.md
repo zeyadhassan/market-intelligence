@@ -238,8 +238,9 @@ The MVP must never:
 - Focused service-free tests cover architecture boundaries, retry/commit ordering, exact lineage,
   lifecycle identity, authorization, bounded search, delivery suppression, immutable page/email
   identity, and graph rebuild accounting.
-- Live PostgreSQL/Neo4j tests are mandatory in the release workflow through the checked-in Podman
-  launcher. Missing infrastructure is allowed to skip locally but fails release CI.
+- Live PostgreSQL/Neo4j tests are mandatory in the complete local verification path through the
+  checked-in Podman launcher. `deploy/podman_infra.py test` sets the required-infrastructure flag,
+  so a missing integration service fails rather than silently skipping.
 - The bounded developer evaluation is a synthetic contract set, not a statistical quality claim.
   Its immutable manifest covers every required lifecycle, temporal, entity, coverage, citation,
   adversarial, failure, authorization, and high-degree-graph label and records its limitations.
@@ -251,6 +252,11 @@ The MVP must never:
   required endpoint, model release, evaluation digest, coverage, OIDC, access, and enabled-email
   field without printing secrets. `app-up` then synchronizes the configured access assignment and
   evaluated model releases before starting the one application profile.
+- The server model route is now concrete rather than placeholder-only: chat uses the pulled UAT
+  OpenAI-compatible `openai/gpt-oss-120b` endpoint, while embeddings use the pulled native Ollama
+  route with `nomic-embed-text:v1.5`, required task prefixes, explicit proxy/TLS/Basic-Auth policy,
+  and a 768-dimensional pgvector migration. `deploy/model_smoke.py` checks both connections from
+  the operator-owned env file without printing credentials or model output.
 
 ## Target runtime architecture
 
@@ -1031,8 +1037,8 @@ predeclared lower-confidence-bound gates by topic, country, language, source cla
 and evidence age. At minimum they must cover source SLA completion, entity-link precision,
 material-field extraction precision/recall, retrieval recall and ranking, claim entailment,
 opportunity precision/recall, correct abstention, authorization, reproducibility, run completion,
-duplicate delivery, analyst verification time, and usefulness. Release CI must make PostgreSQL and
-Neo4j integration tests mandatory rather than silently skipped.
+duplicate delivery, analyst verification time, and usefulness. The local release verification
+command must keep PostgreSQL and Neo4j integration tests mandatory rather than silently skipped.
 
 ## Developer MVP definition of done
 

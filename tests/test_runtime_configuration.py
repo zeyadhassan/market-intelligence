@@ -23,9 +23,11 @@ def complete_settings() -> Settings:
         research_model="reason-model",
         entailment_model="entail-model",
         reranker_model="rerank-model",
-        embedding_base_url="http://host.containers.internal:8002/v1",
-        embedding_model="embed-model",
-        embedding_dim=1024,
+        embedding_base_url="http://host.containers.internal:11434/api",
+        embedding_model="nomic-embed-text:v1.5",
+        embedding_dim=768,
+        embedding_query_prefix="search_query: ",
+        embedding_document_prefix="search_document: ",
         rss_user_agent="Example Bank FI Intelligence fi-intel@example.test",
         coverage_required_source_ids="sa_sama_news",
         covered_entity_leis="506700LOLO7M6V0E4247",
@@ -61,7 +63,12 @@ def test_checked_in_template_covers_every_external_runtime_input() -> None:
     template = Path("deploy/app.env.example").read_text(encoding="utf-8")
     required = {
         "FI_INTEL_LLM_BASE_URL",
+        "FI_INTEL_LLM_TRUST_ENV",
+        "FI_INTEL_LLM_TLS_VERIFY",
         "FI_INTEL_EMBEDDING_BASE_URL",
+        "FI_INTEL_EMBEDDING_BASIC_AUTH_PASSWORD",
+        "FI_INTEL_EMBEDDING_TRUST_ENV",
+        "FI_INTEL_EMBEDDING_TLS_VERIFY",
         "FI_INTEL_MODEL_EVALUATION_DATASET_DIGEST",
         "FI_INTEL_MODEL_EVALUATION_REPORT_DIGEST",
         "FI_INTEL_EXTRACTION_RELEASE_ID",
@@ -86,6 +93,23 @@ def test_checked_in_template_covers_every_external_runtime_input() -> None:
 
     assert required <= configured
     assert "deploy/app.env" in Path(".gitignore").read_text(encoding="utf-8")
+
+
+def test_preflight_rejects_partial_basic_auth_and_insecure_non_shadow_transport() -> None:
+    settings = complete_settings().model_copy(
+        update={
+            "analysis_mode": "pilot",
+            "embedding_basic_auth_username": "ollama",
+            "embedding_tls_verify": False,
+            "llm_tls_verify": False,
+        }
+    )
+
+    errors = canonical_configuration_errors(settings)
+
+    assert any("FI_INTEL_EMBEDDING_BASIC_AUTH_PASSWORD" in error for error in errors)
+    assert "FI_INTEL_LLM_TLS_VERIFY must be true outside shadow mode" in errors
+    assert "FI_INTEL_EMBEDDING_TLS_VERIFY must be true outside shadow mode" in errors
 
 
 async def test_configured_model_releases_are_complete_active_and_idempotent() -> None:

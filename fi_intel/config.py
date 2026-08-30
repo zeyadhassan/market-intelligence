@@ -7,6 +7,7 @@ configuration invisible to tests and impossible to scope per-run.
 
 from typing import Literal
 
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -152,6 +153,15 @@ class Settings(BaseSettings):
     # construction over an auth scheme nobody asked for.
     llm_base_url: str | None = None
     llm_api_key: str = "not-needed"  # noqa: S105
+    # Internal model gateways commonly require direct routing and a private
+    # certificate chain. Proxy and TLS behavior is explicit rather than being
+    # inherited invisibly from the process environment. Keep TLS verification
+    # enabled once the corporate CA is installed in the runtime image.
+    llm_trust_env: bool = True
+    llm_tls_verify: bool = True
+    llm_timeout_seconds: float = Field(default=120.0, gt=0)
+    llm_basic_auth_username: str | None = None
+    llm_basic_auth_password: SecretStr | None = None
     extraction_model: str = "gpt-oss-120b"
     research_model: str = "gpt-oss-120b"
     entailment_model: str = "gpt-oss-120b"
@@ -206,11 +216,16 @@ class Settings(BaseSettings):
     embedding_base_url: str | None = None
     embedding_api_key: str = "not-needed"  # noqa: S105
     embedding_model: str | None = None
+    embedding_trust_env: bool = True
+    embedding_tls_verify: bool = True
+    embedding_timeout_seconds: float = Field(default=60.0, gt=0)
+    embedding_basic_auth_username: str | None = None
+    embedding_basic_auth_password: SecretStr | None = None
     # Must match document_chunk.embedding's vector(N) column — update both
     # together (and run `fi-intel index reembed`) once a model is chosen,
     # since local embedding models vary widely in output dimension
-    # (384/768/1024/1536/4096 are all common). 1024 matches today's schema.
-    embedding_dim: int = 1024
+    # (384/768/1024/1536/4096 are all common). 768 matches migration 0023.
+    embedding_dim: int = 768
     # Some embedding model families (e5, bge, gte, ...) are trained
     # asymmetrically and expect a literal prefix on the input text to tell
     # a search query from a passage/document apart (e.g. "query: " /

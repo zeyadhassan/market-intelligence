@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from fi_intel.config import Settings
 from fi_intel.governance.model_registry import ModelArtifact, ModelComponent
+from fi_intel.governance.model_transport import build_llm_client
 from fi_intel.governance.model_usage import (
     ModelCallEvent,
     ModelCallStatus,
@@ -269,7 +270,7 @@ def build_reranker(
     if not settings.llm_base_url:
         raise RuntimeError("FI_INTEL_LLM_BASE_URL is required for governed reranking")
     return OpenAICompatibleReranker(
-        client=openai.AsyncOpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key),
+        client=build_llm_client(settings),
         model=settings.reranker_model,
         usage_log=usage_log,
         run_id=run_id,
