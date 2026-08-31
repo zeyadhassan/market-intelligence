@@ -199,3 +199,49 @@ PORT 8889: curl: (7) Failed to connect to 127.0.0.1 port 8889: Connection refuse
 PORT 8890: curl: (7) Failed to connect to 127.0.0.1 port 8890: Connection refused
 PORT 8897: openai/gpt-oss-120b
 PORT 8899: qwen3-vl-235b-awq
+
+
+
+
+podman-compose -f "$AI_COMPOSE_FILE" config >/tmp/docker-compose-extended.validated.yml &&
+printf 'Compose validation: PASS\n'
+
+podman-compose -f "$AI_COMPOSE_FILE" config --services
+
+podman exec nginx-reverseproxy nginx -t
+
+
+grep -nE \
+'nim-qwen7b|nim-llama70b|nim-qwen3vl|nim-gptoss120b|depends_on:|8889|8890|8897|8899' \
+"$AI_COMPOSE_FILE"
+
+grep -nC 2 -E \
+'backend_qwen|backend_llama|backend_gptoss|8889|8890|8897|8899' \
+"$AI_NGINX_FILE"
+
+grep -nC 2 -E \
+'qwen|llama|gpt-oss' \
+"$AI_ROUTER_FILE"
+
+
+podman exec nginx-reverseproxy nginx -s reload
+
+
+if podman container exists nim-qwen3vl-manual-backup; then
+  printf 'STOP: nim-qwen3vl-manual-backup already exists\n'
+else
+  printf 'Backup container name is available\n'
+fi
+
+
+podman stop -t 120 nim-qwen3vl
+podman rename nim-qwen3vl nim-qwen3vl-manual-backup
+
+podman-compose -f "$AI_COMPOSE_FILE" up -d nim-qwen3vl
+
+podman logs --tail 100 -f nim-qwen3vl
+
+curl -fsS http://127.0.0.1:8899/v1/models | jq
+
+podman-compose -f "$AI_COMPOSE_FILE" up -d nginx
+
