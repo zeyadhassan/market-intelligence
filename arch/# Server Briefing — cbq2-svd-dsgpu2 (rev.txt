@@ -1,0 +1,563 @@
+# Server Briefing — cbq2-svd-dsgpu2 (rev 3)
+
+**Purpose:** context handoff for an AI assistant helping operate this host.
+**Date:** 31 August 2026. Point-in-time values change with workload and restarts — re-verify before acting.
+**Contains internal infrastructure detail — treat as confidential.**
+
+> **Rev 3 changes:** Qwen3-VL-235B now running on TP=2 across GPUs 2+3 (P2P blocker fixed by Infrastructure); embedding NIM deployed on GPU 0; nginx njs router documented in full and found to have a pre-existing validation failure; several podman/NIM behavioural gotchas documented.
+
+---
+
+## 0. Read this first — the five things that will trip you up
+
+1. **`nginx -t` currently FAILS.** The running proxy has a config that no longer validates (`host not found in upstream "nim-qwen7b:8000"`). It serves fine because it hasn't reloaded since the fault appeared. **Any restart or reboot takes the gateway down.** Nothing new can be added until this is fixed.
+2. **`sed -i` does not work on bind-mounted config files here.** It writes a new inode and the container keeps seeing the old file. Use `python3` in-place rewrite instead.
+3. **Files copied from Windows have CRLF line endings** and fail with `/usr/bin/env: 'bash\r': No such file or directory`. Fix with `sed -i 's/\r$//' file`.
+4. **`--cpus` is rejected** — the CPU cgroup controller is not delegated to this rootless user. Use `--memory` only.
+5. **NIM containers bind different ports depending on their backend.** vLLM-based: 8000 only. Triton-based: 8000 (OpenAI API), 8001 (gRPC), 8002 (metrics), 8080 (Triton HTTP). This causes port collisions under `--network=host`.
+
+---
+
+## 1. Hosts
+
+| Host | IP | Role | State |
+|---|---|---|---|
+| CBQ2-**SVD**-DSGPU2 | 10.1.94.110 | GPU **DEV** — this document | Active |
+| CBQ2-**SVU**-DSGPU2 | 10.1.94.130 | GPU **UAT** | **Broken** — driver communication failure, nothing deployed |
+| CBQ2-SVU-DSMLE1 | 10.1.15.37 | ML workstation | Unreachable from DEV (different segment) |
+
+Supporting:
+
+| Service | Address |
+|---|---|
+| Harbor registry | `cbq2-svu-cbqhub1.cbq.com.qa` (18 projects, no NVIDIA images mirrored) |
+| Corporate proxy | `proxy2.cbq.com.qa:3128` → 10.2.0.200 |
+| Vector DB | `cbq2-svd-daldb1:1830`, PostgreSQL + pgvector, database `vector` |
+| External APIs | Exchange `apiguat.cbq.com.qa`, Disputes `crmcbuatapi.cbq.com.qa`, S3 `uat91.cbq-pure-fb-data.cbq.com.qa` — **all UAT endpoints called from DEV** |
+| User workstation | 10.1.23.245 |
+| Unidentified client | 10.104.10.100 (observed calling /chat on 5001) |
+
+**Despite being labelled DEV, ~20 containers named `-prod` serve live traffic.** UAT is non-functional so there is no promotion path. Treat DEV as production for risk purposes.
+
+---
+
+## 2. Hardware — vGPU
+
+Guest VM with four NVIDIA vGPU slices. PCI bus IDs `03:00.0`–`03:03.0` (four devices on one virtual bus) confirm virtualisation.
+
+| GPU | Profile | Memory | UUID prefix |
+|---|---|---|---|
+| 0 | H200-141C | 144,384 MiB | `b3020a99` |
+| 1 | H200-141C | 144,384 MiB | `b6810df6` |
+| 2 | H200-141C | 144,384 MiB | `b973f7f4` |
+| 3 | H200-141C | 144,384 MiB | `bca42add` |
+
+**Total ~564 GB.**
+
+### Interconnect — P2P now works
+
+- 18 NVLinks per GPU × 26.562 GB/s = **~478 GB/s per direction**
+- `nvidia-smi topo -m` → NV6 between every pair
+- `nvidia-smi topo -p2p r` → `OK` in every direction
+- `nvidia-smi nvlink -s | grep -c "26.562 GB/s"` → **72**
+
+**History:** GPU 2 was previously `H200-70C` (half-board, 70 GB, no NVLink, unknown co-tenant). Reprofiled ~9 August. Separately, GPU-to-GPU peer memory access was **disabled at the virtualisation layer**, causing `NCCL WARN Cuda failure 'operation not supported'` on any multi-GPU model. Infrastructure fixed this; confirmed working by NCCL logs showing `Channel NN/0 : 1[1] -> 0[0] via P2P/CUMEM` and `isAllDirectP2p 1`.
+
+**Tensor parallelism is available and in use** (Qwen3-VL at TP=2 across GPUs 2+3).
+
+### vGPU caveats
+
+1. `nvidia-smi utilization.gpu` is unreliable — reports scheduled time share, not SM occupancy. Use serving-layer metrics.
+2. Fan, temperature, power, clocks all read `N/A`. `Unable to get power limit for GPU 0` warnings in NIM logs are expected and harmless.
+3. Compute is time-sliced, memory hard-partitioned. TP collectives can stall if the hypervisor doesn't schedule slices concurrently — TP *throughput* under vGPU is still unmeasured here.
+4. `NVLS multicast support is not available` in NCCL logs is expected under vGPU. Standard P2P still works.
+5. **`podman exec <container> nvidia-smi -L` does NOT identify the host slice.** Each container sees its device renumbered as GPU 0. Correlate by UUID or by memory usage.
+
+---
+
+## 3. Container runtime — rootless Podman with pods
+
+- **Rootless Podman**, shared service account `srv_mlengineering`, GPU processes appear as subordinate uid `297607`.
+- Graphroot: `/apps/srv_mlengineering/.local/share/containers/storage`
+- CDI configured: `/etc/cdi/nvidia.yaml`
+- **SELinux is enforcing.** Containers fail with `libc.so.6: cannot change memory protections` unless started with `--security-opt=label=disable`. Every container here uses it.
+- **`--cpus` fails**: `controller 'cpu' is not available under /sys/fs/cgroup/user.slice/...`. Use `--memory` only.
+- Podman network `nim_ai-net` exists (subnet 10.89.0.0/24); nginx is at 10.89.0.6.
+
+### Pods
+
+Sixteen pods exist; most are empty `Created` shells. Active ones:
+
+| Pod | Containers | Notes |
+|---|---|---|
+| `pod_mle-smart-assistant` | 11 | **Degraded** — `cbq-sa-nginx-prod` never started |
+| `pod_mle-smart-assistant-monitoring` | 3 | Loki, Grafana, Alloy |
+| `pod_mle-data-management-platform` | 2 | |
+| `pod_nim` | 5 | The NIM model containers |
+| `pod_mle-reranker` | 1 | |
+| `pod_mle-neo4j` | 1 | |
+
+Pods use **host networking**, which is why `podman ps` shows no port mappings for their members yet ports are listening.
+
+**No container is declared in systemd or as a Quadlet.** Deployment tooling has not been located despite the naming convention implying it exists.
+
+---
+
+## 4. Storage
+
+| Filesystem | Size | Used | Free |
+|---|---|---|---|
+| `/apps` (`/dev/md0`) | 2.0 TB | ~971 GB | ~1.1 TB |
+| `/` | 50 GB | 16 GB | 35 GB |
+| `/var/log` | 10 GB | 4.7 GB | 5.4 GB |
+
+`/apps` was expanded from 1.0 TB (was 95% full). `/var/log` was cleared from 100%. Unverified: whether `/dev/md0` is still RAID1 or was converted to RAID0 to double capacity; whether `journald` has `SystemMaxUse` capped.
+
+Reclaimable (measured 4 Aug): 61.7 GB of unused images; **78 of 84 Podman volumes inactive**, totalling ~320 GB. Unaudited. Do not prune blindly — shared account.
+
+Key paths:
+- Model staging: `/apps/srv_mlengineering/model-staging/`
+- NIM cache: `/apps/srv_mlengineering/nim-cache/`
+- nginx config: `/apps/srv_mlengineering/nim/nginx/`
+
+---
+
+## 5. Network and registry
+
+### nvcr.io is blocked directly; the proxy works
+
+Direct access returns immediate TCP refusal on every resolved IP. Via proxy it returns `401` with `www-authenticate: Bearer realm="https://nvcr.io/proxy_auth"` — correct.
+
+```bash
+export HTTP_PROXY=http://proxy2.cbq.com.qa:3128
+export HTTPS_PROXY=$HTTP_PROXY
+export http_proxy=$HTTP_PROXY; export https_proxy=$HTTP_PROXY
+export NO_PROXY=localhost,127.0.0.1,::1,.cbq.com.qa,10.0.0.0/8
+export no_proxy=$NO_PROXY
+```
+
+**Session-scoped only.** Not persisted, not inherited by systemd. NIM containers need the proxy passed in explicitly because they fetch model metadata at startup.
+
+### NGC login
+
+Username is the **literal string** `$oauthtoken`. Single-quote it:
+
+```bash
+podman login nvcr.io --username '$oauthtoken' --password-stdin < ~/.ngc_key
+```
+
+### model-free-nim — the entitlement workaround
+
+`nvcr.io/nim/nvidia/model-free-nim:latest` with `NIM_MODEL_PATH=hf://org/model` and an `HF_TOKEN` pulls weights from Hugging Face, bypassing NVIDIA AI Enterprise entitlement. Also accepts a local path (`/opt/nim/models/...`) for pre-staged weights.
+
+---
+
+## 6. Deployed models
+
+| Container | Port | Model | GPU | Runtime |
+|---|---|---|---|---|
+| `nim-qwen7b` | 8889 | `qwen/qwen-2.5-7b-instruct` | 2 (was) | NIM 1.4.0 / vLLM |
+| `nim-llama70b` | 8890 | `meta/llama-3.3-70b-instruct` | 3 (was) | NIM 2.0.5 / vLLM |
+| `nim-gemma` | 8891 | `google/gemma-4-31B-it` | 1 | NIM / vLLM, multimodal |
+| `nim-gptoss120b` | 8897 | `openai/gpt-oss-120b` | ? | NIM / vLLM |
+| `nim-qwen3vl` | 8899 | `qwen3-vl-235b-awq` | **2+3, TP=2** | model-free-nim / vLLM 0.26 |
+| `llama-3.2-nv-embedqa` | 8896 | `nvidia/llama-3.2-nv-embedqa-1b-v2` | 0 | NIM 1.10 / **Triton** |
+| `ollama1` | 11434 | 14 GGUF models on demand | 0 | Ollama |
+| `cbq-reranker-prod` | 8001 | BGE reranker v2 m3 | 0 | Custom FastAPI |
+
+GPU assignments shift as containers are recreated — verify with `nvidia-smi --query-compute-apps` and UUID correlation rather than trusting this table.
+
+### NIM configs are inconsistent
+
+| Setting | qwen7b | llama70b | gemma |
+|---|---|---|---|
+| `gpu-memory-utilization` | 0.80 | **0.95** | 0.70 |
+| `NIM_MAX_MODEL_LEN` | 16,384 | **128,000** | 16,384 |
+| Metrics path | **none** | `/metrics` | `/v1/metrics` |
+
+Three separate deployments over ~18 months, not a capacity plan.
+
+### Qwen3-VL-235B — the working configuration
+
+117 GB of AWQ weights across 42 safetensors shards at `/apps/srv_mlengineering/model-staging/qwen3-vl-235b-awq`.
+
+```bash
+podman run -d --name nim-qwen3vl \
+  --security-opt=label=disable \
+  --device nvidia.com/gpu=2 --device nvidia.com/gpu=3 \
+  --ipc=host --memory=96g \
+  -p 8899:8000 \
+  -e NIM_MODEL_PATH=/opt/nim/models/qwen3-vl \
+  -e NIM_SERVED_MODEL_NAME=qwen3-vl-235b-awq \
+  -e NIM_TENSOR_PARALLEL_SIZE=2 \
+  -e NIM_MAX_MODEL_LEN=8192 \
+  -e NIM_PASSTHROUGH_ARGS="--gpu-memory-utilization 0.80 --trust-remote-code --max-num-seqs 8 --max-num-batched-tokens 8192 --enforce-eager" \
+  -e PYTHONUNBUFFERED=1 \
+  -e NO_PROXY=localhost,127.0.0.1,0.0.0.0,host.containers.internal \
+  -v /apps/srv_mlengineering/model-staging/qwen3-vl-235b-awq:/opt/nim/models/qwen3-vl:ro \
+  -v /apps/srv_mlengineering/nim-cache:/opt/nim/.cache/ngc \
+  nvcr.io/nim/nvidia/model-free-nim:latest
+```
+
+**Getting here took six attempts.** Failure history:
+
+| Attempt | Config | Result |
+|---|---|---|
+| — | `--enable-expert-parallel --quantization awq_marlin`, 32K ctx, util 0.90 | `double free or corruption` in `determine_available_memory()` |
+| A | Removed both suspect flags, 32K ctx, util 0.85 | **Same crash** — both flags exonerated |
+| D | Added `--enforce-eager --max-num-batched-tokens 8192`, 8K ctx, util 0.80 | **WORKED** |
+
+**The specific cause was never isolated.** D changed four things at once. `--enforce-eager` (disables CUDA graph capture) is the leading suspect since the crash was in a profiling forward pass, but context length 32K→8K is also plausible. Two untested experiments would settle it:
+- 8K context **without** `--enforce-eager` → if it works, you get CUDA graphs back and faster inference
+- 32K context **with** `--enforce-eager` → if it works, you get long context back
+
+Eager mode costs real throughput, and 8K context is limiting for document OCR. Worth 20 minutes.
+
+### Ollama library — 14 models, ~300 GB
+
+`qwen2.5:32b`, `qwen3-vl:32b` and `:32b-instruct`, `qwen2.5:7b`, `llama3:70b`, `gemma3:12b` and `:27b`, `mixtral:8x22b` (79 GB), `qwen3:30b`, `translategemma:12b`, `llama4:scout` (67 GB), `qllama/bge-reranker-v2-m3`, `nomic-embed-text:v1.5`, `gpt-oss:20b` (MXFP4, native format).
+
+**Ollama is uncapped** — observed claiming 64 GB across two runners on GPU 0 without warning. `nomic-embed-text` is pinned resident (`keep_alive` expires year 2318, deliberate — RAG hot path). Recommend `OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_KEEP_ALIVE=10m`.
+
+---
+
+## 7. Application layer — "CBGPT" Smart Assistant
+
+**Terminology:** CBGPT = this Smart Assistant stack. A separate `rag-poc` project also calls itself CBGPT with routes `/api/ask`, `/dev/switch-user` — **that project is not deployed here** and its documentation does not apply.
+
+### Router API — port 5001, `cbq-router-prod`
+
+"Router Service 0.1.0 — API Gateway and router for CBQ Smart Assistant". **HTTP Basic auth**, `AUTH_USERNAME=admin` (password in the container env as `AUTH_PASSWORD`).
+
+Routes: `/chat`, `/health`, `/clean`, `/uploader/{user_name}`, `/downloadb/...`, `/users/{user_id}/spaces/...`
+
+**ChatRequest** — required: `query`, `collection_name`, `user_name`, `interaction_id`. Optional: `user_full_name`, `chat_history` (array, **client-supplied** — server does not persist conversation state), `role`, `enable_placeholder_mapping` (default true), `space_id`, `tools_list`.
+
+**ChatResponse** — `answer`, `generated_question` (the router's rephrasing), `source[]` (Name, Pages), `context_items[]` (Name, Pages, text).
+
+Working call:
+
+```bash
+AUTH_U=$(podman exec cbq-router-prod printenv AUTH_USERNAME)
+AUTH_P=$(podman exec cbq-router-prod printenv AUTH_PASSWORD)
+curl -s -u "$AUTH_U:$AUTH_P" -X POST localhost:5001/chat -H 'Content-Type: application/json' -d '{
+  "query":"what is the net profit for H1 2026","collection_name":"llm_chat",
+  "user_name":"CLI-TEST","interaction_id":"CLI-1","chat_history":[],
+  "role":"Customer Insight Technology"}' | jq
+```
+
+### Retrieval API — port 8090, `cbq-retrieval-prod`
+
+"CBQ Retrieval Service". Routes: `/api/v1/search`, `/api/v1/search-with-navigation`, `/api/v1/search/spaces/`, `/api/v1/repositories`, `/api/v1/search-engines`, `/api/v1/postprocessors`, `/api/v1/upload/{username}`, `/health`
+
+**Directly testable without the router or an LLM** — this is the natural harness for measuring retrieval quality and A/B-testing an embedding change.
+
+### Model routing — one env var
+
+`cbq-llm-prod` supports two complete backend configurations selected by `LLM_BACKEND=nim`:
+
+| Role | NIM (active) | Ollama (fallback) |
+|---|---|---|
+| Router | `qwen/qwen-2.5-7b-instruct` | `qwen2.5:7b` |
+| Finalizer | `meta/llama-3.3-70b-instruct` | `qwen2.5:32b` |
+| Generate | `meta/llama-3.3-70b-instruct` | `llama3:70b` |
+| Summarizer | `qwen/qwen-2.5-7b-instruct` | `qwen2.5:7b` |
+| Safety check | `qwen/qwen-2.5-7b-instruct` | `qwen2.5:7b` |
+| Embeddings | — | `nomic-embed-text:v1.5` |
+
+**Swapping a model is an environment-variable change, not code.** Other settings: `NIM__URL=https://127.0.0.1:8443/v1` (NIMs reached *via nginx*), `NIM__TIMEOUT=120`, `DATABASE_URL=postgresql+asyncpg://postgres@cbq2-svd-daldb1:1830/vector`, `RAG_FAQ_SERVICE_URL=http://10.1.94.110:8090`.
+
+Anomaly: several role variables still name Ollama models under `LLM_BACKEND=nim` (`DEFAULT_ROUTER_MODEL=qwen2.5:7b`, `CET_FINALIZER_MODEL=qwen2.5:32b`, etc.). Unknown whether live or vestigial.
+
+### Pipeline
+
+```
+User → router :5001 (Basic auth)
+  → Router agent    → qwen-2.5-7b via nginx :8443  (structured JSON tool choice)
+  → Retrieval :8090 → pgvector on cbq2-svd-daldb1
+                      embeddings nomic-embed-text, top_k=10, min_score=0.5
+  → Rerank :8001    → bge-reranker-v2-m3
+  → Finalizer       → llama-3.3-70b  (answer + <CHUNK_n> citations)
+```
+
+End-to-end ~7.7 s. Corpus: Qatari bank investor presentations and financial statements.
+
+---
+
+## 8. The nginx gateway — port 8443
+
+**This is the most important section for anyone making changes.**
+
+Container `nginx-reverseproxy`, **bridge** networking, on `nim_ai-net` at 10.89.0.6.
+
+| Host file | Container path |
+|---|---|
+| `/apps/srv_mlengineering/nim/nginx/nginx_router_hybrid_extended.conf` | `/etc/nginx/nginx.conf` |
+| `/apps/srv_mlengineering/nim/nginx/router_hybrid_extended.js` | `/etc/nginx/router.js` |
+| `/apps/srv_mlengineering/nim/docker_logs/nginx/logs` | `/var/log/nginx` |
+
+### It routes by model name, not URL path
+
+`location / { js_content main.get_backend; }` hands every request to an **njs** script that parses the JSON body, reads `body.model`, lowercases it, and `internalRedirect`s to a named location.
+
+```javascript
+function get_backend(r) {
+    if (r.method === 'GET') { r.internalRedirect("@_backend_ollama1"); return; }   // ALL GETs → Ollama
+    var model = (JSON.parse(r.requestText).model || "").toLowerCase();
+    if (model.indexOf("qwen3-vl") !== -1)          { r.internalRedirect("@_backend_qwen3vl"); return; }
+    if (model.indexOf("gemma-4") !== -1)           { r.internalRedirect("@_backend_gemma"); return; }
+    if (model.indexOf("qwen-2.5-7b-instruct") !== -1) { r.internalRedirect("@_backend_qwen7b"); return; }
+    if (model.indexOf("gpt-oss-120b") !== -1)      { r.internalRedirect("@_backend_gptoss120b"); return; }
+    // llama-3.3-70b branch is COMMENTED OUT
+    r.internalRedirect("@_backend_ollama1");       // default fallback
+}
+```
+
+**Two consequences to internalise:**
+
+1. **Every GET goes to Ollama.** `GET /v1/models` through 8443 returns Ollama's list, never the NIMs. You cannot verify a NIM via `/v1/models` through the proxy — use a POST.
+2. **Unknown model names silently fall through to Ollama** and fail with a confusing error rather than a clear 404. If a call through 8443 behaves oddly, check the match string before assuming the backend is broken.
+
+### Current upstreams
+
+```nginx
+upstream backend_ollama1     { server ollama1:11434; }        # container name
+upstream backend_gemma       { ... }                          # COMMENTED OUT
+upstream backend_qwen7b      { server nim-qwen7b:8000; }      # container name — BROKEN
+upstream backend_llama70b    { ... }                          # COMMENTED OUT
+upstream backend_gptoss120b  { server nim-gptoss120b:8000; }  # container name
+upstream backend_qwen3vl     { server 10.1.94.110:8899; }     # host IP — works
+```
+
+### ⚠ `nginx -t` currently FAILS
+
+```
+nginx: [emerg] host not found in upstream "nim-qwen7b:8000" in /etc/nginx/nginx.conf:25
+```
+
+**Cause:** container-name upstreams depend on podman DNS. `nim-qwen7b` shows `"IPAddress": ""` on `nim_ai-net` — attached in metadata but with no IP, so DNS can't resolve it. nginx only resolves upstream names at startup/reload, so the running process never noticed.
+
+**This is pre-existing, not caused by recent edits.** But it means **any restart or reboot takes the gateway down**, and no new routes can be added until it's fixed.
+
+**Fix — switch container names to host IPs:**
+
+```bash
+cd /apps/srv_mlengineering/nim/nginx
+cp nginx_router_hybrid_extended.conf nginx_router_hybrid_extended.conf.bak-$(date +%F-%H%M)
+python3 -c "
+p='nginx_router_hybrid_extended.conf'; s=open(p).read()
+s=s.replace('server nim-qwen7b:8000;','server 10.1.94.110:8889;')
+s=s.replace('server nim-gptoss120b:8000;','server 10.1.94.110:8897;')
+s=s.replace('server ollama1:11434;','server 10.1.94.110:11434;')
+open(p,'w').write(s)"
+podman exec nginx-reverseproxy sed -n '25p' /etc/nginx/nginx.conf   # verify container sees it
+podman exec nginx-reverseproxy nginx -t
+podman exec nginx-reverseproxy nginx -s reload
+```
+
+**Use `python3`, not `sed -i`.** `sed -i` writes a new inode and breaks the bind mount — the container keeps serving the old file. Always verify with `podman exec ... sed -n '25p' /etc/nginx/nginx.conf` before reloading.
+
+### Adding a new model to the gateway
+
+Three edits: an `upstream` block, a `location @_backend_<name>` line, and an `if (model.indexOf(...))` branch in the JS before the default fallback. A tested script exists at `~/add-embedqa-to-nginx.sh` with backup, `nginx -t` validation, automatic rollback on failure, and `--dry-run` / `--rollback` modes. It auto-detects the `@_backend_` naming convention rather than assuming it.
+
+### No authentication
+
+There is no `auth_basic` anywhere in this config. Port 8443 binds `0.0.0.0`, so every model behind it is callable by anyone on 10.1.94.0/24 with no credential.
+
+---
+
+## 9. Measured utilisation
+
+From `vllm:cache_config_info` on llama-3.3-70b: `num_gpu_blocks=12,751 × block_size=16` = **204,016 tokens** of KV capacity, `gpu_memory_utilization=0.95`.
+
+Memory ledger, GPU 3: ~70 GB weights + ~65.3 GB KV reservation = 135.3 GB of 141 GB → **`nvidia-smi` reads 96%**.
+
+Traffic, ~10-hour window on 4 August:
+
+```
+prompt_tokens_total     504,644
+generation_tokens_total   5,040
+request_success_total   stop=78  length=20
+```
+
+| Metric | Value |
+|---|---|
+| Requests | 98 (~10/hour) |
+| Avg prompt / output | 5,149 / **51** tokens (100:1 prefill ratio) |
+| Concurrent capacity | ~39 conversations |
+| Observed concurrency | **0.02** |
+| Utilisation of reservation | **~0.05%** |
+| Prefill throughput | **14 tok/s** (hardware capable of thousands) |
+| Queued / preempted | **0 / 0** |
+
+**Key insight: memory reservation is not consumption.** vLLM preallocates at startup regardless of traffic. 96% means "started successfully," not "saturated."
+
+Caveat: single overnight window on a DEV host; may understate weekday peak.
+
+---
+
+## 10. Known issues
+
+| # | Issue | Severity |
+|---|---|---|
+| 1 | **`nginx -t` fails** — broken upstream `nim-qwen7b:8000`. Gateway dies on any restart. Blocks all new routes. | **Critical** |
+| 2 | `cbq-sa-nginx-prod` never started; `pod_mle-smart-assistant` Degraded. Assistant may be unreachable to real users. | High |
+| 3 | **No declarative deployment.** Three rebuild events required manual reconstruction. Config exists only in shell history (wiped 29 July). | High |
+| 4 | **20.4% of answers truncated** — 20 of 98 ended `finished_reason="length"`. Avg output 51 tokens against a template requiring multiple sections plus a citation line. | High |
+| 5 | **Retrieval precision failure.** "net profit for H1 2026" returned 10 chunks, all **Q1**, all from **other banks** (Masraf Al Rayan, QNB, Doha, Dukhan). No CBQ content. | High |
+| 6 | **Citation misattribution.** Finalizer returned `Used sources: none`; app fell back to attributing all 10 chunks. Possibly caused by #4 — the citation line is written last. | High |
+| 7 | Embedding model is `nomic-embed-text:v1.5`, 137M params, early 2024 — hot path of every query, direct contributor to #5. | High |
+| 8 | llama70b context 128,000 vs 16,384 elsewhere → worst-case concurrency **1.59**; one long document consumes 63% of cache. | High |
+| 9 | **No auth on the gateway.** Port 8443 open to 10.1.94.0/24 with no credential. NIM ports 8889–8899 likewise. | Medium |
+| 10 | Uncapped Ollama — 64 GB claimed on GPU 0 without warning. | Medium |
+| 11 | `nim-qwen7b` metrics endpoint returns nothing (NIM 1.4.0). It handles every request. | Medium |
+| 12 | Proxy config session-only; blocks Quadlet migration. | Medium |
+| 13 | UAT non-functional; no promotion path. | Medium |
+| 14 | DEV services call UAT external APIs. | Medium |
+| 15 | Shared service account; no per-user attribution. | Medium |
+| 16 | Over-reserved KV cache — qwen-2.5-7b holds ~65 GB for ~15 GB of weights. | Low |
+| 17 | No evaluation harness; model choices are opinion. | Low |
+| 18 | Arabic never evaluated, at a Qatari bank serving Arabic documents. | Low |
+| 19 | All images tagged `:latest`; no digest pinning. | Low |
+| 20 | 320 GB of unaudited volumes. | Low |
+| 21 | Vestigial Ollama model names under `LLM_BACKEND=nim`. | Low |
+| 22 | Qwen3-VL requires `--enforce-eager` (throughput cost) and 8K context — root cause not isolated. | Low |
+
+---
+
+## 11. Incident history
+
+**29 Jul** — Three NGC API keys exposed in a chat window and shell history. Rotated; history wiped.
+
+**3 Aug 18:22** — Loki (exit 2), Alloy (exit 2), Grafana (exit 0) died. Unnoticed 13+ hours.
+
+**4 Aug** — Reboot. Observability did not return.
+
+**9 Aug** — vGPU reprofiling. **Entire container estate vanished**; recovered manually over several hours. GPU 2 upgraded 70C→141C, `/apps` doubled, `/var/log` cleared.
+
+**10 Aug ~09:00** — Estate rebuilt again. `cbq-sa-nginx-prod` left in `Created`.
+
+**10 Aug** — Second credential exposure (NGC key apparently not rotated after 29 Jul, plus an HF token).
+
+**30–31 Aug** — Qwen3-VL TP=2 brought up after six attempts. nginx validation failure discovered.
+
+**Common root cause: nothing is declarative.** Nothing restarts itself and nobody can determine what should be running.
+
+---
+
+## 12. Operating rules
+
+**Never:**
+- `--gpus all` — NVIDIA's own docs recommend it; it lets a container reach any slice including production. Always `--device nvidia.com/gpu=N`.
+- `podman system prune -a`, `podman volume prune`, `podman stop -a`, `podman rm -a`, `podman system reset`
+- `sed -i` on bind-mounted config files (breaks the mount)
+- Reload nginx without a passing `nginx -t`
+- Restart another team's container without asking
+
+**Always:**
+- `--security-opt=label=disable` (SELinux)
+- `--memory` but **not** `--cpus`
+- `-d` without `--rm` (a crash should leave logs)
+- Baseline before changing: `nvidia-smi`, `podman ps -a`, `podman pod ps`, `ss -tulnp`, `df -h`
+- Check free GPU memory *immediately* before launch — Ollama's footprint moves
+- Verify config changes landed **inside** the container before reloading
+- Use `curl -k https://` for 8443; plain `http://` returns a 400
+
+---
+
+## 13. Command reference
+
+```bash
+# GPU ground truth
+nvidia-smi --query-gpu=index,uuid,memory.used,memory.total --format=csv,noheader
+nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader
+nvidia-smi topo -m ; nvidia-smi topo -p2p r
+nvidia-smi nvlink -s | grep -c "26.562 GB/s"     # expect 72
+
+# containers and pods
+podman ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}\t{{.Status}}'
+podman pod ps
+podman ps -a --pod --format 'table {{.Names}}\t{{.Status}}\t{{.PodName}}'
+podman port <name>
+podman inspect <name> --format '{{.HostConfig.NetworkMode}} {{json .NetworkSettings.Ports}}'
+
+# model endpoints (direct, not via nginx)
+for p in 8889 8890 8891 8896 8897 8899; do
+  printf '%s: ' $p; curl -s -m 3 localhost:$p/v1/models | jq -r '.data[].id' 2>/dev/null || echo DOWN
+done
+curl -s localhost:11434/api/tags | jq -r '.models[].name'
+curl -s localhost:11434/api/ps | jq
+
+# embeddings (note input_type is required)
+curl -s localhost:8896/v1/embeddings -H 'Content-Type: application/json' \
+  -d '{"model":"nvidia/llama-3.2-nv-embedqa-1b-v2","input":["test"],"input_type":"query"}' \
+  | jq '.data[0].embedding | length'
+
+# through the gateway — POST only, GETs go to Ollama
+curl -sk https://10.1.94.110:8443/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"model":"qwen3-vl-235b-awq","messages":[{"role":"user","content":"hi"}],"max_tokens":20}' \
+  | jq -r '.choices[0].message.content'
+
+# real capacity, not memory
+curl -s localhost:8890/metrics | grep cache_config_info
+podman logs <nim> 2>&1 | grep -iE 'GPU KV cache size|maximum concurrency'
+
+# nginx
+podman exec nginx-reverseproxy nginx -t
+podman exec nginx-reverseproxy sed -n '25p' /etc/nginx/nginx.conf
+podman exec nginx-reverseproxy nginx -s reload
+
+# storage
+df -h /apps ; podman system df -v ; podman info | grep -i graphroot
+```
+
+---
+
+## 14. Open questions
+
+1. Is `/dev/md0` still RAID1, or was redundancy traded for capacity?
+2. Is `journald` capped?
+3. Where is the deployment tooling? Sixteen pods with a naming convention implies scripts exist.
+4. Is `cbq-sa-nginx-prod` deliberately stopped, or did it fail?
+5. Where is `max_tokens` set in the application? (Cause of the 20% truncation.)
+6. Does retrieval apply metadata filtering on company/period before ranking?
+7. What is Neo4j's role? It is **not** the vector store.
+8. What is 10.104.10.100?
+9. Are the Ollama-named role variables live or vestigial under `LLM_BACKEND=nim`?
+10. Per-slice cost (hardware + vGPU licensing + AI Enterprise)? Needed to convert utilisation into a financial figure.
+11. Is there a real PROD host, or is DEV serving that role?
+12. Actual prompt-length distribution (`request_prompt_tokens_bucket`) — determines a safe `NIM_MAX_MODEL_LEN`.
+13. Which of D's four changes actually fixed Qwen3-VL?
+
+---
+
+## 15. Priority order
+
+**Immediate:**
+1. **Fix `nginx -t`** — everything is blocked behind it, and the gateway dies on the next reboot
+2. Resolve `cbq-sa-nginx-prod` — the assistant may be down for users
+3. Raise `max_tokens` — fixes 20% truncation, possibly the citation defect too
+4. Drop llama70b `NIM_MAX_MODEL_LEN` to 32,768 — 4× worst-case concurrency at zero memory cost
+5. Add retrieval metadata filtering on company and reporting period
+
+**Foundation:**
+6. Locate deployment tooling; if none, convert everything to Quadlets in git, enable linger
+7. Persist proxy config (`/etc/profile.d`, `containers.conf`, Quadlet `Environment=`)
+8. Cap Ollama
+9. Run a full working week of utilisation collection
+
+**Platform:**
+10. Deploy a gateway with per-team keys and usage logging (LiteLLM) — replaces hand-edited njs
+11. Wire per-model metrics into the existing Grafana
+12. Build an eval harness against the retrieval service on 8090
+
+**Capability:**
+13. Re-index onto the new embedding model; measure recall delta on the H1 2026 query
+14. Isolate which of D's changes fixed Qwen3-VL; recover CUDA graphs and/or 32K context
+15. Test the Qwen3-VL **vision path** — text generation working does not prove OCR works, and Arabic OCR is why the model was chosen
+16. Evaluate Arabic performance explicitly
+
+---
+
+*Compiled from live inspection between 29 July and 31 August 2026. Derived figures show their working. Re-verify point-in-time values before acting.*
