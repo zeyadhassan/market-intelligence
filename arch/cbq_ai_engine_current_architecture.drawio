@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" version="24.0.0">
+  <diagram id="cbq-current-architecture" name="CBQ Markets AI Engine - current architecture">
+    <mxGraphModel dx="1800" dy="1120" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1120" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="title" value="&lt;b&gt;CBQ Markets AI Engine — current architecture&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;fontSize=22;" vertex="1" parent="1">
+          <mxGeometry x="40" y="10" width="1200" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="g_continuous" value="Continuous intelligence · PostgreSQL-authoritative, durable workers" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 5;fillColor=#dae8fc;strokeColor=#6c8ebf;opacity=50;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontStyle=1;fontSize=16;fontColor=#315b88;" vertex="1" parent="1">
+          <mxGeometry x="20" y="60" width="1750" height="605" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_push" value="Digest · push, scheduled" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 5;fillColor=#e1d5e7;strokeColor=#9673a6;opacity=50;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontStyle=1;fontSize=16;fontColor=#5b3a67;" vertex="1" parent="1">
+          <mxGeometry x="20" y="720" width="830" height="300" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_pull" value="Decision support · pull, on demand" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 5;fillColor=#ffe6cc;strokeColor=#d79b00;opacity=50;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;fontStyle=1;fontSize=16;fontColor=#8a5a00;" vertex="1" parent="1">
+          <mxGeometry x="895" y="720" width="875" height="300" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="sources" value="&lt;b&gt;Official &amp;amp; licensed&lt;br&gt;sources&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="60" y="120" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="source_worker" value="&lt;b&gt;Source worker&lt;/b&gt;&lt;br&gt;&lt;i&gt;poll, archive, checkpoint&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="320" y="120" width="220" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="scheduler" value="&lt;b&gt;Scheduler&lt;/b&gt;&lt;br&gt;&lt;i&gt;enqueue durable jobs&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="60" y="315" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="archive" value="&lt;b&gt;Raw archive&lt;/b&gt;&lt;br&gt;&lt;i&gt;immutable source bytes&lt;/i&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=14;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="320" y="285" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="postgres" value="&lt;b&gt;PostgreSQL · authority&lt;/b&gt;&lt;br&gt;&lt;i&gt;ledger, temporal state, jobs, results&lt;br&gt;pgvector chunks, identity, audit&lt;br&gt;read models and delivery state&lt;/i&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=14;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="650" y="95" width="330" height="190" as="geometry"/>
+        </mxCell>
+        <mxCell id="outbox" value="&lt;b&gt;Transactional outbox&lt;/b&gt;&lt;br&gt;&lt;i&gt;leases, replay, dead letters&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="675" y="305" width="280" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="projection_worker" value="&lt;b&gt;Document &amp;amp; projection worker&lt;/b&gt;&lt;br&gt;&lt;i&gt;chunk, resolve, extract,&lt;br&gt;embed, project&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="650" y="405" width="220" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="entity_queue" value="&lt;b&gt;Entity resolution&lt;br&gt;review queue&lt;/b&gt;&lt;br&gt;&lt;i&gt;ambiguous links are held&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="330" y="445" width="220" height="105" as="geometry"/>
+        </mxCell>
+        <mxCell id="neo4j" value="&lt;b&gt;Neo4j · projection&lt;/b&gt;&lt;br&gt;&lt;i&gt;rebuildable, bitemporal,&lt;br&gt;authorized 2-hop traversal&lt;/i&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=14;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="115" width="230" height="175" as="geometry"/>
+        </mxCell>
+        <mxCell id="analysis_worker" value="&lt;b&gt;Analysis worker&lt;/b&gt;&lt;br&gt;&lt;i&gt;graph/time detectors, hybrid&lt;br&gt;research, validation, admission&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="990" y="405" width="230" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="search_worker" value="&lt;b&gt;Search worker&lt;/b&gt;&lt;br&gt;&lt;i&gt;typed graph, vector,&lt;br&gt;and mixed retrieval plans&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="405" width="230" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="model_gateway" value="&lt;b&gt;LLM / embedding&lt;br&gt;gateway&lt;/b&gt;&lt;br&gt;&lt;i&gt;governed releases and lineage&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="1480" y="115" width="250" height="110" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="delivery_worker" value="&lt;b&gt;Delivery worker&lt;/b&gt;&lt;br&gt;&lt;i&gt;reauthorize, render, suppress,&lt;br&gt;send idempotently&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="70" y="800" width="230" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="email" value="&lt;b&gt;Sandbox email&lt;/b&gt;&lt;br&gt;&lt;i&gt;immutable result versions&lt;br&gt;per authorized recipient&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="360" y="800" width="230" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="inbox" value="&lt;b&gt;Inbox&lt;/b&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="690" y="800" width="110" height="110" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="api" value="&lt;b&gt;Read-focused API&lt;/b&gt;&lt;br&gt;&lt;i&gt;authorize, enqueue or join,&lt;br&gt;read PostgreSQL projections&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="940" y="800" width="240" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="frontend" value="&lt;b&gt;Analyst frontend&lt;/b&gt;&lt;br&gt;&lt;i&gt;results, evidence, coverage,&lt;br&gt;search and evaluation&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="800" width="240" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="user" value="&lt;b&gt;User&lt;/b&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=2;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="1585" y="800" width="110" height="110" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="controls" value="&lt;b&gt;OIDC &amp;amp; entitlements · model registry &amp;amp; lineage · temporal policy · validation &amp;amp; admission · audit, metrics &amp;amp; tracing&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#444444;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="20" y="1040" width="1750" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_sources" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;endFill=1;strokeWidth=2;" edge="1" parent="1" source="sources" target="source_worker"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_source_pg" value="documents + coverage" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;endFill=1;strokeWidth=2;fontSize=12;" edge="1" parent="1" source="source_worker" target="postgres"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_source_archive" value="content-addressed bytes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;endFill=1;strokeWidth=2;fontSize=12;" edge="1" parent="1" source="source_worker" target="archive"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_scheduler" value="durable jobs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;endFill=1;strokeWidth=2;fontSize=12;" edge="1" parent="1" source="scheduler" target="outbox"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="290" y="415"/><mxPoint x="585" y="415"/><mxPoint x="585" y="335"/></Array></mxGeometry></mxCell>
+        <mxCell id="e_pg_outbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;endFill=1;strokeWidth=2;" edge="1" parent="1" source="postgres" target="outbox"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_outbox_projection" value="ordered events" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;endFill=1;strokeWidth=2;fontSize=12;" edge="1" parent="1" source="outbox" target="projection_worker"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_projection_queue" value="held decisions" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;endFill=1;strokeWidth=2;fontSize=12;" edge="1" parent="1" source="projection_worker" target="entity_queue"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_queue_pg" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;endFill=1;strokeWidth=2;" edge="1" parent="1" source="entity_queue" target="postgres"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_projection_neo4j" value="graph projection" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;endFill=1;strokeWidth=2;fontSize=12;" edge="1" parent="1" source="projection_worker" target="neo4j"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_pg_analysis" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=classic;startFill=1;endArrow=classic;endFill=1;strokeWidth=2;" edge="1" parent="1" source="postgres" target="analysis_worker"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_neo_analysis" value="bounded context" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;endFill=1;strokeWidth=2;fontSize=12;" edge="1" parent="1" source="neo4j" target="analysis_worker"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_pg_search" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=classic;startFill=1;endArrow=classic;endFill=1;strokeWidth=2;" edge="1" parent="1" source="postgres" target="search_worker"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_neo_search" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;endFill=1;strokeWidth=2;" edge="1" parent="1" source="neo4j" target="search_worker"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_projection_model" value="governed model calls" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;dashPattern=8 5;endArrow=classic;endFill=1;strokeWidth=2;fontSize=12;" edge="1" parent="1" source="projection_worker" target="model_gateway"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_analysis_model" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;dashPattern=8 5;endArrow=classic;endFill=1;strokeWidth=2;" edge="1" parent="1" source="analysis_worker" target="model_gateway"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_search_model" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;dashPattern=8 5;endArrow=classic;endFill=1;strokeWidth=2;" edge="1" parent="1" source="search_worker" target="model_gateway"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_pg_delivery" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;endFill=1;strokeWidth=2;" edge="1" parent="1" source="postgres" target="delivery_worker"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="610" y="395"/><mxPoint x="610" y="690"/><mxPoint x="185" y="690"/></Array></mxGeometry></mxCell>
+        <mxCell id="e_delivery_email" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;endFill=1;strokeWidth=2;" edge="1" parent="1" source="delivery_worker" target="email"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_email_inbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;endFill=1;strokeWidth=2;" edge="1" parent="1" source="email" target="inbox"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_pg_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=classic;startFill=1;endArrow=classic;endFill=1;strokeWidth=2;" edge="1" parent="1" source="postgres" target="api"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="960" y="370"/><mxPoint x="960" y="690"/><mxPoint x="1060" y="690"/></Array></mxGeometry></mxCell>
+        <mxCell id="e_api_frontend" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=classic;startFill=1;endArrow=classic;endFill=1;strokeWidth=2;" edge="1" parent="1" source="api" target="frontend"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_frontend_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=classic;startFill=1;endArrow=classic;endFill=1;strokeWidth=2;" edge="1" parent="1" source="frontend" target="user"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
