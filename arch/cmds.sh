@@ -223,3 +223,49 @@ status=running restart=unless-stopped network=bridge compose_service=nim-llama-e
     "encoding_format":"float"
   }'
 HTTP status: 200
+
+
+_______________________________________________________
+
+It is working correctly and the migration is complete.
+
+Confirmed:
+
+Embedding model loaded successfully with all Triton components READY.
+Physical GPU 0 is being used.
+Container is Compose-managed.
+Restart policy is unless-stopped.
+Network changed from pasta to bridge.
+Direct endpoint works on port 8896.
+Nginx gateway returned HTTP 200.
+
+Display the captured response summary:
+
+jq '{model,dimensions:(.data[0].embedding|length),usage}' /tmp/embed-gateway-response.json
+
+It should report dimensions: 2048.
+
+Test from another internal PC:
+
+curl -k --max-time 300 \
+  https://10.1.94.110:8443/v1/embeddings \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "input":["External gateway test"],
+    "model":"nvidia/llama-3.2-nv-embedqa-1b-v2",
+    "input_type":"query",
+    "modality":"text",
+    "encoding_format":"float"
+  }'
+
+The initial “no container found” messages were harmless Compose cleanup attempts. The subscription, TensorRT profile, torch not found, and power-metric messages are also non-fatal.
+
+Keep this stopped rollback container for now:
+
+llama-3.2-nv-embedqa-manual-backup
+
+The permanent gateway endpoint is now:
+
+POST https://10.1.94.110:8443/v1/embeddings
+
+Use input_type: "passage" for document indexing and "query" for search queries.
