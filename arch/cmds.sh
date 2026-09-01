@@ -153,3 +153,136 @@ input_type: "passage" when indexing documents.
 input_type: "query" when embedding a search question.
 
 One security concern: ports 8896 and 8443 are currently bound on all host interfaces, and the gateway reportedly has no authentication. Client networks should be allowed to reach 8443, while direct backend port 8896 should ideally be blocked by the network firewall.
+
+____________________________________________________________________________________________________________
+
+[srv_mlengineering@cbq2-svd-dsgpu2 ~]$ cd /apps/srv_mlengineering/nim
+cp -p docker-compose-extended.yml docker-compose-extended.yml.before-embedqa
+cp -p nginx/nginx_router_hybrid_extended.conf nginx/nginx_router_hybrid_extended.conf.before-embedqa
+[srv_mlengineering@cbq2-svd-dsgpu2 nim]$ test -n "${NGC_API_KEY:-}" && echo "NGC_API_KEY is available" || echo "NGC_API_KEY is not currently exported"
+NGC_API_KEY is not currently exported
+[srv_mlengineering@cbq2-svd-dsgpu2 nim]$ export NGC_API_KEY="$(tr -d '\r\n' < ~/.ngc_key)"
+test -n "${NGC_API_KEY:-}" && echo "NGC_API_KEY is now available"
+NGC_API_KEY is now available
+[srv_mlengineering@cbq2-svd-dsgpu2 nim]$ sed -i '/^  nim-qwen3vl:/i\
+  nim-llama-embedqa:\
+    image: nvcr.io/nim/nvidia/llama-3.2-nv-embedqa-1b-v2:1.10\
+    container_name: llama-3.2-nv-embedqa\
+    restart: unless-stopped\
+    security_opt:\
+      - "label=disable"\
+    ipc: host\
+    ports:\
+      - "8896:8000"\
+    environment:\
+      NGC_API_KEY: "${NGC_API_KEY}"\
+      NO_PROXY: "localhost,127.0.0.1,::1,.cbq.com.qa,10.0.0.0/8"\
+      no_proxy: "localhost,127.0.0.1,::1,.cbq.com.qa,10.0.0.0/8"\
+    volumes:\
+      - "/apps/srv_mlengineering/nim-cache:/opt/nim/.cache"\
+    devices:\
+      - "nvidia.com/gpu=0"\
+\
+' docker-compose-extended.yml
+[srv_mlengineering@cbq2-svd-dsgpu2 nim]$ sed -n '/^  nim-llama-embedqa:/,/^  nim-qwen3vl:/p' docker-compose-extended.yml
+  nim-llama-embedqa:
+    image: nvcr.io/nim/nvidia/llama-3.2-nv-embedqa-1b-v2:1.10
+    container_name: llama-3.2-nv-embedqa
+    restart: unless-stopped
+    security_opt:
+      - "label=disable"
+    ipc: host
+    ports:
+      - "8896:8000"
+    environment:
+      NGC_API_KEY: "${NGC_API_KEY}"
+      NO_PROXY: "localhost,127.0.0.1,::1,.cbq.com.qa,10.0.0.0/8"
+      no_proxy: "localhost,127.0.0.1,::1,.cbq.com.qa,10.0.0.0/8"
+    volumes:
+      - "/apps/srv_mlengineering/nim-cache:/opt/nim/.cache"
+    devices:
+      - "nvidia.com/gpu=0"
+
+
+  nim-qwen3vl:
+[srv_mlengineering@cbq2-svd-dsgpu2 nim]$ podman-compose -f docker-compose-extended.yml config >/dev/null && echo "Compose configuration OK"
+Compose configuration OK
+[srv_mlengineering@cbq2-svd-dsgpu2 nim]$ podman-compose -f docker-compose-extended.yml config --services | grep nim-llama-embedqa
+nim-llama-embedqa
+[srv_mlengineering@cbq2-svd-dsgpu2 nim]$ python3 -c 'p="/apps/srv_mlengineering/nim/nginx/nginx_router_hybrid_extended.conf"; f=open(p,"r+"); s=f.read(); a1="    upstream backend_qwen7b {"; a2="        location @_backend_ollama1"; u="    upstream backend_llama_embed {\n        server 10.1.94.110:8896;\n        keepalive 32;\n    }\n\n"; l="        location = /v1/embeddings {\n            proxy_pass http://backend_llama_embed;\n            proxy_http_version 1.1;\n            proxy_set_header Host $host;\n            proxy_set_header Connection \"\";\n            proxy_connect_timeout 10s;\n            proxy_send_timeout 300s;\n            proxy_read_timeout 300s;\n        }\n\n"; assert "upstream backend_llama_embed" not in s, "embedding upstream already exists"; assert a1 in s, "upstream insertion point not found"; assert a2 in s, "location insertion point not found"; s=s.replace(a1,u+a1,1).replace(a2,l+a2,1); f.seek(0); f.write(s); f.truncate(); f.close()'
+[srv_mlengineering@cbq2-svd-dsgpu2 nim]$ grep -nC 4 -E 'backend_llama_embed|/v1/embeddings' nginx/nginx_router_hybrid_extended.conf
+20-   #     server nim-gemma:8000;
+21-   #     keepalive 32;
+22-   # }
+23-
+24:    upstream backend_llama_embed {
+25-        server 10.1.94.110:8896;
+26-        keepalive 32;
+27-    }
+28-
+--
+85-
+86-            js_content main.get_backend;
+87-        }
+88-
+89:        location = /v1/embeddings {
+90:            proxy_pass http://backend_llama_embed;
+91-            proxy_http_version 1.1;
+92-            proxy_set_header Host $host;
+93-            proxy_set_header Connection "";
+94-            proxy_connect_timeout 10s;
+[srv_mlengineering@cbq2-svd-dsgpu2 nim]$ podman exec nginx-reverseproxy grep -nC 4 -E 'backend_llama_embed|/v1/embeddings' /etc/nginx/nginx.conf
+20-   #     server nim-gemma:8000;
+21-   #     keepalive 32;
+22-   # }
+23-
+24:    upstream backend_llama_embed {
+25-        server 10.1.94.110:8896;
+26-        keepalive 32;
+27-    }
+28-
+--
+85-
+86-            js_content main.get_backend;
+87-        }
+88-
+89:        location = /v1/embeddings {
+90:            proxy_pass http://backend_llama_embed;
+91-            proxy_http_version 1.1;
+92-            proxy_set_header Host $host;
+93-            proxy_set_header Connection "";
+94-            proxy_connect_timeout 10s;
+[srv_mlengineering@cbq2-svd-dsgpu2 nim]$ podman exec nginx-reverseproxy nginx -t
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+[srv_mlengineering@cbq2-svd-dsgpu2 nim]$ podman exec nginx-reverseproxy nginx -s reload
+[srv_mlengineering@cbq2-svd-dsgpu2 nim]$ curl -sk --max-time 300 https://127.0.0.1:8443/v1/embeddings \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "input":["What services does Commercial Bank provide?"],
+    "model":"nvidia/llama-3.2-nv-embedqa-1b-v2",
+    "input_type":"query",
+    "modality":"text",
+    "encoding_format":"float"
+  }' | jq '{model,dimensions:(.data[0].embedding|length),usage}'
+parse error: Invalid numeric literal at line 1, column 7
+[srv_mlengineering@cbq2-svd-dsgpu2 nim]$ ^C
+[srv_mlengineering@cbq2-svd-dsgpu2 nim]$ curl -sk --max-time 300 \
+  https://127.0.0.1:8443/v1/embeddings \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "input":["What services does Commercial Bank provide?"],
+    "model":"nvidia/llama-3.2-nv-embedqa-1b-v2",
+    "input_type":"query",
+    "modality":"text",
+    "encoding_format":"float"
+  }'
+<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>nginx</center>
+</body>
+</html>
+
+
