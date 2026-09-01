@@ -1,0 +1,32 @@
+# Local product model configuration.
+# `run.cmd` copies this file automatically. The checked-in values match the
+# supplied UAT gateways, so edit only if an endpoint or credential changes.
+
+FI_INTEL_ANALYSIS_MODE=shadow
+
+# OpenAI-compatible chat gateway.
+FI_INTEL_LLM_BASE_URL=https://cbq2-svd-dsgpu2.cbq.com.qa:8443/v1
+FI_INTEL_LLM_API_KEY=not-needed
+FI_INTEL_LLM_TRUST_ENV=false
+FI_INTEL_LLM_TLS_VERIFY=false
+FI_INTEL_LLM_TIMEOUT_SECONDS=120
+FI_INTEL_LLM_BASIC_AUTH_USERNAME=
+FI_INTEL_LLM_BASIC_AUTH_PASSWORD=
+FI_INTEL_EXTRACTION_MODEL=openai/gpt-oss-120b
+FI_INTEL_RESEARCH_MODEL=openai/gpt-oss-120b
+FI_INTEL_ENTAILMENT_MODEL=openai/gpt-oss-120b
+FI_INTEL_RERANKER_MODEL=openai/gpt-oss-120b
+
+# NVIDIA NIM embeddings. The application appends `embeddings` and sends
+# input_type=query for searches and input_type=passage for indexed documents.
+FI_INTEL_EMBEDDING_BASE_URL=https://10.1.94.110:8443/v1
+FI_INTEL_EMBEDDING_API_KEY=not-needed
+FI_INTEL_EMBEDDING_TRUST_ENV=false
+FI_INTEL_EMBEDDING_TLS_VERIFY=false
+FI_INTEL_EMBEDDING_TIMEOUT_SECONDS=300
+FI_INTEL_EMBEDDING_BASIC_AUTH_USERNAME=
+FI_INTEL_EMBEDDING_BASIC_AUTH_PASSWORD=
+FI_INTEL_EMBEDDING_MODEL=nvidia/llama-3.2-nv-embedqa-1b-v2
+FI_INTEL_EMBEDDING_DIM=2048
+FI_INTEL_EMBEDDING_QUERY_PREFIX=
+FI_INTEL_EMBEDDING_DOCUMENT_PREFIX=
