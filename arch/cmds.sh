@@ -454,3 +454,88 @@ curl -sk --max-time 600 https://127.0.0.1:8443/v1/chat/completions \
   -d '{"model":"qwen3-vl-235b-awq","messages":[{"role":"user","content":"Reply only with OK"}],"max_tokens":128}' | jq
 
 The subscription-mount and symmetric-memory messages are warnings, not the failure. The actual failure was the 0.80 GPU-memory target. You do not need to restart Nginx or GPT-OSS.
+
+_____________________________________________________________________________________
+
+
+Yes. Keep the 262,144-token per-request limit and raise max-num-seqs from 4 to 8. This allows up to eight sequences in a scheduler iteration; it does not reserve eight complete 262K contexts. vLLM defines max-num-seqs this way.
+
+Recommended starting configuration:
+
+Context ceiling: 262,144 tokens
+Concurrent sequences: 8
+Batched tokens per iteration: 8,192
+GPU utilization: 0.78
+Chunked prefill: enabled
+
+Run these commands one at a time.
+
+Back up the Compose file:
+
+cp -p /apps/srv_mlengineering/nim/docker-compose-extended.yml /apps/srv_mlengineering/nim/docker-compose-extended.yml.before-concurrency-8
+
+Update the Qwen service persistently:
+
+sed -i '/^  nim-qwen3vl:/,/^  nim-gptoss120b:/ {
+s/--gpu-memory-utilization [0-9.][0-9.]*/--gpu-memory-utilization 0.78/
+s/--max-num-seqs [0-9][0-9]*/--max-num-seqs 8/
+}' /apps/srv_mlengineering/nim/docker-compose-extended.yml
+
+Confirm that context and concurrency are correct:
+
+sed -n '/^  nim-qwen3vl:/,/^  nim-gptoss120b:/p' /apps/srv_mlengineering/nim/docker-compose-extended.yml | grep -E 'NIM_MAX_MODEL_LEN|NIM_PASSTHROUGH_ARGS'
+
+You should see:
+
+NIM_MAX_MODEL_LEN: "262144"
+--gpu-memory-utilization 0.78
+--max-num-seqs 8
+--max-num-batched-tokens 8192
+--enable-chunked-prefill
+--enable-auto-tool-choice
+--tool-call-parser qwen3_coder
+
+Validate and recreate only Qwen:
+
+podman-compose -f /apps/srv_mlengineering/nim/docker-compose-extended.yml config >/dev/null && echo "Compose configuration OK"
+podman-compose -f /apps/srv_mlengineering/nim/docker-compose-extended.yml up -d --no-deps --force-recreate nim-qwen3vl
+
+Watch startup:
+
+podman logs --tail 100 -f nim-qwen3vl
+
+After Application startup complete, press Ctrl+C.
+
+Verify the running configuration:
+
+podman inspect nim-qwen3vl --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E '^NIM_(MAX_MODEL_LEN|TENSOR_PARALLEL_SIZE|PASSTHROUGH_ARGS)='
+
+Check available KV-cache capacity:
+
+curl -fsS http://127.0.0.1:8899/metrics | grep 'vllm:cache_config_info'
+
+Practical capacity depends on the combined live tokens:
+
+approximate concurrency = KV-cache tokens ÷ average tokens per active request
+
+For example, with roughly 500K KV-cache tokens:
+
+Eight users around 32K tokens each: comfortable
+Eight users around 64K each: near the limit
+Four users around 128K each: near the limit
+Two users around 250K each: near the limit
+Eight users simultaneously using 250K each: impossible on the current two GPUs
+
+The 262,144 limit includes both input and generated output. A 250K prompt requesting 20K output would exceed it.
+
+Test eight short concurrent requests through Nginx:
+
+seq 1 8 | xargs -P 8 -I{} curl -sk \
+  -o /dev/null \
+  -w 'request {}: HTTP %{http_code}, %{time_total}s\n' \
+  --max-time 600 \
+  https://127.0.0.1:8443/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"qwen3-vl-235b-awq","messages":[{"role":"user","content":"Reply briefly with OK"}],"max_tokens":32}'
+
+All eight should return HTTP 200. Chunked prefill helps prevent large prompts from monopolizing each scheduling iteration, while 8192 keeps memory pressure controlled. vLLM documents that tradeoff here.
