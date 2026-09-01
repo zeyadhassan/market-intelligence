@@ -19,7 +19,7 @@ def test_repository_migration_plan_is_contiguous_and_checksummed() -> None:
     plan = discover_migrations()
     assert [item.version for item in plan] == list(range(1, len(plan) + 1))
     assert plan[0].filename == "init.sql"
-    assert plan[-1].filename == "0023_nomic_embedding_dimension.sql"
+    assert plan[-1].filename == "0024_nvidia_embedding_dimension.sql"
     assert all(len(item.checksum) == 64 for item in plan)
     assert any(item.filename == "0004_replayable_ingestion.sql" for item in plan)
     nomic_migration = Path("deploy/migrations/0023_nomic_embedding_dimension.sql").read_text(
@@ -27,6 +27,13 @@ def test_repository_migration_plan_is_contiguous_and_checksummed() -> None:
     )
     assert "TRUNCATE TABLE document_chunk CASCADE" in nomic_migration
     assert "TYPE vector(768)" in nomic_migration
+    nvidia_migration = Path("deploy/migrations/0024_nvidia_embedding_dimension.sql").read_text(
+        encoding="utf-8"
+    )
+    assert "TRUNCATE TABLE document_chunk CASCADE" in nvidia_migration
+    assert "TYPE vector(2048)" in nvidia_migration
+    assert "embedding::halfvec(2048)" in nvidia_migration
+    assert "halfvec_cosine_ops" in nvidia_migration
 
 
 def test_discovery_rejects_duplicate_versions(tmp_path: Path) -> None:

@@ -146,7 +146,7 @@ def test_sql_contract_filters_before_bounded_lexical_and_vector_generation() -> 
     assert "exists ( select 1 from document_chunk_assertion_v4" in sql
     assert "assertion.recorded_at <= $3::timestamptz" in sql
     assert "e.search_vector @@ websearch_to_tsquery" in sql
-    assert "e.embedding <=> $9::vector" in sql
+    assert "e.embedding::halfvec(2048) <=> $9::halfvec(2048)" in sql
     assert sql.count("limit $11::int") == 2
     assert "select d.*" not in sql
 

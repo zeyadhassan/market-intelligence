@@ -253,10 +253,12 @@ The MVP must never:
   field without printing secrets. `app-up` then synchronizes the configured access assignment and
   evaluated model releases before starting the one application profile.
 - The server model route is now concrete rather than placeholder-only: chat uses the pulled UAT
-  OpenAI-compatible `openai/gpt-oss-120b` endpoint, while embeddings use the pulled native Ollama
-  route with `nomic-embed-text:v1.5`, required task prefixes, explicit proxy/TLS/Basic-Auth policy,
-  and a 768-dimensional pgvector migration. `deploy/model_smoke.py` checks both connections from
-  the operator-owned env file without printing credentials or model output.
+  OpenAI-compatible `openai/gpt-oss-120b` endpoint, while embeddings use the NVIDIA NIM
+  `/v1/embeddings` route with `nvidia/llama-3.2-nv-embedqa-1b-v2`, query/passage `input_type`
+  semantics, explicit proxy/TLS policy, and a 2,048-dimensional pgvector migration with a
+  half-precision HNSW expression index.
+  `deploy/model_smoke.py` checks both connections from the operator-owned env file without printing
+  credentials or model output.
 
 ## Target runtime architecture
 

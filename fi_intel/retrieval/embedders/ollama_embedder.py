@@ -1,4 +1,8 @@
-"""Embedding adapter for Ollama's native ``/api/embed`` endpoint."""
+"""Legacy adapter for Ollama's native ``/api/embed`` endpoint.
+
+The canonical governed serving path uses the NVIDIA NIM adapter. This module
+remains available only for controlled rollback and fixture compatibility.
+"""
 
 from __future__ import annotations
 
@@ -178,7 +182,7 @@ def build_embedder(
     usage_log: ModelUsageLog | None = None,
     run_id: str | None = None,
 ) -> Embedder:
-    """Build the canonical Ollama embedder or the fixture-only fallback."""
+    """Build the legacy Ollama embedder or the fixture-only fallback."""
 
     base_url = settings.embedding_base_url
     model = settings.embedding_model

@@ -215,11 +215,11 @@ lexical_ranked AS (
 ),
 vector_nearest AS (
     SELECT e.chunk_id,
-           1.0 - (e.embedding <=> $9::vector) AS vector_score
+           1.0 - (e.embedding::halfvec(2048) <=> $9::halfvec(2048)) AS vector_score
     FROM eligible e
     WHERE $12::text IN ('hybrid', 'vector')
       AND e.embedding IS NOT NULL
-    ORDER BY e.embedding <=> $9::vector
+    ORDER BY e.embedding::halfvec(2048) <=> $9::halfvec(2048)
     LIMIT $11::int
 ),
 vector_candidates AS (

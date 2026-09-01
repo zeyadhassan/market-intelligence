@@ -75,6 +75,7 @@ async def test_ollama_transport_sends_basic_auth_without_proxy_inheritance() -> 
         analysis_mode="fixture",
         embedding_base_url="https://ollama.example/ollama/api/",
         embedding_model="nomic-embed-text:v1.5",
+        embedding_dim=768,
         embedding_basic_auth_username="ollama",
         embedding_basic_auth_password="rotated-password",  # noqa: S106 - test credential
         embedding_trust_env=False,

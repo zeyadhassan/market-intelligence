@@ -51,8 +51,8 @@ def build_llm_client(settings: Settings) -> openai.AsyncOpenAI:
     )
 
 
-def build_ollama_http_client(settings: Settings) -> httpx.AsyncClient:
-    """Build a native Ollama client rooted at the configured ``/api/`` URL."""
+def build_embedding_http_client(settings: Settings) -> httpx.AsyncClient:
+    """Build an OpenAI-compatible embedding client rooted at ``/v1/``."""
 
     if settings.embedding_base_url is None:
         raise RuntimeError("FI_INTEL_EMBEDDING_BASE_URL is required")
@@ -74,4 +74,10 @@ def build_ollama_http_client(settings: Settings) -> httpx.AsyncClient:
     )
 
 
-__all__ = ["build_llm_client", "build_ollama_http_client"]
+def build_ollama_http_client(settings: Settings) -> httpx.AsyncClient:
+    """Build the legacy native Ollama transport for fixture compatibility."""
+
+    return build_embedding_http_client(settings)
+
+
+__all__ = ["build_embedding_http_client", "build_llm_client", "build_ollama_http_client"]

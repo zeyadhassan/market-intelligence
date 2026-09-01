@@ -28,10 +28,10 @@ from fi_intel.ingest.extractors.openai_compatible_extractor import (
     OpenAICompatibleStructuredExtractor,
     build_structured_extractor,
 )
-from fi_intel.retrieval.embedders.ollama_embedder import (
+from fi_intel.retrieval.embedders.openai_compatible_embedder import (
     INDEX_IDENTITY_SCHEMA,
     INPUT_PREPROCESSING_VERSION,
-    OllamaEmbedder,
+    OpenAICompatibleEmbedder,
     build_embedder,
 )
 from fi_intel.retrieval.reranking import (
@@ -46,7 +46,7 @@ from fi_intel.retrieval.reranking import (
 class GovernedModelBundle:
     extractor: OpenAICompatibleStructuredExtractor
     reasoner: OpenAICompatibleReasoningModel
-    embedder: OllamaEmbedder
+    embedder: OpenAICompatibleEmbedder
     reranker: OpenAICompatibleReranker
     entailment: OpenAICompatibleEntailmentVerifier
     artifacts: tuple[ModelArtifact, ...]
@@ -119,7 +119,7 @@ class GovernedModelBundle:
             for artifact in artifacts
         )
         built_embedder = build_embedder(settings, embedding, usage_log, run_id)
-        if not isinstance(built_embedder, OllamaEmbedder):
+        if not isinstance(built_embedder, OpenAICompatibleEmbedder):
             raise RuntimeError("governed serving cannot use a fixture hashing embedder")
         return cls(
             extractor=build_structured_extractor(settings, usage_log, run_id, extraction),

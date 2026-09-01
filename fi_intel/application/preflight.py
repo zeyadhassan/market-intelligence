@@ -64,8 +64,8 @@ def _validate_embedding_endpoint(settings: Settings, errors: list[str]) -> None:
         errors.append("FI_INTEL_EMBEDDING_BASE_URL is required")
     elif not _valid_http_url(settings.embedding_base_url):
         errors.append("FI_INTEL_EMBEDDING_BASE_URL must be an http(s) URL")
-    elif not urlsplit(settings.embedding_base_url or "").path.rstrip("/").endswith("/api"):
-        errors.append("FI_INTEL_EMBEDDING_BASE_URL must end with Ollama's /api path")
+    elif not urlsplit(settings.embedding_base_url or "").path.rstrip("/").endswith("/v1"):
+        errors.append("FI_INTEL_EMBEDDING_BASE_URL must end with the gateway's /v1 path")
     if not _configured(settings.embedding_model):
         errors.append("FI_INTEL_EMBEDDING_MODEL is required")
 
@@ -79,16 +79,17 @@ def _validate_model_names(settings: Settings, errors: list[str]) -> None:
     ):
         if not _configured(value):
             errors.append(f"{name} is required")
-    if settings.embedding_dim != 768:
+    if settings.embedding_dim != 2048:
         errors.append(
-            "FI_INTEL_EMBEDDING_DIM must be 768 for nomic-embed-text:v1.5 and migration 0023"
+            "FI_INTEL_EMBEDDING_DIM must be 2048 for "
+            "nvidia/llama-3.2-nv-embedqa-1b-v2 and migration 0024"
         )
-    if settings.embedding_model != "nomic-embed-text:v1.5":
-        errors.append("FI_INTEL_EMBEDDING_MODEL must be nomic-embed-text:v1.5")
-    if settings.embedding_query_prefix != "search_query: ":
-        errors.append('FI_INTEL_EMBEDDING_QUERY_PREFIX must be "search_query: "')
-    if settings.embedding_document_prefix != "search_document: ":
-        errors.append('FI_INTEL_EMBEDDING_DOCUMENT_PREFIX must be "search_document: "')
+    if settings.embedding_model != "nvidia/llama-3.2-nv-embedqa-1b-v2":
+        errors.append("FI_INTEL_EMBEDDING_MODEL must be nvidia/llama-3.2-nv-embedqa-1b-v2")
+    if settings.embedding_query_prefix:
+        errors.append("FI_INTEL_EMBEDDING_QUERY_PREFIX must be empty for NVIDIA NIM")
+    if settings.embedding_document_prefix:
+        errors.append("FI_INTEL_EMBEDDING_DOCUMENT_PREFIX must be empty for NVIDIA NIM")
 
 
 def _validate_model_transport(settings: Settings, errors: list[str]) -> None:

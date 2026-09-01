@@ -209,27 +209,27 @@ class Settings(BaseSettings):
     # Embedding provider (fi_intel/retrieval/embedders/). Fixture-only
     # builders may use the deterministic HashingEmbedder. The canonical
     # service fails closed unless a registry-routed endpoint and artifact
-    # are configured. This also targets the
-    # OpenAI-compatible /v1/embeddings shape most local embedding servers
-    # (TEI, vLLM, LocalAI, Ollama's OpenAI-compat mode, ...) expose, so
-    # picking a specific local model later is a config change.
+    # are configured. The canonical deployment targets NVIDIA NIM's
+    # OpenAI-compatible /v1/embeddings endpoint.
     embedding_base_url: str | None = None
     embedding_api_key: str = "not-needed"  # noqa: S105
     embedding_model: str | None = None
     embedding_trust_env: bool = True
     embedding_tls_verify: bool = True
-    embedding_timeout_seconds: float = Field(default=60.0, gt=0)
+    embedding_timeout_seconds: float = Field(default=300.0, gt=0)
     embedding_basic_auth_username: str | None = None
     embedding_basic_auth_password: SecretStr | None = None
     # Must match document_chunk.embedding's vector(N) column — update both
     # together (and run `fi-intel index reembed`) once a model is chosen,
     # since local embedding models vary widely in output dimension
-    # (384/768/1024/1536/4096 are all common). 768 matches migration 0023.
-    embedding_dim: int = 768
+    # (384/768/1024/1536/2048/4096 are all common). 2048 matches the NVIDIA
+    # llama-3.2-nv-embedqa-1b-v2 output and migration 0024.
+    embedding_dim: int = 2048
     # Some embedding model families (e5, bge, gte, ...) are trained
     # asymmetrically and expect a literal prefix on the input text to tell
     # a search query from a passage/document apart (e.g. "query: " /
     # "passage: "). Left blank by default (symmetric treatment) since the
-    # model isn't chosen yet; set both once it is, only if it needs them.
+    # canonical NVIDIA model uses input_type=query/passage instead, so these
+    # remain blank.
     embedding_query_prefix: str = ""
     embedding_document_prefix: str = ""

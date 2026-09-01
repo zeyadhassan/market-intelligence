@@ -1,11 +1,12 @@
 """Model gateway transport settings must not be inherited implicitly."""
 
+import httpx
 import httpx2
 import openai
 import pytest
 
 from fi_intel.config import Settings
-from fi_intel.governance.model_transport import build_llm_client
+from fi_intel.governance.model_transport import build_embedding_http_client, build_llm_client
 
 
 async def test_llm_client_uses_explicit_direct_transport(
@@ -48,3 +49,36 @@ def test_llm_client_rejects_partial_basic_auth() -> None:
 
     with pytest.raises(RuntimeError, match="must be configured together"):
         build_llm_client(settings)
+
+
+def test_embedding_client_uses_explicit_nim_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    expected_client = object()
+
+    def client_factory(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return expected_client
+
+    monkeypatch.setattr(httpx, "AsyncClient", client_factory)
+    settings = Settings(
+        analysis_mode="fixture",
+        embedding_base_url="https://embedding.example/v1",
+        embedding_model="nvidia/llama-3.2-nv-embedqa-1b-v2",
+        embedding_trust_env=False,
+        embedding_tls_verify=False,
+        embedding_timeout_seconds=300,
+    )
+
+    client = build_embedding_http_client(settings)
+
+    assert client is expected_client
+    assert captured == {
+        "base_url": "https://embedding.example/v1/",
+        "auth": None,
+        "headers": {"Accept": "application/json"},
+        "verify": False,
+        "trust_env": False,
+        "timeout": 300.0,
+    }

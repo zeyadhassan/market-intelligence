@@ -2,8 +2,8 @@
 
 import json
 
-import httpx2
-import openai
+import httpx
+import pytest
 
 from fi_intel.config import Settings
 from fi_intel.retrieval.chunking import HashingEmbedder
@@ -15,10 +15,10 @@ from fi_intel.retrieval.embedders.openai_compatible_embedder import (
 
 def _embedder_returning(
     vectors: list[list[float]], **kwargs: object
-) -> tuple[OpenAICompatibleEmbedder, list[httpx2.Request]]:
-    captured: list[httpx2.Request] = []
+) -> tuple[OpenAICompatibleEmbedder, list[httpx.Request]]:
+    captured: list[httpx.Request] = []
 
-    def handler(request: httpx2.Request) -> httpx2.Response:
+    def handler(request: httpx.Request) -> httpx.Response:
         captured.append(request)
         data = [{"object": "embedding", "embedding": v, "index": i} for i, v in enumerate(vectors)]
         body = {
@@ -27,12 +27,11 @@ def _embedder_returning(
             "model": "local-embedder",
             "usage": {"prompt_tokens": 42, "total_tokens": 42},
         }
-        return httpx2.Response(200, json=body)
+        return httpx.Response(200, json=body)
 
-    client = openai.AsyncOpenAI(
+    client = httpx.AsyncClient(
         base_url="http://localhost:9998/v1",
-        api_key="not-needed",
-        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+        transport=httpx.MockTransport(handler),
     )
     dim = len(vectors[0]) if vectors else 0
     embedder = OpenAICompatibleEmbedder(client, model="local-embedder", dim=dim, **kwargs)
@@ -49,8 +48,14 @@ async def test_embed_batch_documents_uses_document_prefix_and_parses_vectors() -
     assert result == [[0.1, 0.2], [0.3, 0.4]]
     (request,) = captured
     body = json.loads(request.content)
-    assert body["input"] == ["passage: chunk one", "passage: chunk two"]
-    assert body["model"] == "local-embedder"
+    assert request.url.path == "/v1/embeddings"
+    assert body == {
+        "input": ["passage: chunk one", "passage: chunk two"],
+        "model": "local-embedder",
+        "input_type": "passage",
+        "modality": "text",
+        "encoding_format": "float",
+    }
 
 
 async def test_embed_batch_query_uses_query_prefix() -> None:
@@ -61,7 +66,9 @@ async def test_embed_batch_query_uses_query_prefix() -> None:
     await embedder.embed_batch(["what is the maturity date?"], kind="query")
 
     (request,) = captured
-    assert json.loads(request.content)["input"] == ["query: what is the maturity date?"]
+    body = json.loads(request.content)
+    assert body["input"] == ["query: what is the maturity date?"]
+    assert body["input_type"] == "query"
 
 
 async def test_no_prefix_by_default() -> None:
@@ -80,15 +87,15 @@ async def test_embed_batch_empty_input_makes_no_request() -> None:
 
 
 async def test_embed_batch_sorts_by_response_index_defensively() -> None:
-    captured: list[httpx2.Request] = []
+    captured: list[httpx.Request] = []
 
-    def handler(request: httpx2.Request) -> httpx2.Response:
+    def handler(request: httpx.Request) -> httpx.Response:
         captured.append(request)
         data = [
             {"object": "embedding", "embedding": [9.0], "index": 1},
             {"object": "embedding", "embedding": [1.0], "index": 0},
         ]
-        return httpx2.Response(
+        return httpx.Response(
             200,
             json={
                 "object": "list",
@@ -98,10 +105,9 @@ async def test_embed_batch_sorts_by_response_index_defensively() -> None:
             },
         )
 
-    client = openai.AsyncOpenAI(
+    client = httpx.AsyncClient(
         base_url="http://localhost:9998/v1",
-        api_key="not-needed",
-        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+        transport=httpx.MockTransport(handler),
     )
     embedder = OpenAICompatibleEmbedder(client, model="m", dim=1)
     result = await embedder.embed_batch(["first", "second"])
@@ -109,9 +115,9 @@ async def test_embed_batch_sorts_by_response_index_defensively() -> None:
 
 
 async def test_dim_and_model_version() -> None:
-    client = openai.AsyncOpenAI(base_url="http://localhost:9998/v1", api_key="not-needed")
-    embedder = OpenAICompatibleEmbedder(client, model="local-embedder", dim=768)
-    assert embedder.dim == 768
+    client = httpx.AsyncClient(base_url="http://localhost:9998/v1")
+    embedder = OpenAICompatibleEmbedder(client, model="local-embedder", dim=2048)
+    assert embedder.dim == 2048
     assert embedder.model_version.startswith("embedding-index-v1:")
 
 
@@ -126,6 +132,14 @@ async def test_model_version_fingerprints_vector_space_configuration() -> None:
     assert changed_document_prefix.model_version != baseline.model_version
 
 
+async def test_embed_batch_rejects_wrong_dimension() -> None:
+    embedder, _ = _embedder_returning([[0.1, 0.2]])
+    embedder._dim = 3
+
+    with pytest.raises(RuntimeError, match="configured dimension 3"):
+        await embedder.embed_batch(["text"])
+
+
 def test_build_embedder_falls_back_to_hashing_when_unconfigured() -> None:
     settings = Settings(analysis_mode="fixture", embedding_base_url=None, embedding_model=None)
     embedder = build_embedder(settings)
@@ -137,12 +151,12 @@ def test_build_embedder_returns_real_embedder_when_configured() -> None:
         analysis_mode="fixture",
         embedding_base_url="http://localhost:9998/v1",
         embedding_model="local-embedder",
-        embedding_dim=768,
+        embedding_dim=2048,
     )
     embedder = build_embedder(settings)
     assert isinstance(embedder, OpenAICompatibleEmbedder)
     assert embedder.model_version.startswith("embedding-index-v1:")
-    assert embedder.dim == 768
+    assert embedder.dim == 2048
 
 
 def test_build_embedder_raises_on_partial_config() -> None:

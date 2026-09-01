@@ -1,13 +1,14 @@
-"""Verify the configured chat and Ollama embedding endpoints without printing secrets."""
+"""Verify the configured chat and embedding endpoints without printing secrets."""
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import sys
 
 from fi_intel.config import Settings
-from fi_intel.governance.model_transport import build_llm_client, build_ollama_http_client
-from fi_intel.retrieval.embedders.ollama_embedder import OllamaEmbedder
+from fi_intel.governance.model_transport import build_embedding_http_client, build_llm_client
+from fi_intel.retrieval.embedders.openai_compatible_embedder import OpenAICompatibleEmbedder
 
 try:
     from deploy.podman_infra import _load_app_environment
@@ -60,11 +61,11 @@ async def smoke_chat(settings: Settings) -> None:
 async def smoke_embedding(settings: Settings) -> None:
     if settings.embedding_model is None:
         raise RuntimeError("FI_INTEL_EMBEDDING_MODEL is required")
-    print("Checking native Ollama embedding endpoint ...", flush=True)
-    ollama = build_ollama_http_client(settings)
+    print("Checking NVIDIA NIM embedding endpoint ...", flush=True)
+    client = build_embedding_http_client(settings)
     try:
-        embedder = OllamaEmbedder(
-            ollama,
+        embedder = OpenAICompatibleEmbedder(
+            client,
             model=settings.embedding_model,
             dim=settings.embedding_dim,
             query_prefix=settings.embedding_query_prefix,
@@ -72,18 +73,35 @@ async def smoke_embedding(settings: Settings) -> None:
         )
         vectors = await embedder.embed_batch(["connectivity check"], kind="query")
     finally:
-        await ollama.aclose()
-    print(f"Ollama embedding endpoint OK ({len(vectors[0])} dimensions)", flush=True)
+        await client.aclose()
+    print(f"NVIDIA NIM embedding endpoint OK ({len(vectors[0])} dimensions)", flush=True)
 
 
-async def _smoke(settings: Settings) -> None:
-    await smoke_chat(settings)
-    await smoke_embedding(settings)
+async def _smoke(settings: Settings, *, chat: bool = True, embedding: bool = True) -> None:
+    if chat:
+        await smoke_chat(settings)
+    if embedding:
+        await smoke_embedding(settings)
 
 
-def main() -> int:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--chat-only", action="store_true")
+    selection.add_argument("--embedding-only", action="store_true")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
     try:
-        asyncio.run(_smoke(_settings_from_app_env()))
+        asyncio.run(
+            _smoke(
+                _settings_from_app_env(),
+                chat=not args.embedding_only,
+                embedding=not args.chat_only,
+            )
+        )
     except Exception as exc:
         print(f"Model smoke check failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1

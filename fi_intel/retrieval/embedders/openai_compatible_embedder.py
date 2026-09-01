@@ -1,4 +1,6 @@
-"""Embedding adapter for an OpenAI-compatible ``/v1/embeddings`` API."""
+"""Embedding adapter for NVIDIA NIM's OpenAI-compatible embeddings API."""
+
+from __future__ import annotations
 
 import hashlib
 import json
@@ -6,25 +8,26 @@ import time
 from datetime import UTC, datetime
 from typing import Literal
 
-import openai
+import httpx
 
 from fi_intel.config import Settings
 from fi_intel.governance.model_registry import ModelArtifact, ModelComponent
+from fi_intel.governance.model_transport import build_embedding_http_client
 from fi_intel.governance.model_usage import ModelCallEvent, ModelUsageLog
 from fi_intel.logging import get_logger
 from fi_intel.retrieval.chunking import Embedder, HashingEmbedder
 
 INDEX_IDENTITY_SCHEMA = "embedding-index-v1"
-INPUT_PREPROCESSING_VERSION = "literal-prefix-v1"
+INPUT_PREPROCESSING_VERSION = "nvidia-nim-input-type-v1"
 SIMILARITY_FUNCTION = "cosine"
 
 
 class OpenAICompatibleEmbedder:
-    """Embedder backed by any OpenAI-compatible /v1/embeddings server."""
+    """Embedder backed by NVIDIA NIM's ``/v1/embeddings`` endpoint."""
 
     def __init__(
         self,
-        client: openai.AsyncOpenAI,
+        client: httpx.AsyncClient,
         model: str,
         dim: int,
         query_prefix: str = "",
@@ -53,6 +56,7 @@ class OpenAICompatibleEmbedder:
                 "document_prefix": document_prefix,
                 "input_preprocessing": INPUT_PREPROCESSING_VERSION,
                 "model": model,
+                "provider": "nvidia-nim-openai-compatible-v1",
                 "query_prefix": query_prefix,
                 "similarity": SIMILARITY_FUNCTION,
             },
@@ -90,28 +94,73 @@ class OpenAICompatibleEmbedder:
         self._log.info("embed.start", n_texts=len(texts), model=self._model)
         started = time.monotonic()
         subject_id = "embedding-batch:" + hashlib.sha256("\x1f".join(payload).encode()).hexdigest()
+        input_type = "query" if kind == "query" else "passage"
         try:
-            response = await self._client.embeddings.create(model=self._model, input=payload)
+            response = await self._client.post(
+                "embeddings",
+                json={
+                    "input": payload,
+                    "model": self._model,
+                    "input_type": input_type,
+                    "modality": "text",
+                    "encoding_format": "float",
+                },
+            )
+            response.raise_for_status()
+            vectors, input_tokens = self._validated_response(response.json(), len(texts))
         except Exception as exc:
             await self._record_call(
                 subject_id=subject_id,
                 latency_ms=(time.monotonic() - started) * 1_000.0,
                 input_tokens=0,
-                status="timed_out" if isinstance(exc, openai.APITimeoutError) else "failed",
+                status="timed_out" if isinstance(exc, httpx.TimeoutException) else "failed",
                 error_type=type(exc).__name__,
             )
             raise
         await self._record_call(
             subject_id=subject_id,
             latency_ms=(time.monotonic() - started) * 1_000.0,
-            input_tokens=response.usage.total_tokens,
+            input_tokens=input_tokens,
             status="succeeded",
         )
-        self._log.info("embed.done", n_texts=len(texts), total_tokens=response.usage.total_tokens)
-        # Servers document `data` as returned in request order but tagged
-        # with `index`; sort defensively rather than trust that.
-        by_index = sorted(response.data, key=lambda d: d.index)
-        return [d.embedding for d in by_index]
+        self._log.info("embed.done", n_texts=len(texts), total_tokens=input_tokens)
+        return vectors
+
+    def _validated_response(
+        self,
+        body: object,
+        expected_count: int,
+    ) -> tuple[list[list[float]], int]:
+        if not isinstance(body, dict):
+            raise RuntimeError("embedding response must be a JSON object")
+        data = body.get("data")
+        if not isinstance(data, list) or len(data) != expected_count:
+            raise RuntimeError("embedding response count does not match the submitted input count")
+        indexed_vectors: dict[int, list[float]] = {}
+        for item in data:
+            if not isinstance(item, dict):
+                raise RuntimeError("embedding response data contains a non-object item")
+            index = item.get("index")
+            raw_vector = item.get("embedding")
+            if not isinstance(index, int) or isinstance(index, bool):
+                raise RuntimeError("embedding response contains an invalid input index")
+            if index < 0 or index >= expected_count or index in indexed_vectors:
+                raise RuntimeError("embedding response contains an out-of-range or duplicate index")
+            if not isinstance(raw_vector, list) or len(raw_vector) != self._dim:
+                raise RuntimeError(
+                    "embedding model returned a vector incompatible with configured dimension "
+                    f"{self._dim}"
+                )
+            if any(
+                isinstance(value, bool) or not isinstance(value, (int, float))
+                for value in raw_vector
+            ):
+                raise RuntimeError("embedding response contains a non-numeric vector value")
+            indexed_vectors[index] = [float(value) for value in raw_vector]
+        usage = body.get("usage")
+        raw_tokens = usage.get("total_tokens", 0) if isinstance(usage, dict) else 0
+        input_tokens = raw_tokens if isinstance(raw_tokens, int) and raw_tokens >= 0 else 0
+        return [indexed_vectors[index] for index in range(expected_count)], input_tokens
 
     async def _record_call(
         self,
@@ -170,9 +219,8 @@ def build_embedder(
             "to keep using the deterministic HashingEmbedder)."
         )
         raise RuntimeError(msg)
-    client = openai.AsyncOpenAI(base_url=base_url, api_key=settings.embedding_api_key)
     return OpenAICompatibleEmbedder(
-        client=client,
+        client=build_embedding_http_client(settings),
         model=model,
         dim=settings.embedding_dim,
         query_prefix=settings.embedding_query_prefix,
@@ -181,3 +229,11 @@ def build_embedder(
         usage_log=usage_log,
         run_id=run_id,
     )
+
+
+__all__ = [
+    "INDEX_IDENTITY_SCHEMA",
+    "INPUT_PREPROCESSING_VERSION",
+    "OpenAICompatibleEmbedder",
+    "build_embedder",
+]
