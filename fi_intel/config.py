@@ -31,29 +31,16 @@ class Settings(BaseSettings):
     postgres_pool_max_size: int = 16
     postgres_command_timeout_seconds: float = 60.0
 
-    # Authenticated identity injected by the deployment boundary. Commands
-    # never accept entitlement group or barrier side as caller-provided flags.
-    access_subject: str = "cli.user"
-    access_principal_id: str = "cli.user"
+    # The local product has one built-in analyst identity. These values are
+    # application defaults, not operator configuration.
     access_entitlement_group: str = "fi_gcc_public"
     access_side: Literal["public", "private"] = "public"
-    access_desks: str = "fi_gcc"
-    access_roles: str = "analyst"
-    access_purposes: str = "market_intelligence"
-
-    # The canonical browser/API path uses the same OIDC and PostgreSQL
-    # configuration namespace as every other process. No second API-specific
-    # settings path or fixed development bearer token is supported.
-    oidc_issuer: str | None = None
-    oidc_audience: str | None = None
-    oidc_jwks_url: str | None = None
 
     # Open-web RSS/Atom sources (fi_intel/sources/adapters/rss.py). SEC.gov
-    # rejects unidentified traffic with 403; the User-Agent must name an
-    # organization and contact per SEC's fair-access policy. The default is
-    # a deliberately unusable placeholder, not a real contact, so demo runs
-    # fail loudly instead of impersonating whoever happens to run this repo.
-    rss_user_agent: str = "market-intelligence-demo set-FI_INTEL_RSS_USER_AGENT@example.invalid"
+    # rejects unidentified traffic with 403. The canonical GCC adapters do
+    # not require operator identity configuration; this local identifier is
+    # used wherever a User-Agent is required.
+    rss_user_agent: str = "fi-intel-local/0.1 (local-product@localhost)"
     sec_edgar_feed_url: str = (
         "https://www.sec.gov/cgi-bin/browse-edgar"
         "?action=getcurrent&type=8-K&company=&dateb=&owner=include&count=100&output=atom"
@@ -121,9 +108,8 @@ class Settings(BaseSettings):
     email_template_version: str = "daily-digest-v1"
     email_max_attempts: int = 3
 
-    # Detector coverage is explicit and fail-closed. These are comma-separated
-    # stable IDs so deployment config can name the authorized source universe
-    # and the desk's covered legal entities without asking an extractor.
+    # Optional advanced coverage filters. Empty means the registered source
+    # universe and entities discovered from source content.
     coverage_required_source_ids: str = ""
     covered_entity_leis: str = ""
     # Measured on the 120-scenario calibration grid (2026-08-26): 60 admits
@@ -166,26 +152,6 @@ class Settings(BaseSettings):
     research_model: str = "gpt-oss-120b"
     entailment_model: str = "gpt-oss-120b"
     reranker_model: str = "gpt-oss-120b"
-    # A single operator-owned deploy/app.env also identifies the evaluated
-    # artifacts that may serve those model roles.  The release synchronizer
-    # derives prompt/schema identities from code, while operators supply the
-    # immutable deployment and evaluation identities below.
-    model_quality_gate_passed: bool = False
-    model_evaluation_dataset_digest: str = ""
-    model_evaluation_report_digest: str = ""
-    model_evaluated_at: str = ""
-    model_registered_at: str = ""
-    model_release_created_by: str = ""
-    extraction_release_id: str = ""
-    extraction_artifact_digest: str = ""
-    reasoning_release_id: str = ""
-    reasoning_artifact_digest: str = ""
-    embedding_release_id: str = ""
-    embedding_artifact_digest: str = ""
-    reranker_release_id: str = ""
-    reranker_artifact_digest: str = ""
-    entailment_release_id: str = ""
-    entailment_artifact_digest: str = ""
     # Chat Completions' reasoning_effort, sent only when set (server support
     # for this varies by stack; omitting it rather than guessing a default
     # avoids a request some servers may reject). gpt-oss itself supports
@@ -208,8 +174,8 @@ class Settings(BaseSettings):
 
     # Embedding provider (fi_intel/retrieval/embedders/). Fixture-only
     # builders may use the deterministic HashingEmbedder. The canonical
-    # service fails closed unless a registry-routed endpoint and artifact
-    # are configured. The canonical deployment targets NVIDIA NIM's
+    # service fails closed unless an explicit endpoint and model are
+    # configured. The canonical deployment targets NVIDIA NIM's
     # OpenAI-compatible /v1/embeddings endpoint.
     embedding_base_url: str | None = None
     embedding_api_key: str = "not-needed"  # noqa: S105

@@ -112,10 +112,12 @@ class OpenAICompatibleReranker:
         model: str,
         usage_log: ModelUsageLog,
         run_id: str,
-        artifact: ModelArtifact,
+        artifact: ModelArtifact | None = None,
         reasoning_effort: str | None = None,
     ) -> None:
-        if artifact.component is not ModelComponent.RERANKER or artifact.model_id != model:
+        if artifact is not None and (
+            artifact.component is not ModelComponent.RERANKER or artifact.model_id != model
+        ):
             raise ValueError("reranker artifact does not match the configured serving model")
         self._client = client
         self._model = model
@@ -126,6 +128,8 @@ class OpenAICompatibleReranker:
 
     @property
     def model_version(self) -> str:
+        if self._artifact is None:
+            return f"configured:{self._model}"
         return (
             f"release:{self._artifact.release_id}:"
             f"{self._artifact.artifact_digest}:{self._artifact.model_id}"
@@ -253,8 +257,8 @@ class OpenAICompatibleReranker:
                 recorded_at=datetime.now(UTC),
                 status=status,
                 error_type=error_type,
-                release_id=self._artifact.release_id,
-                artifact_digest=self._artifact.artifact_digest,
+                release_id=self._artifact.release_id if self._artifact else None,
+                artifact_digest=self._artifact.artifact_digest if self._artifact else None,
                 prompt_version=RERANKER_PROMPT_VERSION,
                 schema_version=RERANKER_SCHEMA_VERSION,
             )
@@ -265,10 +269,10 @@ def build_reranker(
     settings: Settings,
     usage_log: ModelUsageLog,
     run_id: str,
-    artifact: ModelArtifact,
+    artifact: ModelArtifact | None = None,
 ) -> OpenAICompatibleReranker:
     if not settings.llm_base_url:
-        raise RuntimeError("FI_INTEL_LLM_BASE_URL is required for governed reranking")
+        raise RuntimeError("FI_INTEL_LLM_BASE_URL is required for reranking")
     return OpenAICompatibleReranker(
         client=build_llm_client(settings),
         model=settings.reranker_model,

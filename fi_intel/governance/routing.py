@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import BaseModel, ConfigDict
 
@@ -97,8 +98,48 @@ def model_call_lineage(
     )
 
 
+def configured_model_lineage(
+    *,
+    component: ModelComponent,
+    model_id: str,
+    prompt_version: str,
+    schema_version: str,
+    preprocessing_version: str,
+    tool_contract_version: str,
+    settings: dict[str, object],
+) -> ModelCallLineage:
+    """Create stable lineage directly from the effective runtime configuration."""
+
+    identity = json.dumps(
+        {
+            "component": component.value,
+            "model_id": model_id,
+            "prompt_version": prompt_version,
+            "schema_version": schema_version,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return ModelCallLineage(
+        release_id=str(uuid5(NAMESPACE_URL, f"fi-intel:runtime-model:{identity}")),
+        component=component,
+        model_id=model_id,
+        artifact_digest=hashlib.sha256(identity.encode()).hexdigest(),
+        prompt_version=prompt_version,
+        schema_version=schema_version,
+        contract_digest=contract_digest(
+            prompt_version=prompt_version,
+            schema_version=schema_version,
+            preprocessing_version=preprocessing_version,
+            tool_contract_version=tool_contract_version,
+            settings=settings,
+        ),
+    )
+
+
 __all__ = [
     "ModelCallLineage",
+    "configured_model_lineage",
     "contract_digest",
     "model_call_lineage",
     "route_model_release",

@@ -6,7 +6,14 @@ from typing import cast
 from fastapi.testclient import TestClient
 
 from fi_intel.api.app import create_app
-from fi_intel.api.auth import Authenticator, RequestPrincipal, VerifiedToken
+from fi_intel.api.auth import (
+    LOCAL_BEARER_TOKEN,
+    Authenticator,
+    LocalIdentityDirectory,
+    LocalTokenVerifier,
+    RequestPrincipal,
+    VerifiedToken,
+)
 from fi_intel.api.models import EntityView, EvidenceSpanView, SignalView
 from fi_intel.api.service import InMemoryAnalystService
 from fi_intel.application.preflight import canonical_configuration_errors
@@ -15,6 +22,16 @@ from fi_intel.retrieval.entitlement import Principal, Side
 from fi_intel.telemetry import Telemetry
 
 NOW = datetime(2025, 1, 2, 10, tzinfo=UTC)
+
+
+async def test_local_product_authenticates_without_external_identity_configuration() -> None:
+    principal = await Authenticator(LocalTokenVerifier(), LocalIdentityDirectory()).authenticate(
+        LOCAL_BEARER_TOKEN
+    )
+
+    assert principal.subject == "local-analyst"
+    assert principal.principal.entitlement_group == "fi_gcc_public"
+    assert {"analyst", "reviewer", "publisher"} <= principal.roles
 
 
 class _Verifier:
@@ -212,16 +229,14 @@ def test_http_telemetry_uses_normalized_route_and_owned_resources_close() -> Non
     assert resource.closed
 
 
-def test_canonical_settings_refuse_missing_oidc() -> None:
+def test_canonical_settings_need_only_model_endpoints() -> None:
     errors = canonical_configuration_errors(
         Settings(
             llm_base_url="http://model.test/v1",
             embedding_base_url="http://embedding.test/v1",
-            embedding_model="embedding-v1",
-            rss_user_agent="FI Intel contact@example.test",
+            embedding_model="nvidia/llama-3.2-nv-embedqa-1b-v2",
+            embedding_dim=2048,
         )
     )
 
-    assert "FI_INTEL_OIDC_ISSUER is required" in errors
-    assert "FI_INTEL_OIDC_AUDIENCE is required" in errors
-    assert "FI_INTEL_OIDC_JWKS_URL is required" in errors
+    assert errors == ()

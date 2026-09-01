@@ -213,69 +213,6 @@ class OperatorService:
             )
             return replay_id
 
-    async def synchronize_configured_principal(self) -> dict[str, object]:
-        """Provision the configured OIDC subject without ad-hoc database edits."""
-
-        settings = self._resources.settings
-
-        def values(raw: str, label: str) -> list[str]:
-            parsed = sorted({item.strip() for item in raw.split(",") if item.strip()})
-            if not parsed:
-                raise ValueError(f"configured access {label} cannot be empty")
-            return parsed
-
-        desks = values(settings.access_desks, "desks")
-        roles = values(settings.access_roles, "roles")
-        purposes = values(settings.access_purposes, "purposes")
-        unknown_roles = set(roles) - {"analyst", "reviewer", "publisher", "operator", "admin"}
-        if unknown_roles:
-            raise ValueError(f"configured access roles are invalid: {sorted(unknown_roles)}")
-        unknown_purposes = set(purposes) - {"market_intelligence", "operations", "evaluation"}
-        if unknown_purposes:
-            raise ValueError(f"configured access purposes are invalid: {sorted(unknown_purposes)}")
-        actor = f"operator:{settings.access_principal_id}"
-        await self._resources.postgres_pool.execute(
-            """
-            INSERT INTO principal_access (
-                subject, principal_id, entitlement_group, barrier_side,
-                desks, roles, purposes, active, valid_from,
-                created_by, updated_at, updated_by
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,now(),$8,now(),$8)
-            ON CONFLICT (subject) DO UPDATE SET
-                principal_id=EXCLUDED.principal_id,
-                entitlement_group=EXCLUDED.entitlement_group,
-                barrier_side=EXCLUDED.barrier_side,
-                desks=EXCLUDED.desks,
-                roles=EXCLUDED.roles,
-                purposes=EXCLUDED.purposes,
-                active=TRUE,
-                valid_from=now(),
-                valid_until=NULL,
-                revoked_at=NULL,
-                revoked_by=NULL,
-                revocation_reason=NULL,
-                updated_at=now(),
-                updated_by=EXCLUDED.updated_by
-            """,
-            settings.access_subject,
-            settings.access_principal_id,
-            settings.access_entitlement_group,
-            settings.access_side,
-            desks,
-            roles,
-            purposes,
-            actor,
-        )
-        return {
-            "subject": settings.access_subject,
-            "principal_id": settings.access_principal_id,
-            "entitlement_group": settings.access_entitlement_group,
-            "side": settings.access_side,
-            "desks": desks,
-            "roles": roles,
-            "purposes": purposes,
-        }
-
     async def queue_status(self) -> RuntimeQueueStatus:
         pool = self._resources.postgres_pool
         analysis, search, documents, deliveries = await _state_counts(

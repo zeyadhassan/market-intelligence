@@ -24,7 +24,6 @@ dependencies = [
     "openai>=3.0",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
-    "PyJWT[crypto]>=2.9",
     "cryptography>=45.0",
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
@@ -76,6 +75,8 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "ASYNC", "S", "C90", "T20"]
 "fi_intel/cli.py" = ["T20"]
 # Connectivity check is a user-facing command-line script.
 "deploy/model_smoke.py" = ["T20"]
+# Guided launcher is a user-facing interactive command-line script.
+"deploy/product.py" = ["T20"]
 # Evaluation harnesses may print reports.
 "evals/**" = ["T20", "S101"]
 "tests/**" = ["S101"]

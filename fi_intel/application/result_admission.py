@@ -9,7 +9,7 @@ from fi_intel.application.analysis_state import (
     ValidationDecisionRecord,
     _digest,
 )
-from fi_intel.governance.serving import GovernedModelBundle
+from fi_intel.governance.serving import ModelBundle
 from fi_intel.ingest.store import PostgresDocumentStore
 from fi_intel.results.manifest import (
     ChangeClassification,
@@ -37,7 +37,7 @@ class DailyResultAdmission:
     async def build(
         self,
         brief: Brief,
-        bundle: GovernedModelBundle,
+        bundle: ModelBundle,
         *,
         authorization_scope: str,
         run_id: str,

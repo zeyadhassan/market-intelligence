@@ -38,17 +38,18 @@ def test_live_matrix_has_two_official_pages_in_each_gcc_country() -> None:
     assert all(source.url.startswith("https://") for source in GCC_OFFICIAL_SOURCES)
 
 
-def test_default_stage_one_page_describes_the_governed_path() -> None:
-    assert "Governed GCC intelligence" in STAGE_ONE_HTML
-    assert "Authorized sources + governed models" in STAGE_ONE_HTML
+def test_default_stage_one_page_describes_the_local_product_path() -> None:
+    assert "Local GCC intelligence" in STAGE_ONE_HTML
+    assert "Official sources + configured models" in STAGE_ONE_HTML
     assert "Live GCC POC" not in STAGE_ONE_HTML
     assert "deterministic synthetic fixture" not in STAGE_ONE_HTML
     assert "stage-one-demo" not in STAGE_ONE_JS
-    assert "window.sessionStorage" in STAGE_ONE_JS
-    assert "OIDC access token" in STAGE_ONE_JS
+    assert 'return "fi-intel-local"' in STAGE_ONE_JS
+    assert "window.sessionStorage" not in STAGE_ONE_JS
+    assert "OIDC access token" not in STAGE_ONE_JS
 
 
-def test_live_preflight_requires_model_embedding_and_operator_identity() -> None:
+def test_live_preflight_requires_only_model_endpoints() -> None:
     errors = canonical_configuration_errors(
         Settings(
             llm_base_url=None,
@@ -61,7 +62,7 @@ def test_live_preflight_requires_model_embedding_and_operator_identity() -> None
     assert "FI_INTEL_LLM_BASE_URL is required" in errors
     assert "FI_INTEL_EMBEDDING_BASE_URL is required" in errors
     assert "FI_INTEL_EMBEDDING_MODEL is required" in errors
-    assert any("FI_INTEL_RSS_USER_AGENT" in error for error in errors)
+    assert not any("FI_INTEL_RSS_USER_AGENT" in error for error in errors)
 
 
 def test_no_direct_live_analysis_runtime_or_implementation_remains() -> None:

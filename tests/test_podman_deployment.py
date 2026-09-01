@@ -16,10 +16,10 @@ def test_podman_compose_uses_migration_only_bootstrap_and_qualified_images() -> 
     assert "docker.io/axllent/mailpit:v1.27" in compose
     assert "cypher-shell" in compose
     assert "../.fi-intel/archive:/app/.fi-intel/archive:Z" in compose
-    assert "FI_INTEL_OIDC_ISSUER" in compose
-    assert "FI_INTEL_OIDC_AUDIENCE" in compose
-    assert "FI_INTEL_OIDC_JWKS_URL" in compose
-    assert "FI_INTEL_ACCESS_SUBJECT" in compose
+    assert "FI_INTEL_OIDC_ISSUER" not in compose
+    assert "FI_INTEL_MODEL_EVALUATION_DATASET_DIGEST" not in compose
+    assert "FI_INTEL_COVERED_ENTITY_LEIS" not in compose
+    assert '"127.0.0.1:8000:8000"' in compose
     assert 'profiles: ["app"]' in compose
     for service in (
         "source-worker:",
@@ -57,10 +57,13 @@ def test_podman_launcher_enforces_infrastructure_suite() -> None:
     assert "Docker Compose is intentionally not used" in launcher
     assert "label=io.podman.compose.service=" in launcher
     assert '"preflight"' in launcher
-    assert '"operator",' in launcher
-    assert '"sync-access",' in launcher
-    assert '"sync-models",' in launcher
+    assert '"sync-access",' not in launcher
+    assert '"sync-models",' not in launcher
     assert '"--env-file", str(APP_ENV_FILE)' in launcher
+
+    one_command_launcher = Path("run.cmd").read_text(encoding="utf-8")
+    assert "deploy\\product.py" in one_command_launcher
+    assert "pip install -e" in one_command_launcher
 
 
 def test_podman_launcher_accepts_explicit_binary_override(

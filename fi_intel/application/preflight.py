@@ -2,19 +2,9 @@
 
 from __future__ import annotations
 
-import re
-from datetime import datetime
 from urllib.parse import urlsplit
-from uuid import UUID
 
 from fi_intel.config import Settings
-from fi_intel.entities.identifiers import (
-    IdentifierScheme,
-    IdentifierValidationError,
-    normalize_identifier,
-)
-
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _configured(value: str | None) -> bool:
@@ -42,9 +32,7 @@ def canonical_configuration_errors(settings: Settings) -> tuple[str, ...]:
     if settings.analysis_mode == "fixture":
         errors.append("FI_INTEL_ANALYSIS_MODE must not be fixture for the canonical service")
     _validate_model_endpoints(settings, errors)
-    _validate_identity(settings, errors)
     _validate_source_scope(settings, errors)
-    _validate_model_release_configuration(settings, errors)
     _validate_email(settings, errors)
     return tuple(errors)
 
@@ -132,40 +120,9 @@ def _validate_basic_auth_pair(
         )
 
 
-def _validate_identity(settings: Settings, errors: list[str]) -> None:
-    for name, value in (
-        ("FI_INTEL_OIDC_ISSUER", settings.oidc_issuer),
-        ("FI_INTEL_OIDC_AUDIENCE", settings.oidc_audience),
-        ("FI_INTEL_OIDC_JWKS_URL", settings.oidc_jwks_url),
-        ("FI_INTEL_ACCESS_SUBJECT", settings.access_subject),
-        ("FI_INTEL_ACCESS_PRINCIPAL_ID", settings.access_principal_id),
-        ("FI_INTEL_ACCESS_ENTITLEMENT_GROUP", settings.access_entitlement_group),
-        ("FI_INTEL_ACCESS_DESKS", settings.access_desks),
-        ("FI_INTEL_ACCESS_ROLES", settings.access_roles),
-        ("FI_INTEL_ACCESS_PURPOSES", settings.access_purposes),
-    ):
-        if not _configured(value):
-            errors.append(f"{name} is required")
-    for name, value in (
-        ("FI_INTEL_OIDC_ISSUER", settings.oidc_issuer),
-        ("FI_INTEL_OIDC_JWKS_URL", settings.oidc_jwks_url),
-    ):
-        if _configured(value) and not _valid_http_url(value):
-            errors.append(f"{name} must be an http(s) URL")
-    user_agent = settings.rss_user_agent.strip().casefold()
-    if (
-        not _configured(settings.rss_user_agent)
-        or ".invalid" in user_agent
-        or "set-fi_intel" in user_agent
-    ):
-        errors.append("FI_INTEL_RSS_USER_AGENT must identify the operator and contact")
-
-
 def _validate_source_scope(settings: Settings, errors: list[str]) -> None:
     required_sources = _csv(settings.coverage_required_source_ids)
-    if not required_sources or any(not _configured(item) for item in required_sources):
-        errors.append("FI_INTEL_COVERAGE_REQUIRED_SOURCE_IDS is required")
-    else:
+    if required_sources:
         from fi_intel.sources.adapters.gcc_official import GCC_OFFICIAL_SOURCES
 
         registered = {source.source_id for source in GCC_OFFICIAL_SOURCES}
@@ -175,84 +132,6 @@ def _validate_source_scope(settings: Settings, errors: list[str]) -> None:
                 "FI_INTEL_COVERAGE_REQUIRED_SOURCE_IDS contains unregistered sources: "
                 f"{sorted(unknown)}"
             )
-
-    leis = _csv(settings.covered_entity_leis)
-    if not leis or any(not _configured(item) for item in leis):
-        errors.append("FI_INTEL_COVERED_ENTITY_LEIS is required")
-    else:
-        invalid_leis: list[str] = []
-        for lei in leis:
-            try:
-                normalize_identifier(IdentifierScheme.LEI, lei)
-            except IdentifierValidationError:
-                invalid_leis.append(lei)
-        if invalid_leis:
-            errors.append(
-                f"FI_INTEL_COVERED_ENTITY_LEIS contains invalid LEIs: {sorted(invalid_leis)}"
-            )
-
-
-def _validate_model_release_configuration(settings: Settings, errors: list[str]) -> None:
-    if not settings.model_quality_gate_passed:
-        errors.append("FI_INTEL_MODEL_QUALITY_GATE_PASSED must be true")
-    _validate_model_digests(settings, errors)
-    _validate_model_release_ids(settings, errors)
-    _validate_model_timestamps(settings, errors)
-    if not _configured(settings.model_release_created_by):
-        errors.append("FI_INTEL_MODEL_RELEASE_CREATED_BY is required")
-
-
-def _validate_model_digests(settings: Settings, errors: list[str]) -> None:
-    for name, value in (
-        (
-            "FI_INTEL_MODEL_EVALUATION_DATASET_DIGEST",
-            settings.model_evaluation_dataset_digest,
-        ),
-        ("FI_INTEL_MODEL_EVALUATION_REPORT_DIGEST", settings.model_evaluation_report_digest),
-        ("FI_INTEL_EXTRACTION_ARTIFACT_DIGEST", settings.extraction_artifact_digest),
-        ("FI_INTEL_REASONING_ARTIFACT_DIGEST", settings.reasoning_artifact_digest),
-        ("FI_INTEL_EMBEDDING_ARTIFACT_DIGEST", settings.embedding_artifact_digest),
-        ("FI_INTEL_RERANKER_ARTIFACT_DIGEST", settings.reranker_artifact_digest),
-        ("FI_INTEL_ENTAILMENT_ARTIFACT_DIGEST", settings.entailment_artifact_digest),
-    ):
-        if _SHA256.fullmatch(value) is None or value == "0" * 64:
-            errors.append(f"{name} must be a non-placeholder lowercase SHA-256 digest")
-
-
-def _validate_model_release_ids(settings: Settings, errors: list[str]) -> None:
-    for name, value in (
-        ("FI_INTEL_EXTRACTION_RELEASE_ID", settings.extraction_release_id),
-        ("FI_INTEL_REASONING_RELEASE_ID", settings.reasoning_release_id),
-        ("FI_INTEL_EMBEDDING_RELEASE_ID", settings.embedding_release_id),
-        ("FI_INTEL_RERANKER_RELEASE_ID", settings.reranker_release_id),
-        ("FI_INTEL_ENTAILMENT_RELEASE_ID", settings.entailment_release_id),
-    ):
-        try:
-            parsed = UUID(value)
-        except ValueError:
-            parsed = UUID(int=0)
-        if parsed.int == 0:
-            errors.append(f"{name} must be a non-placeholder UUID")
-
-
-def _validate_model_timestamps(settings: Settings, errors: list[str]) -> None:
-    timestamps: dict[str, datetime] = {}
-    for name, value in (
-        ("FI_INTEL_MODEL_EVALUATED_AT", settings.model_evaluated_at),
-        ("FI_INTEL_MODEL_REGISTERED_AT", settings.model_registered_at),
-    ):
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            if parsed.tzinfo is None:
-                raise ValueError
-            timestamps[name] = parsed
-        except ValueError:
-            errors.append(f"{name} must be an ISO-8601 timestamp with a timezone")
-    if (
-        len(timestamps) == 2
-        and timestamps["FI_INTEL_MODEL_EVALUATED_AT"] > timestamps["FI_INTEL_MODEL_REGISTERED_AT"]
-    ):
-        errors.append("FI_INTEL_MODEL_EVALUATED_AT must not follow registration")
 
 
 def _validate_email(settings: Settings, errors: list[str]) -> None:

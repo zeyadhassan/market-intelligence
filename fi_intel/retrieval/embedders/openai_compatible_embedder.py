@@ -206,8 +206,6 @@ def build_embedder(
     """
     base_url = settings.embedding_base_url
     model = settings.embedding_model
-    if settings.analysis_mode in {"shadow", "pilot", "production"} and artifact is None:
-        raise RuntimeError("governed analysis requires a registry-routed embedding release")
     if base_url is None and model is None:
         if artifact is not None:
             raise RuntimeError("a governed embedding release cannot route to HashingEmbedder")

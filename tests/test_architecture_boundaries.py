@@ -66,7 +66,7 @@ def test_only_graph_client_touches_the_private_driver() -> None:
 def test_nonfixture_runtime_rejects_authoritative_graph_writes() -> None:
     capabilities = RuntimeCapabilities(
         execution_path=ExecutionPath.UNIFIED_PIPELINE,
-        all_models_registry_routed=True,
+        all_models_configured=True,
         coverage_computed_server_side=True,
         durable_step_store=True,
         authoritative_neo4j_writes=True,
@@ -86,7 +86,6 @@ def test_cli_exposes_independent_process_and_recovery_entrypoints() -> None:
         '@worker_app.command("delivery")',
         '@scheduler_app.command("run")',
         '@operator_app.command("dead-letters")',
-        '@operator_app.command("sync-access")',
         '@operator_app.command("replay-outbox")',
         '@operator_app.command("replay-document")',
         '@operator_app.command("rebuild-graph")',

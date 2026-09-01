@@ -16,42 +16,46 @@ test-only and are not exposed as a second runtime command path.
 The checked-in official GCC source matrix is bounded development coverage. It is not a licensed or
 complete GCC FIG universe, and repository tests do not prove live model quality or analyst utility.
 
+## One-command start on Windows
+
+From the repository root, run:
+
+```powershell
+.\run.cmd
+```
+
+On first use, this automatically creates `deploy/app.env` with the supplied chat and NVIDIA
+embedding gateways. There are no OIDC/JWKS, LEI, evaluation-dataset, artifact, release-ID, or model
+admin fields. The same command checks both gateways, starts Podman when needed, applies migrations,
+starts every service, and opens `http://127.0.0.1:8000/`. The browser uses one built-in local analyst
+and never asks for a token.
+
+To fill and validate `deploy/app.env` without starting anything:
+
+```powershell
+.\run.cmd --configure-only
+```
+
 ## One runtime configuration file
 
 Use Python 3.11 or later. Create a virtual environment and install the locked development
 dependencies using the package workflow for your environment. The commands below assume the local
 Windows virtual environment at `.venv`.
 
-The canonical service reads its operator-owned settings from [`deploy/app.env`](deploy/app.env).
-That file is ignored by Git because it can contain endpoint credentials, identity subjects,
-recipient addresses, and an encryption key. Create it once from the complete checked-in template:
+The canonical service reads model settings from [`deploy/app.env`](deploy/app.env). It is ignored
+by Git because it may contain endpoint credentials. `run.cmd` creates and upgrades it automatically;
+manual copying is optional:
 
 ```powershell
 Copy-Item deploy\app.env.example deploy\app.env
 ```
 
-Open `deploy/app.env` and replace every `REPLACE_WITH_*` or all-zero value. Its sections cover all
-configuration that was previously missing:
-
-- model and embedding endpoint URLs, proxy/TLS policy, Basic Auth, exact model IDs, embedding
-  dimension and prefixes;
-- immutable release UUIDs and SHA-256 digests for the five governed serving roles;
-- the evaluation dataset/report digests, timestamps, responsible operator, and explicit passed gate;
-- the real source-request organization/contact, required official-source IDs, and covered-entity
-  LEIs;
-- OIDC issuer, audience, JWKS URL, subject, server-owned principal, desk, roles, and purposes;
-- sandbox email enablement, sender, allowlist and Fernet destination-encryption key; and
-- optional OpenTelemetry endpoints.
+The file contains only the chat and embedding endpoint URLs, optional endpoint credentials,
+transport settings, model IDs, and the fixed 2,048 embedding dimension. The checked-in values are
+already ready for the supplied UAT endpoints, so normally no editing is needed.
 
 Use a URL reachable from inside Podman. For endpoints running on this Windows host, use
-`host.containers.internal` instead of `127.0.0.1`. Generate release UUIDs with
-`[guid]::NewGuid()`. Generate a lowercase SHA-256 with
-`(Get-FileHash -Algorithm SHA256 PATH).Hash.ToLowerInvariant()`. Generate the email Fernet key only
-when enabling email:
-
-```powershell
-.\.venv\Scripts\python.exe -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
+`host.containers.internal` instead of `127.0.0.1`.
 
 ### Configure the server models
 
@@ -103,11 +107,6 @@ index because pgvector's full-precision HNSW limit is 2,000 dimensions. The proj
 automatically re-embeds authoritative documents with NVIDIA NIM; source documents, evidence, and
 assertions are retained.
 
-`FI_INTEL_MODEL_QUALITY_GATE_PASSED=true` is an operator assertion about the two configured
-evaluation digests. Do not set it before that report has actually passed. `MODEL_EVALUATED_AT`
-must be no later than `MODEL_REGISTERED_AT`, and both must be timezone-aware ISO-8601 values such
-as `2026-08-30T08:00:00+02:00`. Covered entities must be comma-separated, checksum-valid LEIs.
-
 Validate the file without starting Podman services:
 
 ```powershell
@@ -154,26 +153,12 @@ This starts the API, scheduler, source, projection/document-processing, analysis
 delivery processes, plus PostgreSQL/pgvector, Neo4j, and Mailpit. The development raw archive is
 mounted explicitly at `.fi-intel/archive`; Mailpit is visible at `http://127.0.0.1:8025/`.
 `app-up` fails before application startup if the configuration is incomplete, applies migrations,
-then idempotently synchronizes the configured OIDC assignment and five evaluated model releases.
-It does not silently substitute fixtures or an ungoverned model.
+then starts the application profile. Model lineage is derived automatically from the effective
+model and prompt configuration; no model admin setup is required.
 
-Open `http://127.0.0.1:8000/`. The API only enqueues durable work and reads PostgreSQL read models; it
-does not fetch sources or launch analysis tasks. On first use, the page asks for an OIDC access
-token and holds it only in browser session storage.
-
-To enable email, set the three protected email fields in `deploy/app.env`, rerun `app-up`, then
-configure one encrypted, allowlisted development recipient inside the delivery container:
-
-```powershell
-podman compose --file deploy\compose.yml --env-file deploy\app.env --profile app run --rm `
-  delivery-worker notification set-email analyst@example.test `
-  --topics upcoming-maturities,ratings-capital-pressure `
-  --timezone Europe/Berlin --send-time 07:00 --frequency weekdays
-```
-
-Pause with `--frequency paused`; append an unsubscribe transition with `--unsubscribe`. Delivery
-rechecks the account, current authorization scope, topic subscriptions, preference, kill switch,
-and destination immediately before SMTP acceptance.
+Open `http://127.0.0.1:8000/`. The API only enqueues durable work and reads PostgreSQL read models;
+it does not fetch sources or launch analysis tasks. The loopback-only browser UI signs in as the
+built-in local analyst automatically.
 
 Inspect logs and durable state without database surgery:
 

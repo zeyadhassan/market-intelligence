@@ -54,7 +54,7 @@ app.add_typer(notification_app, name="notification")
 
 @app.command("preflight")
 def preflight() -> None:
-    """Validate the operator-owned canonical runtime configuration."""
+    """Validate the local product's model configuration."""
 
     from fi_intel.application.preflight import canonical_configuration_errors
 
@@ -65,11 +65,10 @@ def preflight() -> None:
         for error in errors:
             print(f"- {error}")
         raise typer.Exit(code=2)
-    print("Canonical runtime configuration is complete.")
+    print("Local product configuration is complete.")
     print(f"mode: {settings.analysis_mode}")
-    print(f"covered entities: {len(settings.covered_entity_leis.split(','))}")
-    print(f"required sources: {len(settings.coverage_required_source_ids.split(','))}")
-    print("governed model releases: extraction, reasoning, embedding, reranker, entailment")
+    print("access: built-in local analyst")
+    print("models: extraction, reasoning, embedding, reranker, entailment")
 
 
 async def _with_resources(
@@ -254,63 +253,6 @@ def operator_status() -> None:
     _show(asyncio.run(_with_resources(run, graph_required=False)))
 
 
-@operator_app.command("sync-access")
-def operator_sync_access(
-    confirm: Annotated[
-        str,
-        typer.Option(help="Type ACCESS to apply the configured OIDC access assignment."),
-    ] = "",
-) -> None:
-    """Create or reactivate the FI_INTEL_ACCESS_* principal assignment."""
-
-    if confirm != "ACCESS":
-        raise typer.BadParameter("--confirm ACCESS is required")
-    from fi_intel.application.operations import OperatorService
-
-    async def run(resources: RuntimeResources) -> object:
-        return await OperatorService(resources).synchronize_configured_principal()
-
-    _show(asyncio.run(_with_resources(run, graph_required=False)))
-
-
-@operator_app.command("sync-models")
-def operator_sync_models(
-    confirm: Annotated[
-        str,
-        typer.Option(help="Type MODELS to register and activate configured evaluated releases."),
-    ] = "",
-) -> None:
-    """Idempotently register the five releases declared in deploy/app.env."""
-
-    if confirm != "MODELS":
-        raise typer.BadParameter("--confirm MODELS is required")
-    from fi_intel.application.preflight import canonical_configuration_errors
-    from fi_intel.governance.configured_releases import synchronize_configured_releases
-    from fi_intel.governance.model_registry import PostgresModelRegistry
-
-    async def run(resources: RuntimeResources) -> object:
-        errors = canonical_configuration_errors(resources.settings)
-        if errors:
-            raise ValueError("canonical configuration is incomplete: " + "; ".join(errors))
-        registry = PostgresModelRegistry(
-            resources.settings.postgres_dsn,
-            pool=resources.postgres_pool,
-        )
-        snapshots = await synchronize_configured_releases(resources.settings, registry)
-        return [
-            {
-                "component": snapshot.artifact.component.value,
-                "model_id": snapshot.artifact.model_id,
-                "release_id": str(snapshot.artifact.release_id),
-                "state": snapshot.state.value,
-                "rollout_percent": snapshot.rollout_percent,
-            }
-            for snapshot in snapshots
-        ]
-
-    _show(asyncio.run(_with_resources(run, graph_required=False)))
-
-
 @operator_app.command("dead-letters")
 def operator_dead_letters(
     limit: Annotated[int, typer.Option(min=1, max=1000)] = 100,
@@ -414,7 +356,7 @@ def notification_set_email(
             pool=resources.postgres_pool,
         )
         return await service.set_preference(
-            principal_id=resources.settings.access_principal_id,
+            principal_id="local-analyst",
             destination=destination,
             timezone_name=timezone_name,
             local_send_time=parsed_time,

@@ -38,10 +38,9 @@ from fi_intel.application.runtime_resources import RuntimeResources
 from fi_intel.application.signal_authority import LedgerSignalAuthority
 from fi_intel.application.topics import PostgresTopicCatalog
 from fi_intel.governance.audit import PostgresAuditLog
-from fi_intel.governance.model_registry import PostgresModelRegistry
 from fi_intel.governance.model_usage import ModelCapacityLimits, PostgresModelUsageLog
 from fi_intel.governance.policy import PostgresEntitlementResolver
-from fi_intel.governance.serving import GovernedModelBundle
+from fi_intel.governance.serving import ModelBundle
 from fi_intel.graph.coverage import (
     PostgresFactualCoverageStore,
     SourceOperationsCoverageProvider,
@@ -229,7 +228,6 @@ class ProcessedDailyAnalysis:
         operations = PostgresSourceOperationsStore(settings.postgres_dsn, pool=pool)
         audit = PostgresAuditLog(settings.postgres_dsn, pool=pool)
         usage = PostgresModelUsageLog(settings.postgres_dsn, pool=pool)
-        model_registry = PostgresModelRegistry(settings.postgres_dsn, pool=pool)
         resolution_entry = PostgresGraphEntryResolver(settings.postgres_dsn, pool=pool)
         corpus = PostgresCorpusStore(settings.postgres_dsn, pool=pool)
         factual = PostgresFactualCoverageStore(settings.postgres_dsn, pool=pool)
@@ -240,9 +238,8 @@ class ProcessedDailyAnalysis:
         )
         investigations = PostgresInvestigationStore(settings.postgres_dsn, pool=pool)
         ledger = PostgresIntelligenceLedger(settings.postgres_dsn, pool=pool)
-        bundle = await GovernedModelBundle.build(
+        bundle = await ModelBundle.build(
             settings=settings,
-            registry=model_registry,
             usage_log=usage,
             run_id=run_id,
             subject_id=scope,

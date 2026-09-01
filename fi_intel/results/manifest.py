@@ -131,7 +131,7 @@ def _validate_publishable(manifest: ImmutableResultManifest) -> None:
         raise ValueError("publication requires complete operational and factual coverage")
     required = (
         (manifest.source_versions, "publication requires immutable source versions"),
-        (manifest.model_lineages, "publication requires governed model lineages"),
+        (manifest.model_lineages, "publication requires configured model lineages"),
         (manifest.validation_results, "publication requires validation results"),
     )
     for value, message in required:

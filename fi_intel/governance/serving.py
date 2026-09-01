@@ -1,4 +1,4 @@
-"""Single registry-routed construction path for every model-backed component."""
+"""Single configuration-driven construction path for model-backed components."""
 
 from __future__ import annotations
 
@@ -16,13 +16,9 @@ from fi_intel.agents.reasoning.openai_compatible_reasoning import (
     build_reasoning_model,
 )
 from fi_intel.config import Settings
-from fi_intel.governance.model_registry import (
-    ModelArtifact,
-    ModelComponent,
-    ModelRegistry,
-)
+from fi_intel.governance.model_registry import ModelComponent
 from fi_intel.governance.model_usage import ModelUsageLog
-from fi_intel.governance.routing import ModelCallLineage, model_call_lineage, route_model_release
+from fi_intel.governance.routing import ModelCallLineage, configured_model_lineage
 from fi_intel.ingest.extract import PROMPT_VERSION as EXTRACTION_PROMPT_VERSION
 from fi_intel.ingest.extractors.openai_compatible_extractor import (
     OpenAICompatibleStructuredExtractor,
@@ -43,13 +39,12 @@ from fi_intel.retrieval.reranking import (
 
 
 @dataclass(frozen=True, slots=True)
-class GovernedModelBundle:
+class ModelBundle:
     extractor: OpenAICompatibleStructuredExtractor
     reasoner: OpenAICompatibleReasoningModel
     embedder: OpenAICompatibleEmbedder
     reranker: OpenAICompatibleReranker
     entailment: OpenAICompatibleEntailmentVerifier
-    artifacts: tuple[ModelArtifact, ...]
     lineages: tuple[ModelCallLineage, ...]
 
     @classmethod
@@ -57,79 +52,78 @@ class GovernedModelBundle:
         cls,
         *,
         settings: Settings,
-        registry: ModelRegistry,
         usage_log: ModelUsageLog,
         run_id: str,
-        subject_id: str,
-    ) -> GovernedModelBundle:
-        extraction = await route_model_release(
-            registry,
-            ModelComponent.EXTRACTION,
-            subject_id,
-            prompt_version=EXTRACTION_PROMPT_VERSION,
-            schema_version="extraction-response-v1",
+        subject_id: str = "local-analyst",
+    ) -> ModelBundle:
+        del subject_id
+        embedding_model = settings.embedding_model
+        if embedding_model is None:
+            raise RuntimeError("FI_INTEL_EMBEDDING_MODEL is required")
+        specifications = (
+            (
+                ModelComponent.EXTRACTION,
+                settings.extraction_model,
+                EXTRACTION_PROMPT_VERSION,
+                "extraction-response-v1",
+            ),
+            (
+                ModelComponent.REASONING,
+                settings.research_model,
+                RESEARCH_PROMPT_VERSION,
+                "opportunity-v2",
+            ),
+            (
+                ModelComponent.EMBEDDING,
+                embedding_model,
+                INPUT_PREPROCESSING_VERSION,
+                INDEX_IDENTITY_SCHEMA,
+            ),
+            (
+                ModelComponent.RERANKER,
+                settings.reranker_model,
+                RERANKER_PROMPT_VERSION,
+                RERANKER_SCHEMA_VERSION,
+            ),
+            (
+                ModelComponent.ENTAILMENT,
+                settings.entailment_model,
+                ENTAILMENT_PROMPT_VERSION,
+                ENTAILMENT_SCHEMA_VERSION,
+            ),
         )
-        reasoning = await route_model_release(
-            registry,
-            ModelComponent.REASONING,
-            subject_id,
-            prompt_version=RESEARCH_PROMPT_VERSION,
-            schema_version="opportunity-v2",
-        )
-        embedding = await route_model_release(
-            registry,
-            ModelComponent.EMBEDDING,
-            subject_id,
-            prompt_version=INPUT_PREPROCESSING_VERSION,
-            schema_version=INDEX_IDENTITY_SCHEMA,
-        )
-        reranker = await route_model_release(
-            registry,
-            ModelComponent.RERANKER,
-            subject_id,
-            prompt_version=RERANKER_PROMPT_VERSION,
-            schema_version=RERANKER_SCHEMA_VERSION,
-        )
-        entailment = await route_model_release(
-            registry,
-            ModelComponent.ENTAILMENT,
-            subject_id,
-            prompt_version=ENTAILMENT_PROMPT_VERSION,
-            schema_version=ENTAILMENT_SCHEMA_VERSION,
-        )
-        artifacts = (extraction, reasoning, embedding, reranker, entailment)
         common = {
             "preprocessing_version": "canonical-document-v1",
             "tool_contract_version": "bounded-research-tools-v2",
         }
         lineages = tuple(
-            model_call_lineage(
-                artifact,
+            configured_model_lineage(
+                component=component,
+                model_id=model_id,
+                prompt_version=prompt_version,
+                schema_version=schema_version,
                 **common,
                 settings={
                     "analysis_mode": settings.analysis_mode,
-                    "model_id": artifact.model_id,
+                    "model_id": model_id,
                     "embedding_dim": (
-                        settings.embedding_dim
-                        if artifact.component is ModelComponent.EMBEDDING
-                        else None
+                        settings.embedding_dim if component is ModelComponent.EMBEDDING else None
                     ),
                 },
             )
-            for artifact in artifacts
+            for component, model_id, prompt_version, schema_version in specifications
         )
-        built_embedder = build_embedder(settings, embedding, usage_log, run_id)
+        built_embedder = build_embedder(settings, None, usage_log, run_id)
         if not isinstance(built_embedder, OpenAICompatibleEmbedder):
-            raise RuntimeError("governed serving cannot use a fixture hashing embedder")
+            raise RuntimeError("canonical serving cannot use a fixture hashing embedder")
         return cls(
-            extractor=build_structured_extractor(settings, usage_log, run_id, extraction),
-            reasoner=build_reasoning_model(settings, usage_log, run_id, reasoning),
+            extractor=build_structured_extractor(settings, usage_log, run_id),
+            reasoner=build_reasoning_model(settings, usage_log, run_id),
             embedder=built_embedder,
-            reranker=build_reranker(settings, usage_log, run_id, reranker),
-            entailment=build_entailment_verifier(settings, usage_log, run_id, entailment),
-            artifacts=artifacts,
+            reranker=build_reranker(settings, usage_log, run_id),
+            entailment=build_entailment_verifier(settings, usage_log, run_id),
             lineages=lineages,
         )
 
 
-__all__ = ["GovernedModelBundle"]
+__all__ = ["ModelBundle"]

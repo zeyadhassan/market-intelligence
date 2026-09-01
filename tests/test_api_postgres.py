@@ -8,7 +8,7 @@ from uuid import UUID
 import asyncpg
 import pytest
 
-from fi_intel.api.auth import PostgresIdentityDirectory, RequestPrincipal
+from fi_intel.api.auth import RequestPrincipal
 from fi_intel.api.models import SignalCloseReason, SignalCloseRequest
 from fi_intel.api.postgres import (
     CLOSE_SIGNAL_SELECT_SQL,
@@ -118,23 +118,6 @@ class _CloseConnection:
         return "INSERT 0 1"
 
 
-class _IdentityPool:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[object, ...]]] = []
-
-    async def fetchrow(self, sql: str, *args: object) -> dict[str, object]:
-        self.calls.append((sql, args))
-        return {
-            "subject": "alice",
-            "principal_id": "directory-alice",
-            "entitlement_group": "fi-public",
-            "barrier_side": "public",
-            "desks": ["fi_gcc"],
-            "roles": ["analyst"],
-            "purposes": ["market_intelligence"],
-        }
-
-
 @pytest.mark.parametrize(
     "sql",
     [
@@ -183,23 +166,6 @@ def test_migration_has_identity_audit_policy_and_append_only_contracts() -> None
     assert "assert_policy_not_wider" in normalized
     assert "insert into schema_migration" not in normalized
     assert not normalized.lstrip().startswith("begin;")
-
-
-async def test_identity_directory_applies_validity_and_revocation_in_sql() -> None:
-    pool = _IdentityPool()
-    directory = PostgresIdentityDirectory("postgresql://unused")
-    directory._pool = cast(asyncpg.Pool, pool)  # noqa: SLF001
-
-    principal = await directory.resolve("alice")
-
-    assert principal is not None
-    assert principal.principal.principal_id == "directory-alice"
-    sql, args = pool.calls[0]
-    normalized = " ".join(sql.lower().split())
-    assert "revoked_at is null" in normalized
-    assert "valid_from <= now()" in normalized
-    assert "valid_until is null or valid_until > now()" in normalized
-    assert args == ("alice",)
 
 
 async def test_signal_inbox_uses_one_policy_scoped_query_and_maps_detail() -> None:

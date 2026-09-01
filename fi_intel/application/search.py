@@ -21,10 +21,9 @@ from fi_intel.application.jobs import PrincipalSnapshot, stable_digest
 from fi_intel.application.runtime_resources import RuntimeResources
 from fi_intel.config import Settings
 from fi_intel.governance.audit import PostgresAuditLog
-from fi_intel.governance.model_registry import PostgresModelRegistry
 from fi_intel.governance.model_usage import PostgresModelUsageLog
 from fi_intel.governance.policy import GraphAccessContext, PostgresEntitlementResolver
-from fi_intel.governance.serving import GovernedModelBundle
+from fi_intel.governance.serving import ModelBundle
 from fi_intel.graph.registry import PatternRegistry
 from fi_intel.graph.signals import signal_authorization_scope
 from fi_intel.logging import safe_error_summary
@@ -325,10 +324,8 @@ class CanonicalSearchWorker:
             raise PermissionError("search authorization scope changed before execution")
         audit = PostgresAuditLog(settings.postgres_dsn, pool=pool)
         usage = PostgresModelUsageLog(settings.postgres_dsn, pool=pool)
-        model_registry = PostgresModelRegistry(settings.postgres_dsn, pool=pool)
-        bundle = await GovernedModelBundle.build(
+        bundle = await ModelBundle.build(
             settings=settings,
-            registry=model_registry,
             usage_log=usage,
             run_id=job.search_id,
             subject_id=job.principal.principal_id,

@@ -83,9 +83,11 @@ class OpenAICompatibleEntailmentVerifier:
         reasoning_effort: str | None,
         usage_log: ModelUsageLog,
         run_id: str,
-        artifact: ModelArtifact,
+        artifact: ModelArtifact | None = None,
     ) -> None:
-        if artifact.component is not ModelComponent.ENTAILMENT or artifact.model_id != model:
+        if artifact is not None and (
+            artifact.component is not ModelComponent.ENTAILMENT or artifact.model_id != model
+        ):
             raise ValueError("entailment artifact does not match the configured serving model")
         self._client = client
         self._model = model
@@ -97,6 +99,8 @@ class OpenAICompatibleEntailmentVerifier:
 
     @property
     def model_version(self) -> str:
+        if self._artifact is None:
+            return f"configured:{self._model}"
         return (
             f"release:{self._artifact.release_id}:"
             f"{self._artifact.artifact_digest}:{self._artifact.model_id}"
@@ -193,8 +197,8 @@ class OpenAICompatibleEntailmentVerifier:
                 recorded_at=datetime.now(UTC),
                 status=status,
                 error_type=error_type,
-                release_id=self._artifact.release_id,
-                artifact_digest=self._artifact.artifact_digest,
+                release_id=self._artifact.release_id if self._artifact else None,
+                artifact_digest=self._artifact.artifact_digest if self._artifact else None,
                 prompt_version=ENTAILMENT_PROMPT_VERSION,
                 schema_version=ENTAILMENT_SCHEMA_VERSION,
             )
@@ -205,7 +209,7 @@ def build_entailment_verifier(
     settings: Settings,
     usage_log: ModelUsageLog,
     run_id: str,
-    artifact: ModelArtifact,
+    artifact: ModelArtifact | None = None,
 ) -> OpenAICompatibleEntailmentVerifier:
     if not settings.llm_base_url:
         raise RuntimeError("FI_INTEL_LLM_BASE_URL is required for semantic entailment")

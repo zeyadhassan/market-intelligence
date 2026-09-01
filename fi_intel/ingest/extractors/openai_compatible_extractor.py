@@ -268,8 +268,6 @@ def build_structured_extractor(
     artifact: ModelArtifact | None = None,
 ) -> OpenAICompatibleStructuredExtractor:
     """Build the configured extractor, raising when no endpoint is set."""
-    if settings.analysis_mode in {"shadow", "pilot", "production"} and artifact is None:
-        raise RuntimeError("governed analysis requires a registry-routed extraction release")
     if not settings.llm_base_url:
         msg = (
             "FI_INTEL_LLM_BASE_URL is not set; cannot construct a real "

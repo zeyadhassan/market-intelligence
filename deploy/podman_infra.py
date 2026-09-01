@@ -224,29 +224,6 @@ def _migrate(env: dict[str, str] | None = None) -> None:
     _run(sys.executable, "-m", "fi_intel.cli", "db", "migrate", env=env)
 
 
-def _configure_application(env: dict[str, str]) -> None:
-    _run(
-        sys.executable,
-        "-m",
-        "fi_intel.cli",
-        "operator",
-        "sync-access",
-        "--confirm",
-        "ACCESS",
-        env=env,
-    )
-    _run(
-        sys.executable,
-        "-m",
-        "fi_intel.cli",
-        "operator",
-        "sync-models",
-        "--confirm",
-        "MODELS",
-        env=env,
-    )
-
-
 def _test() -> None:
     environment = os.environ.copy()
     environment.update(
@@ -299,7 +276,6 @@ def main() -> int:
             _compose("up", "--detach")
             _wait_healthy()
             _migrate(app_environment)
-            _configure_application(app_environment)
             _compose(
                 "--profile",
                 "app",

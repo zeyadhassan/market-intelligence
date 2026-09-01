@@ -56,7 +56,7 @@ def test_every_nonfixture_mode_rejects_ungoverned_capabilities() -> None:
     capabilities = RuntimeCapabilities(
         execution_path=ExecutionPath.FIXTURE_REGRESSION,
         uses_hashing_embeddings=True,
-        all_models_registry_routed=False,
+        all_models_configured=False,
         coverage_computed_server_side=False,
         durable_step_store=False,
     )

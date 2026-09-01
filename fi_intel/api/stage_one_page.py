@@ -17,7 +17,7 @@ STAGE_ONE_HTML = """<!doctype html>
       <span><strong>Opportunity Watch</strong><small>Fresh signals for the topics you follow</small></span>
     </a>
     <div class="header-meta">
-      <span class="demo-badge">Governed GCC intelligence</span>
+      <span class="demo-badge">Local GCC intelligence</span>
       <span class="analyst-name">Demo analyst</span>
     </div>
   </header>
@@ -32,7 +32,7 @@ STAGE_ONE_HTML = """<!doctype html>
       </div>
       <div class="freshness-card" aria-label="Live analysis status">
         <span class="pulse" aria-hidden="true"></span>
-        <span><strong>Live analysis on demand</strong><small>Authorized sources + governed models</small></span>
+        <span><strong>Live analysis on demand</strong><small>Official sources + configured models</small></span>
       </div>
     </section>
 
@@ -73,9 +73,9 @@ STAGE_ONE_HTML = """<!doctype html>
 """
 
 STAGE_ONE_FIXTURE_HTML = (
-    STAGE_ONE_HTML.replace("Governed GCC intelligence", "Synthetic fixture")
+    STAGE_ONE_HTML.replace("Local GCC intelligence", "Synthetic fixture")
     .replace("Live analysis on demand", "Fixture analysis ready")
-    .replace("Authorized sources + governed models", "No network or LLM calls")
+    .replace("Official sources + configured models", "No network or LLM calls")
     .replace("Live-source scope", "Fixture scope")
     .replace(
         "Each run fetches official public GCC sources and calls the configured LLM. The source\n"
@@ -620,18 +620,11 @@ __FI_INTEL_TOKEN_PROVIDER__
 })();
 """
 
-_CANONICAL_AUTH_SCRIPT = """  const TOKEN_STORAGE_KEY = "fi_intel_oidc_access_token";
-  function bearerToken() {
-    let token = window.sessionStorage.getItem(TOKEN_STORAGE_KEY);
-    if (!token) {
-      token = window.prompt("Paste your OIDC access token for this browser session:");
-      if (!token) throw new Error("OIDC bearer token is required");
-      window.sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
-    }
-    return token;
+_LOCAL_AUTH_SCRIPT = """  function bearerToken() {
+    return "fi-intel-local";
   }
   function clearBearerToken() {
-    window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+    return undefined;
   }"""
 
 _FIXTURE_AUTH_SCRIPT = """  function bearerToken() {
@@ -641,7 +634,7 @@ _FIXTURE_AUTH_SCRIPT = """  function bearerToken() {
     return undefined;
   }"""
 
-STAGE_ONE_JS = _STAGE_ONE_JS_TEMPLATE.replace("__FI_INTEL_TOKEN_PROVIDER__", _CANONICAL_AUTH_SCRIPT)
+STAGE_ONE_JS = _STAGE_ONE_JS_TEMPLATE.replace("__FI_INTEL_TOKEN_PROVIDER__", _LOCAL_AUTH_SCRIPT)
 STAGE_ONE_FIXTURE_JS = _STAGE_ONE_JS_TEMPLATE.replace(
     "__FI_INTEL_TOKEN_PROVIDER__", _FIXTURE_AUTH_SCRIPT
 )

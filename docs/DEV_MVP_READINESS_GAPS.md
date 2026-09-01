@@ -215,9 +215,9 @@ The MVP must never:
   material fingerprints do not create new result versions.
 - Stage One renders durable queue, coverage, lifecycle, evidence, contradiction, uncertainty,
   exposure, and evaluation state from PostgreSQL.
-- The one browser/API path verifies OIDC tokens, resolves current server-owned access attributes
-  from PostgreSQL, and keeps a pasted development token only in browser session storage. Fixed
-  fixture credentials are confined to test-only factories.
+- The one browser/API path uses a built-in local analyst identity and automatic browser
+  authentication. Every exposed development port is bound to loopback; multi-user identity and
+  remote deployment are outside this local-product boundary.
 - Typed asynchronous entity, pattern, thematic, and mixed GraphRAG search exists with allowlisted
   two-hop traversal and PostgreSQL reauthorization of graph identities.
 - Versioned notification preferences, encrypted development destinations, immutable digests,
@@ -230,8 +230,8 @@ The MVP must never:
 - Safe metrics cover source, queue, coverage, retrieval, model, result, and delivery transitions;
   correlation and model-call lineage remain durable.
 - Bounded official GCC adapters exist.
-- Extraction, reasoning, embedding, reranking, and entailment have governed model-routing
-  foundations and call-lineage records.
+- Extraction, reasoning, embedding, reranking, and entailment use the one effective model
+  configuration and produce deterministic call-lineage records without a model-admin setup step.
 
 ### Verification status and qualification boundary
 
@@ -247,11 +247,13 @@ The MVP must never:
 - Licensed-source completeness, named-analyst usefulness, Arabic-language quality, production
   statistical confidence, and unrestricted delivery remain in the explicitly deferred
   qualification phase below. They are not represented as implemented or proven here.
-- External runtime inputs are consolidated in the checked-in `deploy/app.env.example`; the
-  operator copies it to the ignored `deploy/app.env`. `podman_infra.py preflight` validates every
-  required endpoint, model release, evaluation digest, coverage, OIDC, access, and enabled-email
-  field without printing secrets. `app-up` then synchronizes the configured access assignment and
-  evaluated model releases before starting the one application profile.
+- External runtime inputs are limited to the chat and embedding settings in
+  `deploy/app.env.example`. `run.cmd` copies or upgrades the ignored `deploy/app.env`
+  automatically, validates the two endpoints, starts Podman, and opens the product. It requires no
+  OIDC/JWKS metadata, access synchronization, LEI list, evaluation dataset, artifact digest, release
+  UUID, or model-admin step.
+- Model-call lineage is derived deterministically from the effective model IDs and runtime
+  contracts. This is operational traceability, not an evaluation or production-quality claim.
 - The server model route is now concrete rather than placeholder-only: chat uses the pulled UAT
   OpenAI-compatible `openai/gpt-oss-120b` endpoint, while embeddings use the NVIDIA NIM
   `/v1/embeddings` route with `nvidia/llama-3.2-nv-embedqa-1b-v2`, query/passage `input_type`

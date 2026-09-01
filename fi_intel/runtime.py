@@ -27,7 +27,7 @@ class RuntimeCapabilities(BaseModel):
     execution_path: ExecutionPath
     uses_fixture_data: bool = False
     uses_hashing_embeddings: bool = False
-    all_models_registry_routed: bool = False
+    all_models_configured: bool = False
     coverage_computed_server_side: bool = False
     durable_step_store: bool = False
     authoritative_neo4j_writes: bool = False
@@ -55,8 +55,8 @@ def validate_runtime_mode(  # noqa: C901
             errors.append(f"{selected.value} mode cannot use fixture data")
         if capabilities.uses_hashing_embeddings:
             errors.append(f"{selected.value} mode cannot use hashing embeddings")
-        if not capabilities.all_models_registry_routed:
-            errors.append(f"{selected.value} mode requires registry-routed models")
+        if not capabilities.all_models_configured:
+            errors.append(f"{selected.value} mode requires explicitly configured models")
         if not capabilities.coverage_computed_server_side:
             errors.append(f"{selected.value} mode requires server-computed coverage")
         if not capabilities.durable_step_store:

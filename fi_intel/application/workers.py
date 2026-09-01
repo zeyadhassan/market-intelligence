@@ -27,10 +27,9 @@ from fi_intel.application.policies import (
 from fi_intel.application.raw import RawHeader, RawSourceEnvelope
 from fi_intel.application.runtime_resources import RuntimeResources
 from fi_intel.application.source_ingestion import SourceIngestionCoordinator, SourceRunResult
-from fi_intel.governance.model_registry import PostgresModelRegistry
 from fi_intel.governance.model_usage import PostgresModelUsageLog
 from fi_intel.governance.policy import PostgresEntitlementResolver
-from fi_intel.governance.serving import GovernedModelBundle
+from fi_intel.governance.serving import ModelBundle
 from fi_intel.graph.registry import PatternRegistry
 from fi_intel.graph.signals import Signal
 from fi_intel.graph.writer import AssertionWriter
@@ -240,11 +239,9 @@ class CanonicalProjectionWorker:
         resolution = PostgresResolutionStore(settings.postgres_dsn, pool=pool)
         proposed = PostgresProposedTypeSink(settings.postgres_dsn, pool=pool)
         usage = PostgresModelUsageLog(settings.postgres_dsn, pool=pool)
-        registry_store = PostgresModelRegistry(settings.postgres_dsn, pool=pool)
         corpus = PostgresCorpusStore(settings.postgres_dsn, pool=pool)
-        bundle = await GovernedModelBundle.build(
+        bundle = await ModelBundle.build(
             settings=settings,
-            registry=registry_store,
             usage_log=usage,
             run_id=run_id,
             subject_id="canonical-projection-worker",

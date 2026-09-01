@@ -15,8 +15,8 @@ from fi_intel.api.auth import (
     AuthenticationError,
     Authenticator,
     AuthorizationError,
-    OIDCTokenVerifier,
-    PostgresIdentityDirectory,
+    LocalIdentityDirectory,
+    LocalTokenVerifier,
     RequestPrincipal,
 )
 from fi_intel.api.models import (
@@ -441,18 +441,13 @@ def create_production_app() -> FastAPI:
             execution_path=ExecutionPath.UNIFIED_PIPELINE,
             uses_fixture_data=False,
             uses_hashing_embeddings=False,
-            all_models_registry_routed=True,
+            all_models_configured=True,
             coverage_computed_server_side=True,
             durable_step_store=True,
         ),
     )
-    oidc_issuer = settings.oidc_issuer
-    oidc_audience = settings.oidc_audience
-    oidc_jwks_url = settings.oidc_jwks_url
-    if oidc_issuer is None or oidc_audience is None or oidc_jwks_url is None:
-        raise RuntimeError("canonical OIDC configuration disappeared after preflight")
     postgres = SharedPostgresPool(settings)
-    directory = PostgresIdentityDirectory(settings.postgres_dsn, pool_provider=postgres)
+    directory = LocalIdentityDirectory()
     service = PostgresAnalystService(settings.postgres_dsn, pool_provider=postgres)
     telemetry = Telemetry(
         TelemetryConfig(
@@ -472,7 +467,7 @@ def create_production_app() -> FastAPI:
     )
     return create_app(
         Authenticator(
-            OIDCTokenVerifier(oidc_issuer, oidc_audience, oidc_jwks_url),
+            LocalTokenVerifier(),
             directory,
         ),
         service,
@@ -480,5 +475,5 @@ def create_production_app() -> FastAPI:
         stage_one_service=stage_one,
         canonical_stage_one_only=True,
         owns_telemetry=True,
-        owned_resources=(postgres, directory, service, stage_one),
+        owned_resources=(postgres, service, stage_one),
     )
