@@ -1,144 +1,155 @@
-The embedding model is already running successfully:
+The model works correctly and produces 2,048-dimensional embeddings. We’ll:
 
-llama-3.2-nv-embedqa
-port 8896 → container port 8000
+Make it Compose-managed on GPU 0.
+Keep it out of Nginx depends_on, so it cannot block gateway restarts.
+Route POST /v1/embeddings directly to port 8896.
+Leave router_hybrid_extended.js unchanged.
 
-We’ll expose it as:
+Run each command separately.
 
-POST https://10.1.94.110:8443/v1/embeddings
+1. Prepare and back up
+cd /apps/srv_mlengineering/nim
+cp -p docker-compose-extended.yml docker-compose-extended.yml.before-embedqa
+cp -p nginx/nginx_router_hybrid_extended.conf nginx/nginx_router_hybrid_extended.conf.before-embedqa
 
-Unlike chat models, it uses /v1/embeddings. NVIDIA also requires input_type to be either query or passage. NVIDIA API documentation
+Ensure the NGC credential is available without displaying it:
 
-Do not stop or rename the container yet. First, run these commands individually and paste the output so I can reproduce its exact GPU, cache, mounts, and restart configuration safely in Compose.
+test -n "${NGC_API_KEY:-}" && echo "NGC_API_KEY is available" || echo "NGC_API_KEY is not currently exported"
 
-Check the advertised model ID:
+If it is not exported and ~/.ngc_key is your existing secure key file:
+
+export NGC_API_KEY="$(tr -d '\r\n' < ~/.ngc_key)"
+test -n "${NGC_API_KEY:-}" && echo "NGC_API_KEY is now available"
+2. Add the embedding service to Compose
+
+Paste this entire command:
+
+sed -i '/^  nim-qwen3vl:/i\
+  nim-llama-embedqa:\
+    image: nvcr.io/nim/nvidia/llama-3.2-nv-embedqa-1b-v2:1.10\
+    container_name: llama-3.2-nv-embedqa\
+    restart: unless-stopped\
+    security_opt:\
+      - "label=disable"\
+    ipc: host\
+    ports:\
+      - "8896:8000"\
+    environment:\
+      NGC_API_KEY: "${NGC_API_KEY}"\
+      NO_PROXY: "localhost,127.0.0.1,::1,.cbq.com.qa,10.0.0.0/8"\
+      no_proxy: "localhost,127.0.0.1,::1,.cbq.com.qa,10.0.0.0/8"\
+    volumes:\
+      - "/apps/srv_mlengineering/nim-cache:/opt/nim/.cache"\
+    devices:\
+      - "nvidia.com/gpu=0"\
+\
+' docker-compose-extended.yml
+
+Confirm the new block:
+
+sed -n '/^  nim-llama-embedqa:/,/^  nim-qwen3vl:/p' docker-compose-extended.yml
+
+Validate Compose:
+
+podman-compose -f docker-compose-extended.yml config >/dev/null && echo "Compose configuration OK"
+
+Confirm the service exists:
+
+podman-compose -f docker-compose-extended.yml config --services | grep nim-llama-embedqa
+
+Do not continue if Compose reports an unset NGC_API_KEY or YAML error.
+
+3. Add the Nginx embedding route
+
+This command modifies the bind-mounted Nginx file in place, preserving its inode:
+
+python3 -c 'p="/apps/srv_mlengineering/nim/nginx/nginx_router_hybrid_extended.conf"; f=open(p,"r+"); s=f.read(); a1="    upstream backend_qwen7b {"; a2="        location @_backend_ollama1"; u="    upstream backend_llama_embed {\n        server 10.1.94.110:8896;\n        keepalive 32;\n    }\n\n"; l="        location = /v1/embeddings {\n            proxy_pass http://backend_llama_embed;\n            proxy_http_version 1.1;\n            proxy_set_header Host $host;\n            proxy_set_header Connection \"\";\n            proxy_connect_timeout 10s;\n            proxy_send_timeout 300s;\n            proxy_read_timeout 300s;\n        }\n\n"; assert "upstream backend_llama_embed" not in s, "embedding upstream already exists"; assert a1 in s, "upstream insertion point not found"; assert a2 in s, "location insertion point not found"; s=s.replace(a1,u+a1,1).replace(a2,l+a2,1); f.seek(0); f.write(s); f.truncate(); f.close()'
+
+Confirm the host file:
+
+grep -nC 4 -E 'backend_llama_embed|/v1/embeddings' nginx/nginx_router_hybrid_extended.conf
+
+Confirm the running container sees it:
+
+podman exec nginx-reverseproxy grep -nC 4 -E 'backend_llama_embed|/v1/embeddings' /etc/nginx/nginx.conf
+
+Validate Nginx:
+
+podman exec nginx-reverseproxy nginx -t
+
+Continue only if it reports:
+
+syntax is ok
+test is successful
+
+Reload Nginx:
+
+podman exec nginx-reverseproxy nginx -s reload
+4. Test through the gateway before changing the container
+curl -sk --max-time 300 https://127.0.0.1:8443/v1/embeddings \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "input":["What services does Commercial Bank provide?"],
+    "model":"nvidia/llama-3.2-nv-embedqa-1b-v2",
+    "input_type":"query",
+    "modality":"text",
+    "encoding_format":"float"
+  }' | jq '{model,dimensions:(.data[0].embedding|length),usage}'
+
+Expected:
+
+{
+  "model": "nvidia/llama-3.2-nv-embedqa-1b-v2",
+  "dimensions": 2048
+}
+5. Replace the manual container with the Compose service
+
+Stop the manual container:
+
+podman stop -t 120 llama-3.2-nv-embedqa
+
+Preserve it as a rollback:
+
+podman rename llama-3.2-nv-embedqa llama-3.2-nv-embedqa-manual-backup
+
+Start the Compose service:
+
+podman-compose -f docker-compose-extended.yml up -d --no-deps nim-llama-embedqa
+
+Watch startup:
+
+podman logs --tail 100 -f llama-3.2-nv-embedqa
+
+When it is ready, press Ctrl+C and test directly:
 
 curl -fsS http://127.0.0.1:8896/v1/models | jq
 
-Test the embedding service directly:
+Confirm Compose ownership:
 
-curl -fsS http://127.0.0.1:8896/v1/embeddings \
+podman inspect llama-3.2-nv-embedqa \
+  --format 'status={{.State.Status}} restart={{.HostConfig.RestartPolicy.Name}} compose_service={{index .Config.Labels "io.podman.compose.service"}} network={{.HostConfig.NetworkMode}}'
+
+Expected:
+
+status=running restart=unless-stopped compose_service=nim-llama-embedqa
+
+Test through Nginx again:
+
+curl -sk --max-time 300 https://127.0.0.1:8443/v1/embeddings \
   -H 'Content-Type: application/json' \
-  -d '{
-    "input":["What services does Commercial Bank provide?"],
-    "model":"nvidia/llama-3.2-nv-embedqa-1b-v2",
-    "input_type":"query",
-    "modality":"text",
-    "encoding_format":"float"
-  }' | jq '{model,dimensions:(.data[0].embedding|length),usage}'
+  -d '{"input":["Test from the gateway"],"model":"nvidia/llama-3.2-nv-embedqa-1b-v2","input_type":"query","modality":"text","encoding_format":"float"}' |
+jq '{model,dimensions:(.data[0].embedding|length),usage}'
+6. Test from another PC
 
-Check whether it is already managed by Compose:
+From an internal PC that can reach the server:
 
-podman inspect llama-3.2-nv-embedqa \
-  --format 'status={{.State.Status}} restart={{.HostConfig.RestartPolicy.Name}} network={{.HostConfig.NetworkMode}} compose_service={{index .Config.Labels "io.podman.compose.service"}} compose_project={{index .Config.Labels "io.podman.compose.project"}}'
+curl -k --max-time 300 https://10.1.94.110:8443/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{"input":["External gateway test"],"model":"nvidia/llama-3.2-nv-embedqa-1b-v2","input_type":"query","modality":"text","encoding_format":"float"}'
 
-Show the exact image:
+Use:
 
-podman inspect llama-3.2-nv-embedqa --format 'image={{.Config.Image}}'
+input_type: "passage" when indexing documents.
+input_type: "query" when embedding a search question.
 
-Show its mounted directories:
-
-podman inspect llama-3.2-nv-embedqa \
-  --format '{{range .Mounts}}{{println .Source " -> " .Destination " options=" .Options}}{{end}}'
-
-Show relevant environment variables without exposing the NGC API key:
-
-podman inspect llama-3.2-nv-embedqa \
-  --format '{{range .Config.Env}}{{println .}}{{end}}' |
-grep -E '^(NIM_|CUDA_VISIBLE_DEVICES|NVIDIA_VISIBLE_DEVICES|NO_PROXY|no_proxy)='
-
-Show which physical GPU it sees:
-
-podman exec llama-3.2-nv-embedqa \
-  nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used --format=csv
-
-Show the host GPU-to-UUID mapping:
-
-nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used --format=csv
-
-Finally, show the current Nginx structure:
-
-grep -nE 'upstream |location ' /apps/srv_mlengineering/nim/nginx/nginx_router_hybrid_extended.conf
-
-Once you paste that output, I’ll provide exact pasteable commands to:
-
-Add the embedding service to docker-compose-extended.yml.
-Preserve its current GPU and cache configuration.
-Route /v1/embeddings directly to 10.1.94.110:8896.
-Recreate only the embedding container and Nginx.
-Test it from the server and an outside PC.
-
-We won’t route embeddings through router_hybrid_extended.js; a dedicated Nginx /v1/embeddings location is cleaner because there is currently only one embedding backend.
-______________________________________________________________________________________________________________________
-
-[srv_mlengineering@cbq2-svd-dsgpu2 ~]$ ^C
-[srv_mlengineering@cbq2-svd-dsgpu2 ~]$ curl -fsS http://127.0.0.1:8896/v1/models | jq
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "nvidia/llama-3.2-nv-embedqa-1b-v2",
-      "created": 0,
-      "object": "model",
-      "owned_by": "organization-owner"
-    }
-  ]
-}
-[srv_mlengineering@cbq2-svd-dsgpu2 ~]$ curl -fsS http://127.0.0.1:8896/v1/embeddings \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "input":["What services does Commercial Bank provide?"],
-    "model":"nvidia/llama-3.2-nv-embedqa-1b-v2",
-    "input_type":"query",
-    "modality":"text",
-    "encoding_format":"float"
-  }' | jq '{model,dimensions:(.data[0].embedding|length),usage}'
-{
-  "model": "nvidia/llama-3.2-nv-embedqa-1b-v2",
-  "dimensions": 2048,
-  "usage": {
-    "prompt_tokens": 10,
-    "total_tokens": 10
-  }
-}
-[srv_mlengineering@cbq2-svd-dsgpu2 ~]$ podman inspect llama-3.2-nv-embedqa \
-  --format 'status={{.State.Status}} restart={{.HostConfig.RestartPolicy.Name}} network={{.HostConfig.NetworkMode}} compose_service={{index .Config.Labels "io.podman.compose.service"}} compose_project={{index .Config.Labels "io.podman.compose.project"}}'
-status=running restart=no network=pasta compose_service= compose_project=
-[srv_mlengineering@cbq2-svd-dsgpu2 ~]$ podman inspect llama-3.2-nv-embedqa --format 'image={{.Config.Image}}'
-image=nvcr.io/nim/nvidia/llama-3.2-nv-embedqa-1b-v2:1.10
-[srv_mlengineering@cbq2-svd-dsgpu2 ~]$ podman inspect llama-3.2-nv-embedqa \
-  --format '{{range .Mounts}}{{println .Source " -> " .Destination " options=" .Options}}{{end}}'
-/apps/srv_mlengineering/nim-cache  ->  /opt/nim/.cache  options= [rbind]
-
-[srv_mlengineering@cbq2-svd-dsgpu2 ~]$ podman inspect llama-3.2-nv-embedqa \
-  --format '{{range .Config.Env}}{{println .}}{{end}}' |
-grep -E '^(NIM_|CUDA_VISIBLE_DEVICES|NVIDIA_VISIBLE_DEVICES|NO_PROXY|no_proxy)='
-NVIDIA_VISIBLE_DEVICES=all
-NO_PROXY=localhost,127.0.0.1,::1,.cbq.com.qa,10.0.0.0/8
-no_proxy=localhost,127.0.0.1,::1,.cbq.com.qa,10.0.0.0/8
-NVIDIA_VISIBLE_DEVICES=void
-[srv_mlengineering@cbq2-svd-dsgpu2 ~]$ podman exec llama-3.2-nv-embedqa \
-  nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used --format=csv
-index, uuid, name, memory.total [MiB], memory.used [MiB]
-0, GPU-78aaaccb-3af1-11b3-b1f8-3828c251d9f2, NVIDIA H200-141C, 144384 MiB, 45558 MiB
-[srv_mlengineering@cbq2-svd-dsgpu2 ~]$ nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used --format=csv
-index, uuid, name, memory.total [MiB], memory.used [MiB]
-0, GPU-78aaaccb-3af1-11b3-b1f8-3828c251d9f2, NVIDIA H200-141C, 144384 MiB, 45662 MiB
-1, GPU-7bdd753d-3af1-11b3-a839-80f10ebdf224, NVIDIA H200-141C, 144384 MiB, 131470 MiB
-2, GPU-7eb48ff1-3af1-11b3-9b3a-93ee06a0ff76, NVIDIA H200-141C, 144384 MiB, 137255 MiB
-3, GPU-8187d0e1-3af1-11b3-a3da-3990b94501cf, NVIDIA H200-141C, 144384 MiB, 111082 MiB
-[srv_mlengineering@cbq2-svd-dsgpu2 ~]$ grep -nE 'upstream |location ' /apps/srv_mlengineering/nim/nginx/nginx_router_hybrid_extended.conf
-14:    upstream backend_ollama1 {
-19:   # upstream backend_gemma {
-24:    upstream backend_qwen7b {
-29:    upstream backend_llama70b {
-34:    upstream backend_gptoss120b {
-40:    upstream backend_qwen3vl {
-68:        location / {
-84:        location @_backend_ollama1 { proxy_pass http://backend_ollama1; }
-85:        # location @_backend_gemma { proxy_pass http://backend_gemma; }
-86:        location @_backend_qwen7b { proxy_pass http://backend_qwen7b; }
-87:        location @_backend_llama70b { proxy_pass http://backend_llama70b; }
-88:        location @_backend_qwen3vl { proxy_pass http://backend_qwen3vl; }
-89:        location @_backend_gptoss120b { proxy_pass http://backend_gptoss120b; }
-[srv_mlengineering@cbq2-svd-dsgpu2 ~]$
+One security concern: ports 8896 and 8443 are currently bound on all host interfaces, and the gateway reportedly has no authentication. Client networks should be allowed to reach 8443, while direct backend port 8896 should ideally be blocked by the network firewall.
