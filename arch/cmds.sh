@@ -393,3 +393,64 @@ frame #6: <unknown function> + 0x129c6c (0x7fb9f61eec6c in /lib/x86_64-linux-gnu
   warnings.warn('resource_tracker: There appear to be %d '
 Shutting down services...
   Stopping nginx...
+
+
+
+______________________________
+
+Lower it to 0.78. This preserves the 262K context and tool-calling configuration.
+
+Run these commands one at a time:
+
+podman stop -t 30 nim-qwen3vl
+sed -i '/^  nim-qwen3vl:/,/^  nim-gptoss120b:/ s/--gpu-memory-utilization 0\.80/--gpu-memory-utilization 0.78/' /apps/srv_mlengineering/nim/docker-compose-extended.yml
+
+Confirm the values:
+
+sed -n '/^  nim-qwen3vl:/,/^  nim-gptoss120b:/p' /apps/srv_mlengineering/nim/docker-compose-extended.yml | grep -E 'NIM_MAX_MODEL_LEN|NIM_PASSTHROUGH_ARGS'
+
+You should see:
+
+NIM_MAX_MODEL_LEN: "262144"
+--gpu-memory-utilization 0.78
+--enable-chunked-prefill
+--enable-auto-tool-choice
+--tool-call-parser qwen3_coder
+
+Validate Compose:
+
+podman-compose -f /apps/srv_mlengineering/nim/docker-compose-extended.yml config >/dev/null && echo "Compose configuration OK"
+
+Recreate only Qwen:
+
+podman-compose -f /apps/srv_mlengineering/nim/docker-compose-extended.yml up -d --no-deps --force-recreate nim-qwen3vl
+
+Watch startup:
+
+podman logs --tail 100 -f nim-qwen3vl
+
+Wait for:
+
+Application startup complete
+
+Then press Ctrl+C and verify:
+
+podman inspect nim-qwen3vl --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E '^NIM_(MAX_MODEL_LEN|TENSOR_PARALLEL_SIZE|PASSTHROUGH_ARGS)='
+
+Check its KV-cache capacity:
+
+curl -fsS http://127.0.0.1:8899/metrics | grep 'vllm:cache_config_info'
+
+The kv_cache_size_tokens value must be greater than 262144 for one maximum-length request to fit.
+
+Test directly:
+
+curl -fsS http://127.0.0.1:8899/v1/models | jq
+
+Test through Nginx:
+
+curl -sk --max-time 600 https://127.0.0.1:8443/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"qwen3-vl-235b-awq","messages":[{"role":"user","content":"Reply only with OK"}],"max_tokens":128}' | jq
+
+The subscription-mount and symmetric-memory messages are warnings, not the failure. The actual failure was the 0.80 GPU-memory target. You do not need to restart Nginx or GPT-OSS.
