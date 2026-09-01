@@ -5,8 +5,8 @@ Checking the model gateways ...
 Checking OpenAI-compatible chat endpoint ...
 Chat endpoint OK
 Checking NVIDIA NIM embedding endpoint ...
-2026-09-01 15:26:26 [info     ] embed.start                    component=retrieval.embedders.openai_compatible model=nvidia/llama-3.2-nv-embedqa-1b-v2 n_texts=1
-2026-09-01 15:26:26 [info     ] embed.done                     component=retrieval.embedders.openai_compatible n_texts=1 total_tokens=5
+2026-09-01 15:37:15 [info     ] embed.start                    component=retrieval.embedders.openai_compatible model=nvidia/llama-3.2-nv-embedqa-1b-v2 n_texts=1
+2026-09-01 15:37:15 [info     ] embed.done                     component=retrieval.embedders.openai_compatible n_texts=1 total_tokens=5
 NVIDIA NIM embedding endpoint OK (2048 dimensions)
 
 Starting the product ...
@@ -19,49 +19,306 @@ models: extraction, reasoning, embedding, reranker, entailment
 9b05db12a35460fff0587e009f9326e414a53e9484555547f96d214a2ba98ef7
 d3238814e371a990ab3d08a8e9b13936953e448590a6648233270a2e3e8fcf75
 8ccf5ebc4812295e1cc59ad9ce2fa9f1d8a4d167cbb8198c716f09d5a848cfec
-68a559fad51a8cc09f21f3572bfdc2a86fdc1a7e117d7e22e3a2dbb356a8e8ee
-771b2590699b253e6905c2503c92446fb33b8ad0cce4733bdb363ef0259a6246
-deploy_neo4j_1
-deploy_mailpit_1
-applied 0001 init.sql sha256=959eb3a73752
-applied 0002 0002_intelligence_ledger.sql sha256=5d1836ac0b7b
-applied 0003 0003_indexed_hybrid_retrieval.sql sha256=ca9f0598dcc3
-applied 0004 0004_replayable_ingestion.sql sha256=84520c47564f
-applied 0005 0005_analyst_api.sql sha256=4e23cfa35ab2
-applied 0006 0006_model_registry.sql sha256=3b944dd3e22d
-applied 0007 0007_source_operations.sql sha256=68b3300aa338
-applied 0008 0008_entity_intelligence.sql sha256=693b1b04a55c
-applied 0009 0009_document_entity_link.sql sha256=a4778ab63d83
-applied 0010 0010_disable_noncoverage_feeds.sql sha256=8b4b5ce6df14
-applied 0011 0011_audit_empty_reads.sql sha256=4b63e4bee291
-applied 0012 0012_document_dedupe_window.sql sha256=e76923464449
-applied 0013 0013_resolution_queue_reason.sql sha256=f69a82d9e941
-applied 0014 0014_agentic_analysis_state.sql sha256=882df7b3fe76
-applied 0015 0015_factual_coverage_and_entailment.sql sha256=e8187d3d2d3c
-applied 0016 0016_unified_analysis_completion.sql sha256=51a511f526f7
-applied 0017 0017_outbox_worker_leases.sql sha256=89d17fa43bb5
-applied 0018 0018_multilingual_retrieval_normalization.sql sha256=0fdb9a26ad64
-applied 0019 0019_model_call_outcomes.sql sha256=0f16ba542ab1
-applied 0020 0020_remove_live_poc_mode.sql sha256=3a1cfc2442c5
-applied 0021 0021_signal_reconfirmation.sql sha256=ec620a4fac0a
-applied 0022 0022_developer_mvp_runtime.sql sha256=a7a5a92423d3
-applied 0023 0023_nomic_embedding_dimension.sql sha256=ea33d22704b2
-applied 0024 0024_nvidia_embedding_dimension.sql sha256=80b6d20bc8b7
+postgres schema is current
 >>>> Executing external compose provider "C:\\Users\\zehassan\\source\\repos\\market-intelligence\\.venv\\Scripts\\podman-compose.EXE". Please see podman-compose(1) for how to disable this message. <<<<
 
-8ccf5ebc4812295e1cc59ad9ce2fa9f1d8a4d167cbb8198c716f09d5a848cfec
 9b05db12a35460fff0587e009f9326e414a53e9484555547f96d214a2ba98ef7
+8ccf5ebc4812295e1cc59ad9ce2fa9f1d8a4d167cbb8198c716f09d5a848cfec
 d3238814e371a990ab3d08a8e9b13936953e448590a6648233270a2e3e8fcf75
-Error: no Containerfile or Dockerfile specified or found in context directory, C:\Users\zehassan\source\repos\market-intelligence: The system cannot find the file specified.
-Error: no Containerfile or Dockerfile specified or found in context directory, C:\Users\zehassan\source\repos\market-intelligence: The system cannot find the file specified.
-Error: no Containerfile or Dockerfile specified or found in context directory, C:\Users\zehassan\source\repos\market-intelligence: The system cannot find the file specified.
-Error: no Containerfile or Dockerfile specified or found in context directory, C:\Users\zehassan\source\repos\market-intelligence: The system cannot find the file specified.
-Error: no Containerfile or Dockerfile specified or found in context directory, C:\Users\zehassan\source\repos\market-intelligence: The system cannot find the file specified.
-Error: no Containerfile or Dockerfile specified or found in context directory, C:\Users\zehassan\source\repos\market-intelligence: The system cannot find the file specified.
-Error: no Containerfile or Dockerfile specified or found in context directory, C:\Users\zehassan\source\repos\market-intelligence: The system cannot find the file specified.
+STEP 1/11: FROM docker.io/library/python:3.13-slim
+                                                  STEP 1/11: FROM docker.io/library/python:3.13-slim
+                                                                                                    STEP 1/11: FROM docker.io/library/python:3.13-slim
+    STEP 1/11: FROM docker.io/library/python:3.13-slim
+                                                      STEP 1/11: FROM docker.io/library/python:3.13-slim
+                                                                                                        STEP 2/11: ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     PIP_DISABLE_PIP_VERSION_CHECK=1
+                                                         STEP 2/11: ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     PIP_DISABLE_PIP_VERSION_CHECK=1
+          STEP 2/11: ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     PIP_DISABLE_PIP_VERSION_CHECK=1
+                                                                                                             STEP 2/11: ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     PIP_DISABLE_PIP_VERSION_CHECK=1
+                                                              STEP 2/11: ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     PIP_DISABLE_PIP_VERSION_CHECK=1
+               STEP 1/11: FROM docker.io/library/python:3.13-slim
+--> 1fb9e309c6e8
+--> 963f96046645
+--> 02055724616f
+--> 743532d834cb
+--> 517480cfbcfb
+STEP 3/11: WORKDIR /app
+STEP 3/11: WORKDIR /app
+STEP 3/11: WORKDIR /app
+                       STEP 3/11: WORKDIR /app
+                                              STEP 3/11: WORKDIR /app
+                                                                     STEP 2/11: ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     PIP_DISABLE_PIP_VERSION_CHECK=1
+                      --> Using cache 02055724616f03be24addba7bb333da601c15471de95c62afaf1a4dc322f5789
+                                                                                                      --> 02055724616f
+                                                                                                                      STEP 3/11: WORKDIR /app
+                                                                                                                                             --> 1a146aaa1bf1
+           --> a9be069d55c8
+                           --> Using cache 1a146aaa1bf10e52368f0393000c7e0789b0c63ee67105f4fdb9846aab8371c3
+                                                                                                           --> 1a146aaa1bf1
+                                                                                                                           STEP 4/11: RUN groupadd --system fi-intel     && useradd --system --gid fi-intel --home-dir /app fi-intel
+                                                                                  STEP 4/11: RUN groupadd --system fi-intel     && useradd --system --gid fi-intel --home-dir /app fi-intel
+                                         --> 547f019c9538
+--> d2637cc10e4d
+STEP 4/11: RUN groupadd --system fi-intel     && useradd --system --gid fi-intel --home-dir /app fi-intel
+STEP 1/11: FROM docker.io/library/python:3.13-slim
+STEP 4/11: RUN groupadd --system fi-intel     && useradd --system --gid fi-intel --home-dir /app fi-intel
+STEP 4/11: RUN groupadd --system fi-intel     && useradd --system --gid fi-intel --home-dir /app fi-intel
+--> d176c08c6d3f
+STEP 2/11: ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     PIP_DISABLE_PIP_VERSION_CHECK=1
+STEP 4/11: RUN groupadd --system fi-intel     && useradd --system --gid fi-intel --home-dir /app fi-intel
+--> Using cache 02055724616f03be24addba7bb333da601c15471de95c62afaf1a4dc322f5789
+--> 02055724616f
+STEP 3/11: WORKDIR /app
+--> Using cache 1a146aaa1bf10e52368f0393000c7e0789b0c63ee67105f4fdb9846aab8371c3
+--> 1a146aaa1bf1
+STEP 4/11: RUN groupadd --system fi-intel     && useradd --system --gid fi-intel --home-dir /app fi-intel
+--> db5c2cd34824
+--> Using cache db5c2cd34824fdf548bf44aecc371d75c86723e8cbe4ce877ab80c0bf17574bc
+--> db5c2cd34824
+STEP 5/11: COPY pyproject.toml README.md /app/
+STEP 5/11: COPY pyproject.toml README.md /app/
+--> db5be8313207
+--> 39e74883ce93
+STEP 5/11: COPY pyproject.toml README.md /app/
+--> a305ec1479df
+STEP 5/11: COPY pyproject.toml README.md /app/
+STEP 5/11: COPY pyproject.toml README.md /app/
+--> 733646836bf9
+--> 876ee7e1bbfe
+STEP 5/11: COPY pyproject.toml README.md /app/
+STEP 5/11: COPY pyproject.toml README.md /app/
+--> 224bfa1514b7
+--> c2f822a2bc26
+--> f7ed0fdd1f8d
+STEP 6/11: COPY fi_intel /app/fi_intel
+STEP 6/11: COPY fi_intel /app/fi_intel
+STEP 6/11: COPY fi_intel /app/fi_intel
+--> 753d6ac52ed6
+--> 75a39dd29bd0
+--> f10aa2d49ab1
+--> f7e3693a70e8
+STEP 6/11: COPY fi_intel /app/fi_intel
+STEP 6/11: COPY fi_intel /app/fi_intel
+STEP 6/11: COPY fi_intel /app/fi_intel
+STEP 6/11: COPY fi_intel /app/fi_intel
+--> 184413d2cdd4
+--> 706f44e804fd
+--> 8423d3717b28
+STEP 7/11: COPY evals /app/evals
+STEP 7/11: COPY evals /app/evals
+STEP 7/11: COPY evals /app/evals
+--> c1a7dcc83367
+STEP 7/11: COPY evals /app/evals
+--> fedd840a17fc
+--> 5513b7cd9641
+--> ffea4a2e51c5
+STEP 7/11: COPY evals /app/evals
+STEP 7/11: COPY evals /app/evals
+STEP 7/11: COPY evals /app/evals
+--> 0fc31fd91b4b
+--> e1af7021abfa
+--> 151fcab24503
+STEP 8/11: RUN python -m pip install --no-cache-dir .
+--> 57f84006bcdf
+--> ed97340bb727
+STEP 8/11: RUN python -m pip install --no-cache-dir .
+--> fbd9a34238cd
+STEP 8/11: RUN python -m pip install --no-cache-dir .
+STEP 8/11: RUN python -m pip install --no-cache-dir .
+--> dc9fe9ba250d
+STEP 8/11: RUN python -m pip install --no-cache-dir .
+STEP 8/11: RUN python -m pip install --no-cache-dir .
+STEP 8/11: RUN python -m pip install --no-cache-dir .
+Processing ./.
+  Installing build dependencies: started
+Processing ./.
+  Installing build dependencies: started
+Processing ./.
+  Installing build dependencies: started
+Processing ./.
+  Installing build dependencies: started
+Processing ./.
+  Installing build dependencies: started
+Processing ./.
+  Installing build dependencies: started
+Processing ./.
+  Installing build dependencies: started
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: finished with status 'error'
+  error: subprocess-exited-with-error
+  
+  × installing build dependencies did not run successfully.
+  │ exit code: 1
+  ╰─> [7 lines of output]
+      WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=3, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      ERROR: Could not find a version that satisfies the requirement setuptools>=68 (from versions: none)
+      ERROR: No matching distribution found for setuptools>=68
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+ERROR: Failed to build 'file:///app' when installing build dependencies
+  Installing build dependencies: finished with status 'error'
+  error: subprocess-exited-with-error
+  
+  × installing build dependencies did not run successfully.
+  │ exit code: 1
+  ╰─> [7 lines of output]
+      WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=3, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      ERROR: Could not find a version that satisfies the requirement setuptools>=68 (from versions: none)
+      ERROR: No matching distribution found for setuptools>=68
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+ERROR: Failed to build 'file:///app' when installing build dependencies
+  Installing build dependencies: finished with status 'error'
+  error: subprocess-exited-with-error
+  
+  × installing build dependencies did not run successfully.
+  │ exit code: 1
+  ╰─> [7 lines of output]
+      WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=3, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      ERROR: Could not find a version that satisfies the requirement setuptools>=68 (from versions: none)
+      ERROR: No matching distribution found for setuptools>=68
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+ERROR: Failed to build 'file:///app' when installing build dependencies
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: still running...
+  Installing build dependencies: finished with status 'error'
+  Installing build dependencies: finished with status 'error'
+  error: subprocess-exited-with-error
+  
+  × installing build dependencies did not run successfully.
+  │ exit code: 1
+  ╰─> [7 lines of output]
+      WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=3, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      ERROR: Could not find a version that satisfies the requirement setuptools>=68 (from versions: none)
+      ERROR: No matching distribution found for setuptools>=68
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+ERROR: Failed to build 'file:///app' when installing build dependencies
+  error: subprocess-exited-with-error
+  
+  × installing build dependencies did not run successfully.
+  │ exit code: 1
+  ╰─> [7 lines of output]
+      WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=3, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      ERROR: Could not find a version that satisfies the requirement setuptools>=68 (from versions: none)
+      ERROR: No matching distribution found for setuptools>=68
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+ERROR: Failed to build 'file:///app' when installing build dependencies
+  Installing build dependencies: still running...
+  Installing build dependencies: finished with status 'error'
+  error: subprocess-exited-with-error
+  
+  × installing build dependencies did not run successfully.
+  │ exit code: 1
+  ╰─> [7 lines of output]
+      WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=3, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      ERROR: Could not find a version that satisfies the requirement setuptools>=68 (from versions: none)
+      ERROR: No matching distribution found for setuptools>=68
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+ERROR: Failed to build 'file:///app' when installing build dependencies
+Error: building at STEP "RUN python -m pip install --no-cache-dir .": while running runtime: exit status 1
+
+  Installing build dependencies: finished with status 'error'
+  error: subprocess-exited-with-error
+  
+  × installing build dependencies did not run successfully.
+  │ exit code: 1
+  ╰─> [7 lines of output]
+      WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=3, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable")': /simple/setuptools/
+      ERROR: Could not find a version that satisfies the requirement setuptools>=68 (from versions: none)
+      ERROR: No matching distribution found for setuptools>=68
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+ERROR: Failed to build 'file:///app' when installing build dependencies
+Error: building at STEP "RUN python -m pip install --no-cache-dir .": while running runtime: exit status 1
+
+Error: building at STEP "RUN python -m pip install --no-cache-dir .": while running runtime: exit status 1
+
+Error: building at STEP "RUN python -m pip install --no-cache-dir .": while running runtime: exit status 1
+
+Error: building at STEP "RUN python -m pip install --no-cache-dir .": while running runtime: exit status 1
+
+Error: building at STEP "RUN python -m pip install --no-cache-dir .": while running runtime: exit status 1
+
+Error: building at STEP "RUN python -m pip install --no-cache-dir .": while running runtime: exit status 1
+
 ERROR:podman_compose:Build command failed
 ERROR:podman_compose:Prepare images failed
-Error: executing C:\Users\zehassan\source\repos\market-intelligence\.venv\Scripts\podman-compose.EXE --file C:\Users\zehassan\source\repos\market-intelligence\deploy\compose.yml --env-file C:\Users\zehassan\source\repos\market-intelligence\deploy\app.env --profile app up --detach --build: exit status 125
-podman infrastructure error: Command '('C:\\Users\\zehassan\\AppData\\Local\\Programs\\Podman\\podman.EXE', 'compose', '--file', 'C:\\Users\\zehassan\\source\\repos\\market-intelligence\\deploy\\compose.yml', '--env-file', 'C:\\Users\\zehassan\\source\\repos\\market-intelligence\\deploy\\app.env', '--profile', 'app', 'up', '--detach', '--build')' returned non-zero exit status 125.
+Error: executing C:\Users\zehassan\source\repos\market-intelligence\.venv\Scripts\podman-compose.EXE --file C:\Users\zehassan\source\repos\market-intelligence\deploy\compose.yml --env-file C:\Users\zehassan\source\repos\market-intelligence\deploy\app.env --profile app up --detach --build: exit status 1
+podman infrastructure error: Command '('C:\\Users\\zehassan\\AppData\\Local\\Programs\\Podman\\podman.EXE', 'compose', '--file', 'C:\\Users\\zehassan\\source\\repos\\market-intelligence\\deploy\\compose.yml', '--env-file', 'C:\\Users\\zehassan\\source\\repos\\market-intelligence\\deploy\\app.env', '--profile', 'app', 'up', '--detach', '--build')' returned non-zero exit status 1.
 product startup error: Command '('C:\\Users\\zehassan\\source\\repos\\market-intelligence\\.venv\\Scripts\\python.exe', 'C:\\Users\\zehassan\\source\\repos\\market-intelligence\\deploy\\podman_infra.py', 'app-up')' returned non-zero exit status 1.
-(.venv) PS C:\Users\zehassan\source\repos\market-intelligence> 
