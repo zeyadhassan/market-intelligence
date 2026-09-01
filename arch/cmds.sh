@@ -1,27 +1,71 @@
-CONTAINER ID  IMAGE                                                         COMMAND               CREATED         STATUS                 PORTS                                                     NAMES
-b71f94d40e4b  docker.io/library/neo4j:ubi9                                  neo4j                 3 months ago    Up 2 hours             0.0.0.0:7474->7474/tcp, 0.0.0.0:7687->7687/tcp, 7473/tcp  mle-neo4j
-b7541af380bc  cbq2-svu-cbqhub1.cbq.com.qa/apex-ords/grafana/loki:3.6.0      -config.file=/etc...  3 weeks ago     Up 46 hours            0.0.0.0:3100->3100/tcp                                    cbq-loki
-014c605ad67b  cbq2-svu-cbqhub1.cbq.com.qa/apex-ords/grafana/grafana:latest                        3 weeks ago     Up 46 hours (healthy)  0.0.0.0:3000->3000/tcp                                    cbq-grafana
-11d32757d185  cbq2-svu-cbqhub1.cbq.com.qa/apex-ords/grafana/alloy:latest    run --server.http...  3 weeks ago     Up 46 hours            0.0.0.0:4040->4040/tcp                                    cbq-alloy
-5ee0c762cc9a  localhost/cbq-data-management-retrieval:latest                uvicorn data_mana...  2 weeks ago     Up 46 hours                                                                      cbq-retrieval-prod
-b5aa007e8966  localhost/cbq-data-management-retrieval:latest                arq data_manageme...  2 weeks ago     Up 46 hours                                                                      cbq-spaces-worker-prod
-15bf89cf61c3  localhost/cbq-data-management-retrieval:latest                arq data_manageme...  2 weeks ago     Up 46 hours                                                                      cbq-spaces-cleanup-worker-prod
-27780eda061c  localhost/cbq-data-management-retrieval:latest                arq data_manageme...  2 weeks ago     Up 46 hours                                                                      cbq-spaces-graph-worker-prod
-0f9287facb5e  cbq2-svu-cbqhub1.cbq.com.qa/apex-ords/ollama/ollama:latest                          12 days ago     Up 46 hours            0.0.0.0:11434->11434/tcp                                  ollama1
-fb885390b6be  nvcr.io/nim/qwen/qwen-2.5-7b-instruct:latest                  /opt/nim/start_se...  12 days ago     Up 3 hours             0.0.0.0:8889->8000/tcp                                    nim-qwen7b
-3af64ca07855  nvcr.io/nim/openai/gpt-oss-120b:latest                        /opt/nim/start_se...  12 days ago     Up 46 hours            0.0.0.0:8897->8000/tcp                                    nim-gptoss120b
-1ef4fd9f06e6  localhost/cbq-smart-assistant-base:latest                     python -m uvicorn...  46 hours ago    Up 46 hours                                                                      cbq-llm-prod
-a67d7f432d6d  localhost/cbq-smart-assistant-base:latest                     python -m uvicorn...  46 hours ago    Up 46 hours                                                                      cbq-disputes-prod
-cbaea0054f95  localhost/cbq-smart-assistant-base:latest                     python -m uvicorn...  46 hours ago    Up 46 hours                                                                      cbq-exchange-prod
-5571d3511182  cbq2-svu-cbqhub1.cbq.com.qa/airflow/redis:latest              redis-server --sa...  46 hours ago    Up 46 hours (healthy)  6379/tcp                                                  cbq-redis-prod
-29108b1a6f5f  localhost/cbq-smart-assistant-base:latest                     python -m uvicorn...  46 hours ago    Up 46 hours                                                                      cbq-conversation-management-prod
-af4c43a39aee  localhost/cbq-smart-assistant-base:latest                     python -m uvicorn...  46 hours ago    Up 46 hours                                                                      cbq-router-prod
-3562e4c3ca43  localhost/cbq-smart-assistant-base:latest                     python -m uvicorn...  46 hours ago    Up 46 hours                                                                      cbq-message-dispatcher-prod
-8c29c9e74617  localhost/cbq-smart-assistant-base:latest                     python -m arq ser...  46 hours ago    Up 46 hours                                                                      cbq-status-updater-prod
-2907ec6c3e57  nvcr.io/nim/nvidia/llama-3.2-nv-embedqa-1b-v2:1.10            /opt/nim/start_se...  26 hours ago    Up 26 hours            0.0.0.0:8896->8000/tcp                                    llama-3.2-nv-embedqa
-b0f86a38f5cb  localhost/nginx:latest                                        nginx -g daemon o...  20 hours ago    Up 20 hours            0.0.0.0:8443->8443/tcp, 80/tcp                            nginx-reverseproxy
-f66075f946a4  localhost/cbq-data-collector3:latest                          uvicorn cbq_colle...  14 hours ago    Up 14 hours            8040/tcp                                                  cbq-collectors-dev
-4660a48bfa03  localhost/cbq-reranker:latest                                 uvicorn reranker_...  3 hours ago     Up 3 hours             8001/tcp                                                  cbq-reranker-prod
-fbe27affb513  localhost/cbq-data-ingestor3:latest                           uvicorn data_mana...  2 hours ago     Up 2 hours                                                                       cbq-ingestion-dev
-491bd0d1a8ef  nvcr.io/nim/nvidia/model-free-nim:latest                      /opt/nim/start_se...  48 minutes ago  Up 48 minutes          0.0.0.0:8899->8000/tcp                                    nim-qwen3vl
-[srv_mlengineering@cbq2-svd-dsgpu2 ~]$
+The embedding model is already running successfully:
+
+llama-3.2-nv-embedqa
+port 8896 → container port 8000
+
+We’ll expose it as:
+
+POST https://10.1.94.110:8443/v1/embeddings
+
+Unlike chat models, it uses /v1/embeddings. NVIDIA also requires input_type to be either query or passage. NVIDIA API documentation
+
+Do not stop or rename the container yet. First, run these commands individually and paste the output so I can reproduce its exact GPU, cache, mounts, and restart configuration safely in Compose.
+
+Check the advertised model ID:
+
+curl -fsS http://127.0.0.1:8896/v1/models | jq
+
+Test the embedding service directly:
+
+curl -fsS http://127.0.0.1:8896/v1/embeddings \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "input":["What services does Commercial Bank provide?"],
+    "model":"nvidia/llama-3.2-nv-embedqa-1b-v2",
+    "input_type":"query",
+    "modality":"text",
+    "encoding_format":"float"
+  }' | jq '{model,dimensions:(.data[0].embedding|length),usage}'
+
+Check whether it is already managed by Compose:
+
+podman inspect llama-3.2-nv-embedqa \
+  --format 'status={{.State.Status}} restart={{.HostConfig.RestartPolicy.Name}} network={{.HostConfig.NetworkMode}} compose_service={{index .Config.Labels "io.podman.compose.service"}} compose_project={{index .Config.Labels "io.podman.compose.project"}}'
+
+Show the exact image:
+
+podman inspect llama-3.2-nv-embedqa --format 'image={{.Config.Image}}'
+
+Show its mounted directories:
+
+podman inspect llama-3.2-nv-embedqa \
+  --format '{{range .Mounts}}{{println .Source " -> " .Destination " options=" .Options}}{{end}}'
+
+Show relevant environment variables without exposing the NGC API key:
+
+podman inspect llama-3.2-nv-embedqa \
+  --format '{{range .Config.Env}}{{println .}}{{end}}' |
+grep -E '^(NIM_|CUDA_VISIBLE_DEVICES|NVIDIA_VISIBLE_DEVICES|NO_PROXY|no_proxy)='
+
+Show which physical GPU it sees:
+
+podman exec llama-3.2-nv-embedqa \
+  nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used --format=csv
+
+Show the host GPU-to-UUID mapping:
+
+nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used --format=csv
+
+Finally, show the current Nginx structure:
+
+grep -nE 'upstream |location ' /apps/srv_mlengineering/nim/nginx/nginx_router_hybrid_extended.conf
+
+Once you paste that output, I’ll provide exact pasteable commands to:
+
+Add the embedding service to docker-compose-extended.yml.
+Preserve its current GPU and cache configuration.
+Route /v1/embeddings directly to 10.1.94.110:8896.
+Recreate only the embedding container and Nginx.
+Test it from the server and an outside PC.
+
+We won’t route embeddings through router_hybrid_extended.js; a dedicated Nginx /v1/embeddings location is cleaner because there is currently only one embedding backend.
