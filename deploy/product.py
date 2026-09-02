@@ -181,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
     print("\nProduct is ready:")
     print(f"  Product:           {product_url}")
     print(f"  Development email: {MAILPIT_URL}")
-    print("  Live diagnostics:  .venv\\Scripts\\python.exe deploy\\podman_infra.py logs")
+    print(f"  Live diagnostics:  {sys.executable} deploy/podman_infra.py logs")
     if not arguments.no_browser:
         webbrowser.open(product_url)
     return 0

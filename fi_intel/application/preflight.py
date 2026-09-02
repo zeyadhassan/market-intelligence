@@ -106,6 +106,8 @@ def _validate_model_transport(settings: Settings, errors: list[str]) -> None:
             errors.append("FI_INTEL_LLM_TLS_VERIFY must be true outside shadow mode")
         if not settings.embedding_tls_verify:
             errors.append("FI_INTEL_EMBEDDING_TLS_VERIFY must be true outside shadow mode")
+        if not settings.source_tls_verify:
+            errors.append("FI_INTEL_SOURCE_TLS_VERIFY must be true outside shadow mode")
 
 
 def _validate_basic_auth_pair(

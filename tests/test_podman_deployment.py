@@ -38,6 +38,17 @@ def test_podman_compose_uses_migration_only_bootstrap_and_qualified_images() -> 
     assert "HTTP_PROXY: ${FI_INTEL_SOURCE_HTTP_PROXY:-}" in source_block
     assert "HTTPS_PROXY: ${FI_INTEL_SOURCE_HTTPS_PROXY:-}" in source_block
     assert "NO_PROXY: ${FI_INTEL_SOURCE_NO_PROXY:-}" in source_block
+    assert (
+        "FI_INTEL_SOURCE_HTTP_PROXY: ${FI_INTEL_SOURCE_HTTP_PROXY:-}" in source_block
+    )
+    assert (
+        "FI_INTEL_SOURCE_HTTPS_PROXY: ${FI_INTEL_SOURCE_HTTPS_PROXY:-}" in source_block
+    )
+    assert "FI_INTEL_SOURCE_NO_PROXY: ${FI_INTEL_SOURCE_NO_PROXY:-}" in source_block
+    assert (
+        "FI_INTEL_SOURCE_TLS_VERIFY: ${FI_INTEL_SOURCE_TLS_VERIFY:-true}"
+        in source_block
+    )
     assert "neo4j:" not in source_block
     assert "neo4j:" not in delivery_block
     for graph_worker, next_service in (
@@ -60,6 +71,7 @@ def test_podman_launcher_enforces_infrastructure_suite() -> None:
     assert '"fi_intel.cli", "migrate"' not in launcher
     assert '"app-up"' in launcher
     assert '"logs"' in launcher
+    assert '"source-check"' in launcher
     assert 'environment["PODMAN_COMPOSE_PROVIDER"]' in launcher
     assert "Docker Compose is intentionally not used" in launcher
     assert "label=io.podman.compose.service=" in launcher

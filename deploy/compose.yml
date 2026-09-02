@@ -91,9 +91,13 @@ services:
     <<: *app
     environment:
       <<: *app-environment
+      FI_INTEL_SOURCE_HTTP_PROXY: ${FI_INTEL_SOURCE_HTTP_PROXY:-}
+      FI_INTEL_SOURCE_HTTPS_PROXY: ${FI_INTEL_SOURCE_HTTPS_PROXY:-}
+      FI_INTEL_SOURCE_NO_PROXY: ${FI_INTEL_SOURCE_NO_PROXY:-}
       HTTP_PROXY: ${FI_INTEL_SOURCE_HTTP_PROXY:-}
       HTTPS_PROXY: ${FI_INTEL_SOURCE_HTTPS_PROXY:-}
       NO_PROXY: ${FI_INTEL_SOURCE_NO_PROXY:-}
+      FI_INTEL_SOURCE_TLS_VERIFY: ${FI_INTEL_SOURCE_TLS_VERIFY:-true}
     command: ["worker", "source"]
 
   projection-worker:

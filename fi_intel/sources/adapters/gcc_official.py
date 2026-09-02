@@ -355,13 +355,15 @@ class OfficialGccRawAdapter:
         self._log = get_logger(component="gcc-official-source-adapter")
         self._run_id = run_id or f"source-poll:{self.source_id}:{uuid4()}"
         self._client = HardenedSourceClient(
-            transport or HttpxSourceTransport(),
+            transport
+            or HttpxSourceTransport(verify=self._settings.source_tls_verify),
             allowed_origins=self._source.allowed_origins,
             user_agent=self._settings.rss_user_agent,
             timeout_seconds=self._settings.source_http_timeout_seconds,
             max_attempts=self._settings.source_http_max_attempts,
             max_redirects=self._settings.source_http_max_redirects,
             clock=clock,
+            log_context={"run_id": self._run_id, "source_id": self.source_id},
         )
 
     @property

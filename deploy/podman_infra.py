@@ -340,6 +340,7 @@ def main() -> int:  # noqa: C901 - explicit bounded operator-action dispatch
             "reset",
             "status",
             "logs",
+            "source-check",
             "migrate",
             "test",
         ),
@@ -348,6 +349,17 @@ def main() -> int:  # noqa: C901 - explicit bounded operator-action dispatch
         "--confirm",
         default="",
         help="Required as RESET for the destructive database-volume reset.",
+    )
+    parser.add_argument(
+        "--no-follow",
+        action="store_true",
+        help="Print the requested log tail and exit instead of following it.",
+    )
+    parser.add_argument(
+        "--tail",
+        type=int,
+        default=200,
+        help="Number of service log lines to print (default: 200).",
     )
     arguments = parser.parse_args()
     action = arguments.action
@@ -403,18 +415,43 @@ def main() -> int:  # noqa: C901 - explicit bounded operator-action dispatch
             )
             _run(sys.executable, "-m", "fi_intel.cli", "db", "status")
         elif action == "logs":
+            if arguments.tail < 1:
+                raise RuntimeError("--tail must be positive")
+            app_environment = _load_app_environment(required=True)
+            log_arguments = [
+                "--profile",
+                "app",
+                "logs",
+            ]
+            if not arguments.no_follow:
+                log_arguments.append("--follow")
+            log_arguments.extend(("--tail", str(arguments.tail)))
+            log_arguments.extend(
+                (
+                    "source-worker",
+                    "projection-worker",
+                    "analysis-worker",
+                    "api",
+                )
+            )
+            _compose(
+                *log_arguments,
+                env=app_environment,
+                app_config=True,
+            )
+        elif action == "source-check":
             app_environment = _load_app_environment(required=True)
             _compose(
                 "--profile",
                 "app",
-                "logs",
-                "--follow",
-                "--tail",
-                "200",
+                "run",
+                "--rm",
+                "--no-deps",
                 "source-worker",
-                "projection-worker",
-                "analysis-worker",
-                "api",
+                "worker",
+                "source",
+                "--once",
+                "--force",
                 env=app_environment,
                 app_config=True,
             )

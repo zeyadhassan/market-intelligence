@@ -606,7 +606,7 @@ __FI_INTEL_TOKEN_PROVIDER__
       { run_id: resultSet.run_id, source_url: item.source_url, fetched_at: item.fetched_at }
     ));
     if (failed.length) {
-      console.info("[FI Intel] backend logs: .venv\\Scripts\\python.exe deploy\\podman_infra.py logs");
+      console.info("[FI Intel] backend logs: python deploy/podman_infra.py logs --no-follow --tail 500");
     }
     console.groupEnd();
   }

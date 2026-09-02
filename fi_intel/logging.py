@@ -50,5 +50,37 @@ def get_logger(**initial_values: Any) -> Any:
 def safe_error_summary(error: BaseException) -> str:
     """Identify an error without persisting credentials or source/model payloads."""
 
-    digest = hashlib.sha256(str(error).encode("utf-8", errors="replace")).hexdigest()
-    return f"{type(error).__name__} (message_sha256={digest})"
+    message = str(error)
+    digest = hashlib.sha256(message.encode("utf-8", errors="replace")).hexdigest()
+    reason = _safe_error_reason(error, message)
+    reason_field = f"reason={reason}, " if reason is not None else ""
+    return f"{type(error).__name__} ({reason_field}message_sha256={digest})"
+
+
+def _safe_error_reason(error: BaseException, message: str) -> str | None:
+    """Classify common infrastructure failures without retaining their raw text."""
+
+    lowered = message.casefold()
+    if "proxy authentication required" in lowered or (
+        "proxy" in lowered and "407" in lowered
+    ):
+        return "proxy_authentication_required"
+    if any(
+        marker in lowered
+        for marker in (
+            "name or service not known",
+            "temporary failure in name resolution",
+            "nodename nor servname provided",
+            "getaddrinfo failed",
+        )
+    ):
+        return "dns_resolution_failed"
+    if "certificate_verify_failed" in lowered or "certificate verify failed" in lowered:
+        return "tls_certificate_verification_failed"
+    if type(error).__name__ == "SourceResponseTruncatedError":
+        return "response_length_mismatch"
+    if "timed out" in lowered or "timeout" in lowered:
+        return "network_timeout"
+    if "connection refused" in lowered:
+        return "connection_refused"
+    return None

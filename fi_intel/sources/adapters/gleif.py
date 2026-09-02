@@ -617,13 +617,14 @@ def gleif_registered(
     active = settings or Settings()
     registration = production_source_catalog(active).require("gleif")
     client = HardenedSourceClient(
-        transport or HttpxSourceTransport(),
+        transport or HttpxSourceTransport(verify=active.source_tls_verify),
         allowed_origins=registration.allowed_origins,
         user_agent=active.rss_user_agent,
         timeout_seconds=registration.request_timeout_seconds,
         max_attempts=registration.max_attempts,
         max_redirects=registration.max_redirects,
         clock=clock,
+        log_context={"source_id": registration.source_id},
     )
     return GleifRawAdapter(
         registration,
@@ -646,13 +647,14 @@ def gleif_targeted_registered(
     active = settings or Settings()
     registration = production_source_catalog(active).require("gleif")
     client = HardenedSourceClient(
-        transport or HttpxSourceTransport(),
+        transport or HttpxSourceTransport(verify=active.source_tls_verify),
         allowed_origins=registration.allowed_origins,
         user_agent=active.rss_user_agent,
         timeout_seconds=registration.request_timeout_seconds,
         max_attempts=registration.max_attempts,
         max_redirects=registration.max_redirects,
         clock=clock,
+        log_context={"source_id": registration.source_id},
     )
     return GleifTargetedRawAdapter(registration, access_policy, client, leis)
 

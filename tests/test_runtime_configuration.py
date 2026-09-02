@@ -38,6 +38,7 @@ def test_checked_in_template_covers_every_external_runtime_input() -> None:
         "FI_INTEL_EMBEDDING_TLS_VERIFY",
         "FI_INTEL_EMBEDDING_MODEL",
         "FI_INTEL_EMBEDDING_DIM",
+        "FI_INTEL_SOURCE_TLS_VERIFY",
     }
     configured = {
         line.partition("=")[0] for line in template.splitlines() if line.startswith("FI_INTEL_")
@@ -54,6 +55,7 @@ def test_preflight_rejects_partial_basic_auth_and_insecure_non_shadow_transport(
             "embedding_basic_auth_username": "ollama",
             "embedding_tls_verify": False,
             "llm_tls_verify": False,
+            "source_tls_verify": False,
         }
     )
 
@@ -62,3 +64,4 @@ def test_preflight_rejects_partial_basic_auth_and_insecure_non_shadow_transport(
     assert any("FI_INTEL_EMBEDDING_BASIC_AUTH_PASSWORD" in error for error in errors)
     assert "FI_INTEL_LLM_TLS_VERIFY must be true outside shadow mode" in errors
     assert "FI_INTEL_EMBEDDING_TLS_VERIFY must be true outside shadow mode" in errors
+    assert "FI_INTEL_SOURCE_TLS_VERIFY must be true outside shadow mode" in errors

@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     source_http_proxy: str | None = None
     source_https_proxy: str | None = None
     source_no_proxy: str = ""
+    # Verification stays enabled by default. Disabling it is allowed only for
+    # shadow/UAT diagnosis when an operator has not yet installed the corporate
+    # proxy CA in the source-worker image.
+    source_tls_verify: bool = True
 
     # Canonical GCC source acquisition. The checked-in source matrix is intentionally
     # bounded to official, public regulator/market pages in all six GCC

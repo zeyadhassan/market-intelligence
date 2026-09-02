@@ -102,6 +102,10 @@ class CanonicalSourceWorker:
             force=force,
             source_count=len(GCC_OFFICIAL_SOURCES),
             max_parallel_sources=settings.gcc_source_max_parallel_sources,
+            http_proxy_configured=bool(settings.source_http_proxy),
+            https_proxy_configured=bool(settings.source_https_proxy),
+            no_proxy_configured=bool(settings.source_no_proxy),
+            tls_verify=settings.source_tls_verify,
         )
 
         async def poll(source: GccOfficialSource) -> None:
@@ -163,6 +167,7 @@ class CanonicalSourceWorker:
                         source_id=source.source_id,
                         source_url=source.url,
                         error_type=type(exc).__name__,
+                        error_message=str(exc),
                         safe_error_summary=safe_error_summary(exc),
                         duration_ms=round((time.monotonic() - started) * 1000),
                     )

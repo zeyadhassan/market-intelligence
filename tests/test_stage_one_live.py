@@ -53,7 +53,10 @@ def test_default_stage_one_page_describes_the_local_product_path() -> None:
     assert "OIDC access token" not in STAGE_ONE_JS
     assert "console.table" in STAGE_ONE_JS
     assert "[FI Intel] source" in STAGE_ONE_JS
-    assert "backend logs: .venv" in STAGE_ONE_JS
+    assert (
+        "backend logs: python deploy/podman_infra.py logs --no-follow --tail 500"
+        in STAGE_ONE_JS
+    )
     assert 'detail.className = "source-detail"' in STAGE_ONE_JS
 
 

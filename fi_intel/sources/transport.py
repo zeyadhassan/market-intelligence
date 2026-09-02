@@ -13,6 +13,8 @@ from urllib.parse import urljoin, urlsplit
 
 import httpx
 
+from fi_intel.logging import get_logger, safe_error_summary
+
 
 class SourceTransportError(RuntimeError):
     """A registered-source request failed."""
@@ -89,8 +91,19 @@ class SourceHttpTransport(Protocol):
 class HttpxSourceTransport:
     """Streaming httpx transport that never follows redirects itself."""
 
-    def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
-        self._client = httpx.AsyncClient(transport=transport, follow_redirects=False)
+    def __init__(
+        self,
+        transport: httpx.AsyncBaseTransport | None = None,
+        *,
+        verify: bool = True,
+    ) -> None:
+        self._log = get_logger(component="source-http-transport")
+        self._client = httpx.AsyncClient(
+            transport=transport,
+            follow_redirects=False,
+            trust_env=True,
+            verify=verify,
+        )
 
     async def send(
         self,
@@ -117,28 +130,41 @@ class HttpxSourceTransport:
                         raise SourceResponseTooLargeError(
                             f"response exceeded the {max_bytes}-byte limit"
                         )
-                # Content-Length describes bytes transferred on the wire, while
-                # aiter_bytes() deliberately returns the decoded representation
-                # consumed by canonicalizers.  HTTPX's real transport detects a
-                # truncated encoded stream, so only perform our additional
-                # decoded-length check when no content coding is in use.
+                # HTTPX/httpcore validates protocol-level truncation. Some official
+                # sites and forward proxies preserve an origin Content-Length after
+                # transforming the body, so a second application-level equality
+                # check creates false failures even though a complete usable body
+                # was delivered. Keep the discrepancy observable without rejecting
+                # the response.
                 content_encoding = response.headers.get("content-encoding")
                 if (
                     declared_size is not None
-                    and not content_encoding
-                    and len(body) != declared_size
+                    and response.num_bytes_downloaded != declared_size
                 ):
-                    raise SourceResponseTruncatedError(
-                        f"response declared {declared_size} bytes but delivered {len(body)}"
+                    self._log.warning(
+                        "source.http.content_length_mismatch_accepted",
+                        request_url=url,
+                        status_code=response.status_code,
+                        declared_bytes=declared_size,
+                        downloaded_bytes=response.num_bytes_downloaded,
+                        decoded_bytes=len(body),
+                        content_encoding=content_encoding or "identity",
                     )
                 return TransportResponse(
                     status_code=response.status_code,
                     headers=tuple(response.headers.multi_items()),
                     payload=bytes(body),
                 )
-        except (SourceResponseTooLargeError, SourceResponseTruncatedError):
+        except SourceResponseTooLargeError:
             raise
         except httpx.TransportError as exc:
+            self._log.warning(
+                "source.http.transport_failed",
+                request_url=url,
+                error_type=type(exc).__name__,
+                error_message=str(exc) or type(exc).__name__,
+                safe_error_summary=safe_error_summary(exc),
+            )
             raise RetryableSourceError(str(exc) or type(exc).__name__) from exc
 
     async def close(self) -> None:
@@ -161,6 +187,7 @@ class HardenedSourceClient:
         max_redirects: int,
         clock: Callable[[], datetime] | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
+        log_context: Mapping[str, object] | None = None,
     ) -> None:
         if not user_agent.strip():
             raise ValueError("source HTTP user agent cannot be blank")
@@ -176,6 +203,10 @@ class HardenedSourceClient:
         self._max_redirects = max_redirects
         self._clock = clock or (lambda: datetime.now(UTC))
         self._sleep = sleep or asyncio.sleep
+        self._log = get_logger(
+            component="hardened-source-client",
+            **dict(log_context or {}),
+        )
 
     async def fetch(
         self,
@@ -201,10 +232,26 @@ class HardenedSourceClient:
                 return await self._fetch_once(url, headers, max_bytes)
             except RetryableSourceError as exc:
                 last_error = exc
-                if attempt == self._max_attempts:
-                    break
+                final_attempt = attempt == self._max_attempts
                 delay = exc.retry_after_seconds
-                await self._sleep(delay if delay is not None else min(2 ** (attempt - 1), 8))
+                retry_delay = delay if delay is not None else min(2 ** (attempt - 1), 8)
+                self._log.warning(
+                    (
+                        "source.http.retry_exhausted"
+                        if final_attempt
+                        else "source.http.retry_scheduled"
+                    ),
+                    request_url=url,
+                    attempt=attempt,
+                    max_attempts=self._max_attempts,
+                    retry_delay_seconds=None if final_attempt else retry_delay,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                    safe_error_summary=safe_error_summary(exc),
+                )
+                if final_attempt:
+                    break
+                await self._sleep(retry_delay)
         if last_error is None:
             raise SourceTransportError("source request exhausted without a response")
         raise last_error
