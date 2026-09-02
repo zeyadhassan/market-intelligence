@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
@@ -109,6 +113,53 @@ def _podman_environment(base: dict[str, str] | None = None) -> dict[str, str]:
     environment["PATH"] = str(Path(podman).parent) + os.pathsep + environment.get("PATH", "")
     environment["PODMAN_COMPOSE_PROVIDER"] = _podman_compose_provider()
     return environment
+
+
+def _container_source_proxy_environment(
+    environment: dict[str, str],
+    *,
+    windows: bool | None = None,
+    resolver: Callable[[str], str] | None = None,
+) -> dict[str, str]:
+    """Make host-resolved HTTP proxies usable inside the Windows Podman VM."""
+
+    prepared = environment.copy()
+    if not (os.name == "nt" if windows is None else windows):
+        return prepared
+    resolve = resolver or socket.gethostbyname
+    resolved_hosts: dict[str, str] = {}
+    for variable in ("FI_INTEL_SOURCE_HTTP_PROXY", "FI_INTEL_SOURCE_HTTPS_PROXY"):
+        configured = prepared.get(variable)
+        if not configured:
+            continue
+        parsed = urlsplit(configured)
+        hostname = parsed.hostname
+        if parsed.scheme.casefold() != "http" or hostname is None:
+            continue
+        try:
+            ipaddress.ip_address(hostname)
+        except ValueError:
+            pass
+        else:
+            continue
+        resolved = resolved_hosts.get(hostname)
+        if resolved is None:
+            try:
+                resolved = resolve(hostname)
+            except OSError as exc:
+                raise RuntimeError(
+                    f"Source proxy {hostname!r} cannot be resolved by the Windows host. "
+                    "Connect the corporate VPN/DNS or configure the proxy with a reachable IP."
+                ) from exc
+            resolved_hosts[hostname] = resolved
+        userinfo, separator, _host_port = parsed.netloc.rpartition("@")
+        authority = f"{userinfo}@" if separator else ""
+        authority += resolved
+        if parsed.port is not None:
+            authority += f":{parsed.port}"
+        prepared[variable] = urlunsplit(parsed._replace(netloc=authority))
+        print(f"Resolved source proxy {hostname} to {resolved} for the Podman VM.")
+    return prepared
 
 
 def _run(*arguments: str, capture: bool = False, env: dict[str, str] | None = None) -> str:
@@ -377,17 +428,18 @@ def main() -> int:  # noqa: C901 - explicit bounded operator-action dispatch
         elif action == "app-up":
             app_environment = _load_app_environment(required=True)
             _run(sys.executable, "-m", "fi_intel.cli", "preflight", env=app_environment)
-            _compose("up", "--detach", env=app_environment)
+            container_environment = _container_source_proxy_environment(app_environment)
+            _compose("up", "--detach", env=container_environment)
             _wait_healthy()
             _migrate(app_environment)
-            _build_app_image(app_environment)
+            _build_app_image(container_environment)
             _compose(
                 "--profile",
                 "app",
                 "up",
                 "--detach",
                 "--force-recreate",
-                env=app_environment,
+                env=container_environment,
                 app_config=True,
             )
             _wait_for_application_identity(app_environment)
@@ -441,6 +493,7 @@ def main() -> int:  # noqa: C901 - explicit bounded operator-action dispatch
             )
         elif action == "source-check":
             app_environment = _load_app_environment(required=True)
+            container_environment = _container_source_proxy_environment(app_environment)
             _compose(
                 "--profile",
                 "app",
@@ -452,7 +505,7 @@ def main() -> int:  # noqa: C901 - explicit bounded operator-action dispatch
                 "source",
                 "--once",
                 "--force",
-                env=app_environment,
+                env=container_environment,
                 app_config=True,
             )
         elif action == "migrate":

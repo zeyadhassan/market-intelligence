@@ -1,5 +1,6 @@
 """Static safeguards for the Podman-owned local infrastructure path."""
 
+import socket
 from pathlib import Path
 
 import pytest
@@ -150,6 +151,41 @@ def test_podman_environment_owns_source_proxy_mapping(
     assert environment["PODMAN_COMPOSE_PROVIDER"] == "podman-compose"
 
 
+def test_windows_podman_proxy_uses_host_resolved_ip_without_losing_auth() -> None:
+    environment = {
+        "FI_INTEL_SOURCE_HTTP_PROXY": "http://proxy-user:p%40ss@proxy.example:3128",
+        "FI_INTEL_SOURCE_HTTPS_PROXY": "http://proxy.example:3128",
+        "FI_INTEL_SOURCE_NO_PROXY": "localhost,internal.example",
+    }
+
+    prepared = podman_infra._container_source_proxy_environment(
+        environment,
+        windows=True,
+        resolver=lambda hostname: (
+            "10.20.30.40" if hostname == "proxy.example" else "unexpected"
+        ),
+    )
+
+    assert prepared["FI_INTEL_SOURCE_HTTP_PROXY"] == (
+        "http://proxy-user:p%40ss@10.20.30.40:3128"
+    )
+    assert prepared["FI_INTEL_SOURCE_HTTPS_PROXY"] == "http://10.20.30.40:3128"
+    assert prepared["FI_INTEL_SOURCE_NO_PROXY"] == "localhost,internal.example"
+    assert environment["FI_INTEL_SOURCE_HTTP_PROXY"].endswith("proxy.example:3128")
+
+
+def test_windows_podman_proxy_resolution_failure_has_operator_guidance() -> None:
+    def fail_resolution(_hostname: str) -> str:
+        raise socket.gaierror("not known")
+
+    with pytest.raises(RuntimeError, match="corporate VPN/DNS"):
+        podman_infra._container_source_proxy_environment(
+            {"FI_INTEL_SOURCE_HTTPS_PROXY": "http://missing.example:3128"},
+            windows=True,
+            resolver=fail_resolution,
+        )
+
+
 def test_app_image_build_uses_deploy_containerfile_and_configured_proxy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -194,6 +230,11 @@ def test_app_up_builds_explicitly_and_passes_proxy_to_infrastructure_pulls(
     monkeypatch.setattr(podman_infra, "_wait_healthy", lambda: None)
     monkeypatch.setattr(podman_infra, "_migrate", lambda env=None: None)
     monkeypatch.setattr(podman_infra, "_wait_for_application_identity", lambda env: None)
+    monkeypatch.setattr(
+        podman_infra,
+        "_container_source_proxy_environment",
+        lambda value: value,
+    )
     monkeypatch.setattr(
         podman_infra,
         "_compose",
