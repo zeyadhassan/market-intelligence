@@ -111,6 +111,9 @@ class PostgresStageOneService:
         topic_sources = {
             source_id for topic in topics.values() for source_id in topic.required_source_ids
         }
+        configured_sources = self._settings.configured_coverage_source_ids
+        if configured_sources:
+            topic_sources &= configured_sources
         required_source_ids = tuple(sorted(set(source_ids) & topic_sources))
         input_revision: tuple[str, ...] = ()
         if refresh and required_source_ids:

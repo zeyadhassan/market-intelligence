@@ -217,3 +217,13 @@ class Settings(BaseSettings):
     # remain blank.
     embedding_query_prefix: str = ""
     embedding_document_prefix: str = ""
+
+    @property
+    def configured_coverage_source_ids(self) -> frozenset[str]:
+        """Return the optional operator-selected source subset."""
+
+        return frozenset(
+            item.strip()
+            for item in self.coverage_required_source_ids.split(",")
+            if item.strip()
+        )

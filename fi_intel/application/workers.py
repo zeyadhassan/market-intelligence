@@ -96,11 +96,18 @@ class CanonicalSourceWorker:
         failed: list[str] = []
         committed = 0
         semaphore = asyncio.Semaphore(settings.gcc_source_max_parallel_sources)
+        configured_sources = settings.configured_coverage_source_ids
+        active_sources = tuple(
+            source
+            for source in GCC_OFFICIAL_SOURCES
+            if not configured_sources or source.source_id in configured_sources
+        )
         self._log.info(
             "source.batch.started",
             run_id=str(run_uuid),
             force=force,
-            source_count=len(GCC_OFFICIAL_SOURCES),
+            source_count=len(active_sources),
+            configured_source_filter=tuple(sorted(configured_sources)),
             max_parallel_sources=settings.gcc_source_max_parallel_sources,
             http_proxy_configured=bool(settings.source_http_proxy),
             https_proxy_configured=bool(settings.source_https_proxy),
@@ -172,7 +179,7 @@ class CanonicalSourceWorker:
                         duration_ms=round((time.monotonic() - started) * 1000),
                     )
 
-        await asyncio.gather(*(poll(source) for source in GCC_OFFICIAL_SOURCES))
+        await asyncio.gather(*(poll(source) for source in active_sources))
         leis = frozenset(
             item.strip().upper() for item in settings.covered_entity_leis.split(",") if item.strip()
         )

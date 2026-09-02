@@ -300,8 +300,9 @@ class SourceOperationsCoverageProvider:
 
 
 def source_coverage_policy(source_ids: frozenset[str]) -> dict[str, frozenset[str]]:
-    """Map the configured refinancing universe to the affected detectors."""
+    """Map the configured source universe to every Stage One detector."""
     return {
         "maturity_wall_no_refi": source_ids,
         "at1_call_approaching_no_refi": source_ids,
+        "negative_rating_action_with_capital_decline": source_ids,
     }

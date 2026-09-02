@@ -4,7 +4,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from fi_intel.graph.coverage import CoverageRequest, SourceOperationsCoverageProvider
+from fi_intel.graph.coverage import (
+    CoverageRequest,
+    SourceOperationsCoverageProvider,
+    source_coverage_policy,
+)
 from fi_intel.graph.queries import CoverageScope
 from fi_intel.sources.acquisition import RawSourceCursor, RawSourcePoll
 from fi_intel.sources.catalog import production_source_catalog
@@ -15,6 +19,17 @@ from fi_intel.sources.operations import (
 )
 
 NOW = datetime(2026, 8, 25, 12, tzinfo=UTC)
+
+
+def test_configured_source_scope_covers_every_stage_one_pattern() -> None:
+    policy = source_coverage_policy(frozenset({"sa_sama_news"}))
+
+    assert set(policy) == {
+        "maturity_wall_no_refi",
+        "at1_call_approaching_no_refi",
+        "negative_rating_action_with_capital_decline",
+    }
+    assert set(policy.values()) == {frozenset({"sa_sama_news"})}
 
 
 def _empty_poll(source_id: str, *, latest: datetime | None) -> RawSourcePoll:

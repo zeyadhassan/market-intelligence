@@ -245,11 +245,7 @@ class ProcessedDailyAnalysis:
             run_id=run_id,
             subject_id=scope,
         )
-        configured_coverage = {
-            item.strip()
-            for item in settings.coverage_required_source_ids.split(",")
-            if item.strip()
-        }
+        configured_coverage = settings.configured_coverage_source_ids
         registry = PatternRegistry(
             self._resources.graph,
             access=access.model_copy(update={"run_id": run_id}),

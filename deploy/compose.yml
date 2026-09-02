@@ -33,6 +33,7 @@ x-app: &app
     FI_INTEL_RESEARCH_MODEL: ${FI_INTEL_RESEARCH_MODEL:-gpt-oss-120b}
     FI_INTEL_ENTAILMENT_MODEL: ${FI_INTEL_ENTAILMENT_MODEL:-gpt-oss-120b}
     FI_INTEL_RERANKER_MODEL: ${FI_INTEL_RERANKER_MODEL:-gpt-oss-120b}
+    FI_INTEL_COVERAGE_REQUIRED_SOURCE_IDS: ${FI_INTEL_COVERAGE_REQUIRED_SOURCE_IDS:-}
   volumes:
     - ../.fi-intel/archive:/app/.fi-intel/archive:Z
   depends_on:

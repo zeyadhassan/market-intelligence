@@ -108,13 +108,17 @@ class CanonicalScheduler:
         topic_total = 0
         for scope, (principal, topic_ids, source_ids) in scope_entries.items():
             governed = await self._topics.require_many(tuple(sorted(topic_ids)))
+            configured_sources = self._resources.settings.configured_coverage_source_ids
             for topic_id, topic in governed.items():
+                required_sources = set(source_ids) & set(topic.required_source_ids)
+                if configured_sources:
+                    required_sources &= configured_sources
                 job = AnalysisJob.request(
                     self._resources.settings,
                     principal,
                     frozenset({topic_id}),
                     scope,
-                    tuple(sorted(set(source_ids) & set(topic.required_source_ids))),
+                    tuple(sorted(required_sources)),
                     requested_at=instant,
                 )
                 await self._jobs.enqueue(job)

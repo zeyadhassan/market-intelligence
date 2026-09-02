@@ -123,7 +123,7 @@ def _validate_basic_auth_pair(
 
 
 def _validate_source_scope(settings: Settings, errors: list[str]) -> None:
-    required_sources = _csv(settings.coverage_required_source_ids)
+    required_sources = tuple(sorted(settings.configured_coverage_source_ids))
     if required_sources:
         from fi_intel.sources.adapters.gcc_official import GCC_OFFICIAL_SOURCES
 

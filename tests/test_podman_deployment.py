@@ -24,6 +24,10 @@ def test_podman_compose_uses_migration_only_bootstrap_and_qualified_images() -> 
     assert "FI_INTEL_COVERED_ENTITY_LEIS" not in compose
     assert '"127.0.0.1:${FI_INTEL_API_HOST_PORT:-8000}:8000"' in compose
     assert 'profiles: ["app"]' in compose
+    assert (
+        "FI_INTEL_COVERAGE_REQUIRED_SOURCE_IDS: "
+        "${FI_INTEL_COVERAGE_REQUIRED_SOURCE_IDS:-}" in compose
+    )
     for service in (
         "source-worker:",
         "projection-worker:",

@@ -69,6 +69,11 @@ def preflight() -> None:
     print(f"mode: {settings.analysis_mode}")
     print("access: built-in local analyst")
     print("models: extraction, reasoning, embedding, reranker, entailment")
+    source_scope = settings.configured_coverage_source_ids
+    source_label = (
+        ", ".join(sorted(source_scope)) if source_scope else "full governed GCC universe"
+    )
+    print(f"sources: {source_label}")
 
 
 async def _with_resources(

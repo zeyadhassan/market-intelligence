@@ -2,7 +2,11 @@
 
 from pathlib import Path
 
+import pytest
+from typer.testing import CliRunner
+
 from fi_intel.application.preflight import canonical_configuration_errors
+from fi_intel.cli import app
 from fi_intel.config import Settings
 
 
@@ -39,6 +43,7 @@ def test_checked_in_template_covers_every_external_runtime_input() -> None:
         "FI_INTEL_EMBEDDING_MODEL",
         "FI_INTEL_EMBEDDING_DIM",
         "FI_INTEL_SOURCE_TLS_VERIFY",
+        "FI_INTEL_COVERAGE_REQUIRED_SOURCE_IDS",
     }
     configured = {
         line.partition("=")[0] for line in template.splitlines() if line.startswith("FI_INTEL_")
@@ -46,6 +51,26 @@ def test_checked_in_template_covers_every_external_runtime_input() -> None:
 
     assert required <= configured
     assert "deploy/app.env" in Path(".gitignore").read_text(encoding="utf-8")
+
+
+def test_coverage_source_filter_is_normalized() -> None:
+    settings = Settings(
+        coverage_required_source_ids=" sa_sama_news,om_cbo_news,sa_sama_news "
+    )
+
+    assert settings.configured_coverage_source_ids == {
+        "om_cbo_news",
+        "sa_sama_news",
+    }
+
+
+def test_preflight_prints_selected_smoke_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FI_INTEL_COVERAGE_REQUIRED_SOURCE_IDS", "sa_sama_news")
+
+    result = CliRunner().invoke(app, ["preflight"])
+
+    assert result.exit_code == 0
+    assert "sources: sa_sama_news" in result.stdout
 
 
 def test_preflight_rejects_partial_basic_auth_and_insecure_non_shadow_transport() -> None:
