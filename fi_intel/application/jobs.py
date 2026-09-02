@@ -118,6 +118,7 @@ class AnalysisJob(BaseModel):
         source_ids: tuple[str, ...],
         *,
         requested_at: datetime | None = None,
+        input_revision: tuple[str, ...] = (),
     ) -> AnalysisJob:
         if not topic_ids:
             raise ValueError("analysis job requires at least one topic")
@@ -144,6 +145,10 @@ class AnalysisJob(BaseModel):
             "analysis_mode": settings.analysis_mode,
             "window_version": settings.daily_analysis_window_version,
         }
+        if input_revision:
+            # A forced refresh is still deterministic: it creates new work
+            # only when the latest durable source observations have changed.
+            manifest["input_revision"] = list(sorted(input_revision))
         idempotency_key = (
             f"daily:{business_date.isoformat()}:{authorization_scope}:{stable_digest(manifest)}"
         )

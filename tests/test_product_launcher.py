@@ -31,6 +31,9 @@ def test_first_run_copies_ready_configuration_without_prompts(tmp_path: Path) ->
     assert canonical_configuration_errors(settings) == ()
     assert settings.embedding_model == "nvidia/llama-3.2-nv-embedqa-1b-v2"
     assert settings.embedding_dim == 2048
+    assert settings.source_http_proxy == "http://proxy2.cbq.com.qa:3128"
+    assert settings.source_https_proxy == "http://proxy2.cbq.com.qa:3128"
+    assert ".cbq.com.qa" in settings.source_no_proxy
 
 
 def test_existing_configuration_is_upgraded_and_preserves_model_values(tmp_path: Path) -> None:
@@ -54,5 +57,6 @@ def test_existing_configuration_is_upgraded_and_preserves_model_values(tmp_path:
 
     configured = target.read_text(encoding="utf-8")
     assert "FI_INTEL_LLM_API_KEY=private-key" in configured
+    assert "FI_INTEL_SOURCE_HTTP_PROXY=http://proxy2.cbq.com.qa:3128" in configured
     assert "OIDC" not in configured
     assert "EVALUATION_DATASET" not in configured

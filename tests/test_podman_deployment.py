@@ -32,6 +32,10 @@ def test_podman_compose_uses_migration_only_bootstrap_and_qualified_images() -> 
         assert service in compose
     source_block = compose.split("source-worker:", 1)[1].split("projection-worker:", 1)[0]
     delivery_block = compose.split("delivery-worker:", 1)[1].split("volumes:", 1)[0]
+    assert "<<: *app-environment" in source_block
+    assert "HTTP_PROXY: ${FI_INTEL_SOURCE_HTTP_PROXY:-}" in source_block
+    assert "HTTPS_PROXY: ${FI_INTEL_SOURCE_HTTPS_PROXY:-}" in source_block
+    assert "NO_PROXY: ${FI_INTEL_SOURCE_NO_PROXY:-}" in source_block
     assert "neo4j:" not in source_block
     assert "neo4j:" not in delivery_block
     for graph_worker, next_service in (

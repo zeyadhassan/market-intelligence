@@ -102,9 +102,9 @@ def configure_environment(
     if errors:
         details = "\n  - ".join(errors)
         raise RuntimeError(
-            "deploy/app.env needs a model endpoint correction:\n"
+            "deploy/app.env needs a configuration correction:\n"
             f"  - {details}\n"
-            "Only the chat and embedding sections need configuration."
+            "Check the chat, embedding, and source-network sections."
         )
     print(f"Configuration ready: {env_path}")
     return settings

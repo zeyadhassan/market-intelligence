@@ -50,9 +50,10 @@ manual copying is optional:
 Copy-Item deploy\app.env.example deploy\app.env
 ```
 
-The file contains only the chat and embedding endpoint URLs, optional endpoint credentials,
-transport settings, model IDs, and the fixed 2,048 embedding dimension. The checked-in values are
-already ready for the supplied UAT endpoints, so normally no editing is needed.
+The file contains the chat and embedding endpoint settings plus the outbound source/package proxy
+used on the UAT network. Compose scopes that proxy to image builds and the source worker; internal
+model calls retain their explicit direct-routing policy. The checked-in values are already ready
+for the supplied UAT endpoints, so normally no editing is needed.
 
 Use a URL reachable from inside Podman. For endpoints running on this Windows host, use
 `host.containers.internal` instead of `127.0.0.1`.

@@ -363,7 +363,7 @@ __FI_INTEL_TOKEN_PROVIDER__
       if (["queued", "running"].includes(resultSet.analysis_status)) {
         window.setTimeout(() => {
           state.resultSets.delete(topicId);
-          if (state.selectedTopic === topicId) selectTopic(topicId);
+          if (state.selectedTopic === topicId) selectTopic(topicId, force);
         }, 2000);
       }
     } catch (error) {
@@ -580,7 +580,9 @@ __FI_INTEL_TOKEN_PROVIDER__
     const label = document.createElement("strong");
     label.textContent = `Live source ledger: ${resultSet.successful_source_count}/${resultSet.required_source_count} completed`;
     const model = document.createElement("small");
-    model.textContent = `Model ${resultSet.model_name || "unavailable"} · run ${resultSet.run_id || "unknown"} · ${resultSet.rejected_candidate_count} unsupported candidate(s) rejected`;
+    const modelState = resultSet.model_name ||
+      (resultSet.coverage_state === "complete" ? "lineage not recorded" : "not invoked (coverage incomplete)");
+    model.textContent = `Model ${modelState} · run ${resultSet.run_id || "unknown"} · ${resultSet.rejected_candidate_count} unsupported candidate(s) rejected`;
     summary.append(label, model);
     const grid = document.createElement("div");
     grid.className = "source-grid";

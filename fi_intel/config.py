@@ -64,6 +64,15 @@ class Settings(BaseSettings):
     source_raw_retention_days: int = 2_555
     raw_archive_path: str = ".fi-intel/archive"
 
+    # The local UAT network reaches public source sites and Python package
+    # indexes through the corporate forward proxy. Compose maps these
+    # application-owned values to the standard proxy variables only for image
+    # builds and the source worker; model clients retain their explicit,
+    # independent trust_env policy.
+    source_http_proxy: str | None = None
+    source_https_proxy: str | None = None
+    source_no_proxy: str = ""
+
     # Canonical GCC source acquisition. The checked-in source matrix is intentionally
     # bounded to official, public regulator/market pages in all six GCC
     # countries. `complete` means every required configured page was fetched

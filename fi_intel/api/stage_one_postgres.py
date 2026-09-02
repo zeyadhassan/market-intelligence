@@ -104,17 +104,35 @@ class PostgresStageOneService:
         topic_ids: frozenset[str],
         scope: str,
         source_ids: tuple[str, ...],
+        *,
+        refresh: bool = False,
     ) -> AnalysisJob:
         topics = await self._topics.require_many(tuple(sorted(topic_ids)))
         topic_sources = {
             source_id for topic in topics.values() for source_id in topic.required_source_ids
         }
+        required_source_ids = tuple(sorted(set(source_ids) & topic_sources))
+        input_revision: tuple[str, ...] = ()
+        if refresh and required_source_ids:
+            pool = await self._get_pool()
+            rows = await pool.fetch(
+                """
+                SELECT DISTINCT ON (source_id)
+                       source_id, observation_id
+                FROM source_observation_v2
+                WHERE source_id = ANY($1::text[])
+                ORDER BY source_id, finished_at DESC, observation_id DESC
+                """,
+                list(required_source_ids),
+            )
+            input_revision = tuple(f"{row['source_id']}:{row['observation_id']}" for row in rows)
         job = AnalysisJob.request(
             self._settings,
             principal,
             topic_ids,
             scope,
-            tuple(sorted(set(source_ids) & topic_sources)),
+            required_source_ids,
+            input_revision=input_revision,
         )
         if self._telemetry is None:
             return await self._jobs.enqueue(job)
@@ -267,7 +285,11 @@ class PostgresStageOneService:
         # Every selection joins today's deterministic job. This remains a
         # bounded INSERT/SELECT and never starts work in the API process.
         queued_job = await self._enqueue_analysis(
-            principal, frozenset({topic_id}), scope, source_ids
+            principal,
+            frozenset({topic_id}),
+            scope,
+            source_ids,
+            refresh=refresh,
         )
         if read_model is None:
             failed = queued_job.state in {
@@ -341,18 +363,59 @@ class PostgresStageOneService:
         )
         complete = bool(coverage.get("complete", False))
         source_rows = await pool.fetch(
-            """SELECT source_id, display_name FROM source_registry
-               WHERE source_id = ANY($1::text[]) ORDER BY source_id""",
+            """
+            SELECT registry.source_id, registry.display_name,
+                   observation.health, observation.complete, observation.fresh,
+                   observation.silent, observation.within_expected_volume,
+                   observation.finished_at, observation.committed_count,
+                   observation.quarantine_count, observation.error_type,
+                   observation.error_message
+            FROM source_registry registry
+            LEFT JOIN LATERAL (
+                SELECT health, complete, fresh, silent, within_expected_volume,
+                       finished_at, committed_count, quarantine_count,
+                       error_type, error_message
+                FROM source_observation_v2
+                WHERE source_id = registry.source_id AND finished_at <= $2
+                ORDER BY finished_at DESC, observation_id DESC LIMIT 1
+            ) observation ON TRUE
+            WHERE registry.source_id = ANY($1::text[])
+            ORDER BY registry.source_id
+            """,
             list(required),
+            read_model["temporal_pin"],
         )
-        names = {str(row["source_id"]): str(row["display_name"]) for row in source_rows}
+        source_observations = {str(row["source_id"]): row for row in source_rows}
         source_matrix = {source.source_id: source for source in GCC_OFFICIAL_SOURCES}
         coverage_reasons = tuple(str(item) for item in _json_items(coverage.get("reasons")))
         latest_source_time = read_model["latest_source_time"]
-        statuses = tuple(
-            LiveSourceStatusView(
+
+        def source_status(source_id: str) -> LiveSourceStatusView:
+            observation = source_observations.get(source_id)
+            source_complete = source_id in completed
+            if source_complete:
+                status = "complete"
+                detail = "Completed in the canonical analysis run."
+            elif observation is not None and observation["health"] == "failed":
+                status = "fetch_failed"
+                detail = (
+                    f"Fetch failed: {observation['error_type'] or 'source error'}; "
+                    f"{observation['error_message'] or 'no safe error summary'}"
+                )
+            elif observation is None or observation["health"] is None:
+                status = "incomplete"
+                detail = "No source observation completed before the analysis pin."
+            else:
+                status = "incomplete"
+                detail = next(
+                    (reason for reason in coverage_reasons if source_id in reason),
+                    "Required source work did not complete freshness and volume checks.",
+                )
+            return LiveSourceStatusView(
                 source_id=source_id,
-                display_name=names.get(source_id, source_id),
+                display_name=(
+                    str(observation["display_name"]) if observation is not None else source_id
+                ),
                 country=(
                     source_matrix[source_id].country if source_id in source_matrix else "Unknown"
                 ),
@@ -362,19 +425,20 @@ class PostgresStageOneService:
                     else "registered_authorized_source"
                 ),
                 source_url=(source_matrix[source_id].url if source_id in source_matrix else ""),
-                status="complete" if source_id in completed else "incomplete",
-                fetched_at=latest_source_time,
-                detail=(
-                    "Completed in the canonical analysis run."
-                    if source_id in completed
-                    else next(
-                        (reason for reason in coverage_reasons if source_id in reason),
-                        "Required source work did not complete.",
-                    )
+                status=status,
+                fetched_at=(
+                    observation["finished_at"] if observation is not None else latest_source_time
                 ),
+                candidate_count=(
+                    int(observation["committed_count"] or 0) if observation is not None else 0
+                ),
+                rejected_candidate_count=(
+                    int(observation["quarantine_count"] or 0) if observation is not None else 0
+                ),
+                detail=detail,
             )
-            for source_id in required
-        )
+
+        statuses = tuple(source_status(source_id) for source_id in required)
         message = str(read_model["safe_message"])
         model_names = sorted(
             {
@@ -420,6 +484,7 @@ class PostgresStageOneService:
             lifecycle_counts=lifecycle_counts,
             required_source_count=len(required),
             successful_source_count=len(completed & set(required)),
+            rejected_candidate_count=sum(item.rejected_candidate_count for item in statuses),
             source_statuses=statuses,
             results=tuple(sorted(results, key=lambda item: item.score, reverse=True)),
         )

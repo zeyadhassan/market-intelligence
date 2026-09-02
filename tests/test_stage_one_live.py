@@ -45,6 +45,9 @@ def test_default_stage_one_page_describes_the_local_product_path() -> None:
     assert "deterministic synthetic fixture" not in STAGE_ONE_HTML
     assert "stage-one-demo" not in STAGE_ONE_JS
     assert 'return "fi-intel-local"' in STAGE_ONE_JS
+    assert "not invoked (coverage incomplete)" in STAGE_ONE_JS
+    assert "selectTopic(topicId, force)" in STAGE_ONE_JS
+    assert 'model_name || "unavailable"' not in STAGE_ONE_JS
     assert "window.sessionStorage" not in STAGE_ONE_JS
     assert "OIDC access token" not in STAGE_ONE_JS
 
