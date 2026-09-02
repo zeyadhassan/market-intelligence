@@ -281,6 +281,23 @@ def operator_dead_letters(
     _show(asyncio.run(_with_resources(run, graph_required=False)))
 
 
+@operator_app.command("projection-failures")
+def operator_projection_failures(
+    limit: Annotated[int, typer.Option(min=1, max=1000)] = 100,
+) -> None:
+    """List failed document projections with source and safe reason."""
+
+    from fi_intel.application.operations import OperatorService
+
+    async def run(resources: RuntimeResources) -> object:
+        return [
+            item.model_dump(mode="json")
+            for item in await OperatorService(resources).projection_failures(limit=limit)
+        ]
+
+    _show(asyncio.run(_with_resources(run, graph_required=False)))
+
+
 @operator_app.command("replay-outbox")
 def operator_replay_outbox(
     dead_letter_id: Annotated[str, typer.Argument(help="Immutable dead-letter ID.")],

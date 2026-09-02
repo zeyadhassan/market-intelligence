@@ -6,8 +6,15 @@ import argparse
 import asyncio
 import sys
 
+import openai
+
 from fi_intel.config import Settings
 from fi_intel.governance.model_transport import build_embedding_http_client, build_llm_client
+from fi_intel.governance.structured_output import (
+    StructuredOutputNegotiator,
+    decode_structured_json,
+)
+from fi_intel.ingest.extractors.openai_compatible_extractor import EXTRACTION_RESPONSE_SCHEMA
 from fi_intel.retrieval.embedders.openai_compatible_embedder import OpenAICompatibleEmbedder
 
 try:
@@ -20,6 +27,7 @@ MODEL_FIELDS = {
     "llm_api_key",
     "llm_basic_auth_username",
     "llm_basic_auth_password",
+    "llm_structured_output_mode",
     "extraction_model",
     "embedding_base_url",
     "embedding_api_key",
@@ -53,9 +61,32 @@ async def smoke_chat(settings: Settings) -> None:
             temperature=0.0,
             max_tokens=8,
         )
+        structured = StructuredOutputNegotiator(settings.llm_structured_output_mode)
+        completion = await structured.create(
+            llm,
+            model=settings.extraction_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Return an empty financial extraction result as JSON.",
+                },
+                {"role": "user", "content": "There are no claims in this connectivity check."},
+            ],
+            schema_name="extraction_result",
+            schema=EXTRACTION_RESPONSE_SCHEMA,
+            temperature=0.0,
+            reasoning_effort=openai.omit,
+        )
+        content = completion.choices[0].message.content
+        payload = decode_structured_json(content) if content is not None else None
+        if not isinstance(payload, dict) or payload.get("claims") != []:
+            raise RuntimeError("structured chat check did not return an empty claims array")
     finally:
         await llm.close()
-    print("Chat endpoint OK", flush=True)
+    print(
+        f"Chat endpoint OK (structured output: {structured.selected_mode})",
+        flush=True,
+    )
 
 
 async def smoke_embedding(settings: Settings) -> None:

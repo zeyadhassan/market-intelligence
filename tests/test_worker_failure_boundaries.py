@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
-from fi_intel.application.daily_worker import CanonicalAnalysisJobWorker
+from fi_intel.application.daily_worker import AnalysisInputsPending, CanonicalAnalysisJobWorker
 from fi_intel.application.jobs import AnalysisJob, AnalysisJobState, PrincipalSnapshot
 from fi_intel.application.search import (
     CanonicalSearchWorker,
@@ -83,6 +83,42 @@ async def test_analysis_failure_returns_job_to_the_durable_retry_queue() -> None
 
     assert result is not None and result.state is AnalysisJobState.RETRYABLE_FAILED
     assert not jobs.finish_called
+
+
+async def test_analysis_waits_for_projection_without_terminally_holding_job() -> None:
+    settings = Settings(worker_poll_interval_seconds=2)
+    job = AnalysisJob.request(
+        settings,
+        _principal(),
+        frozenset({"upcoming-maturities"}),
+        "scope-public",
+        ("source-a",),
+        requested_at=NOW,
+    ).model_copy(update={"state": AnalysisJobState.RUNNING, "attempt_count": 1})
+
+    class Jobs:
+        async def claim(self, *_: object) -> AnalysisJob:
+            return job
+
+        async def defer(self, *_: object, **kwargs: object) -> AnalysisJob:
+            assert kwargs["delay_seconds"] == 2
+            assert "projection events remain pending" in str(kwargs["safe_detail"])
+            return job.model_copy(update={"state": AnalysisJobState.DEFERRED})
+
+    class Analysis:
+        async def run(self, _: AnalysisJob) -> None:
+            raise AnalysisInputsPending("5 projection events remain pending")
+
+    worker = CanonicalAnalysisJobWorker.__new__(CanonicalAnalysisJobWorker)
+    worker._resources = SimpleNamespace(settings=settings, telemetry=_Telemetry())  # type: ignore[attr-defined]
+    worker._worker_id = "analysis-test"  # type: ignore[attr-defined]
+    worker._jobs = Jobs()  # type: ignore[attr-defined]
+    worker._analysis = Analysis()  # type: ignore[attr-defined]
+    worker._opportunities = SimpleNamespace()  # type: ignore[attr-defined]
+
+    result = await worker.run_once()
+
+    assert result is not None and result.state is AnalysisJobState.DEFERRED
 
 
 async def test_search_failure_returns_job_to_the_durable_retry_queue() -> None:

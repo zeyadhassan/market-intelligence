@@ -15,10 +15,6 @@ from openai.types.chat.chat_completion_system_message_param import (
 )
 from openai.types.chat.chat_completion_user_message_param import ChatCompletionUserMessageParam
 from openai.types.shared.reasoning_effort import ReasoningEffort
-from openai.types.shared_params.response_format_json_schema import (
-    JSONSchema,
-    ResponseFormatJSONSchema,
-)
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from fi_intel.config import Settings
@@ -30,6 +26,12 @@ from fi_intel.governance.model_usage import (
     ModelUsageLog,
     estimate_cost_usd,
 )
+from fi_intel.governance.structured_output import (
+    StructuredOutputMode,
+    StructuredOutputNegotiator,
+    decode_structured_json,
+)
+from fi_intel.logging import get_logger, safe_console_error_message, safe_error_summary
 from fi_intel.retrieval.corpus import ScoredChunk
 
 RERANKER_PROMPT_VERSION = "reranker-v1"
@@ -114,6 +116,7 @@ class OpenAICompatibleReranker:
         run_id: str,
         artifact: ModelArtifact | None = None,
         reasoning_effort: str | None = None,
+        structured_output_mode: StructuredOutputMode = "auto",
     ) -> None:
         if artifact is not None and (
             artifact.component is not ModelComponent.RERANKER or artifact.model_id != model
@@ -125,6 +128,8 @@ class OpenAICompatibleReranker:
         self._run_id = run_id
         self._artifact = artifact
         self._reasoning_effort = reasoning_effort
+        self._structured_output = StructuredOutputNegotiator(structured_output_mode)
+        self._log = get_logger(component="retrieval.reranker")
 
     @property
     def model_version(self) -> str:
@@ -159,7 +164,8 @@ class OpenAICompatibleReranker:
             else openai.omit
         )
         try:
-            completion = await self._client.chat.completions.create(
+            completion = await self._structured_output.create(
+                self._client,
                 model=self._model,
                 messages=[
                     ChatCompletionSystemMessageParam(
@@ -175,12 +181,8 @@ class OpenAICompatibleReranker:
                         role="user", content=json.dumps(payload, sort_keys=True)
                     ),
                 ],
-                response_format=ResponseFormatJSONSchema(
-                    type="json_schema",
-                    json_schema=JSONSchema(
-                        name="reranked_candidates", schema=_RERANK_SCHEMA, strict=True
-                    ),
-                ),
+                schema_name="reranked_candidates",
+                schema=_RERANK_SCHEMA,
                 temperature=0.0,
                 reasoning_effort=effort,
             )
@@ -191,6 +193,15 @@ class OpenAICompatibleReranker:
                 status="timed_out" if isinstance(exc, openai.APITimeoutError) else "failed",
                 error_type=type(exc).__name__,
             )
+            self._log.error(
+                "reranker.api_error",
+                model=self._model,
+                structured_output_mode=self._structured_output.selected_mode,
+                status_code=getattr(exc, "status_code", None),
+                error_type=type(exc).__name__,
+                error_message=safe_console_error_message(exc),
+                safe_error_summary=safe_error_summary(exc),
+            )
             raise
         usage = completion.usage
         content = completion.choices[0].message.content
@@ -199,7 +210,7 @@ class OpenAICompatibleReranker:
         parse_error: Exception | None = None
         if content is not None:
             try:
-                response = _RerankedResponse.model_validate_json(content)
+                response = _RerankedResponse.model_validate(decode_structured_json(content))
                 if {item.index for item in response.results} != set(range(len(candidates))):
                     raise ValueError("reranker response did not cover the candidate set exactly")
             except Exception as exc:
@@ -280,6 +291,7 @@ def build_reranker(
         run_id=run_id,
         artifact=artifact,
         reasoning_effort=settings.reranker_reasoning_effort,
+        structured_output_mode=settings.llm_structured_output_mode,
     )
 
 

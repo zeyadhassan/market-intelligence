@@ -77,6 +77,7 @@ def test_podman_launcher_enforces_infrastructure_suite() -> None:
     assert '"app-up"' in launcher
     assert '"logs"' in launcher
     assert '"source-check"' in launcher
+    assert '"diagnose"' in launcher
     assert 'environment["PODMAN_COMPOSE_PROVIDER"]' in launcher
     assert "Docker Compose is intentionally not used" in launcher
     assert "label=io.podman.compose.service=" in launcher

@@ -40,7 +40,7 @@ from fi_intel.ingest.resolve_store import PostgresResolutionStore
 from fi_intel.ingest.store import PostgresDocumentStore
 from fi_intel.ledger.models import OutboxEvent
 from fi_intel.ledger.repository import PostgresIntelligenceLedger
-from fi_intel.logging import get_logger, safe_error_summary
+from fi_intel.logging import get_logger, safe_console_error_message, safe_error_summary
 from fi_intel.retrieval.entitlement import Principal, Side
 from fi_intel.retrieval.store import PostgresCorpusStore
 from fi_intel.sources.adapters.gcc_official import (
@@ -353,6 +353,12 @@ class CanonicalProjectionWorker:
         patterns = PatternRegistry(self._resources.graph, access=access)
 
         async def process_document(event: OutboxEvent) -> None:
+            log.info(
+                "projection.document.started",
+                run_id=run_id,
+                event_id=str(event.event_id),
+                document_version_id=str(event.aggregate_id),
+            )
             await self._set_document_job(event, "running")
             try:
                 await self._project_document_event(
@@ -364,10 +370,26 @@ class CanonicalProjectionWorker:
                 )
             except Exception as exc:
                 await self._set_document_job(
-                    event, "retryable_failed", safe_error=type(exc).__name__
+                    event, "retryable_failed", safe_error=safe_error_summary(exc)
+                )
+                log.error(
+                    "projection.document.failed",
+                    run_id=run_id,
+                    event_id=str(event.event_id),
+                    document_version_id=str(event.aggregate_id),
+                    error_type=type(exc).__name__,
+                    status_code=getattr(exc, "status_code", None),
+                    error_message=safe_console_error_message(exc),
+                    safe_error_summary=safe_error_summary(exc),
                 )
                 raise
             await self._set_document_job(event, "complete")
+            log.info(
+                "projection.document.completed",
+                run_id=run_id,
+                event_id=str(event.event_id),
+                document_version_id=str(event.aggregate_id),
+            )
 
         async def project_assertion(event: OutboxEvent) -> None:
             projection = event.payload.get("projection")
@@ -585,7 +607,17 @@ class CanonicalProjectionWorker:
         if projection.document_class is DocumentClass.REFERENCE:
             await resolution.load_reference([projection])
         else:
-            await extraction.extract_document(projection, datetime.now(UTC))
+            result = await extraction.extract_document(projection, datetime.now(UTC))
+            get_logger(component="canonical-projection-worker").info(
+                "projection.document.extracted",
+                source_id=projection.source_id,
+                document_version_id=projection.doc_id,
+                assertions_written=result.assertions_written,
+                proposed_types=result.proposed_types,
+                offset_rejections=result.offset_rejections,
+                semantic_rejections=result.semantic_rejections,
+                claims_held_for_resolution=result.claims_held_for_resolution,
+            )
 
 
 async def run_continuously(

@@ -195,6 +195,15 @@ class AnalysisJobStore(Protocol):
         safe_detail: str | None = None,
     ) -> AnalysisJob: ...
 
+    async def defer(
+        self,
+        job_id: str,
+        worker_id: str,
+        *,
+        safe_detail: str,
+        delay_seconds: float,
+    ) -> AnalysisJob: ...
+
     async def fail(
         self,
         job_id: str,
@@ -374,6 +383,27 @@ class PostgresAnalysisJobStore:
             run_id=run_id,
             next_attempt_at=datetime.now(UTC),
             safe_detail=safe_detail,
+        )
+
+    async def defer(
+        self,
+        job_id: str,
+        worker_id: str,
+        *,
+        safe_detail: str,
+        delay_seconds: float,
+    ) -> AnalysisJob:
+        """Return an owned job to the queue while upstream projection finishes."""
+
+        if delay_seconds <= 0:
+            raise ValueError("analysis deferral delay must be positive")
+        return await self._transition_owned(
+            job_id,
+            worker_id,
+            AnalysisJobState.DEFERRED,
+            run_id=None,
+            next_attempt_at=datetime.now(UTC) + timedelta(seconds=delay_seconds),
+            safe_detail=safe_detail[:500],
         )
 
     async def fail(

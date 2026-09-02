@@ -250,6 +250,8 @@ class TopicResultsView(ApiModel):
     mode: str = "fixture"
     scope_notice: str
     model_name: str | None = None
+    model_call_count: int = 0
+    model_failure_count: int = 0
     run_id: str | None = None
     analysis_job_id: str | None = None
     business_date: str | None = None

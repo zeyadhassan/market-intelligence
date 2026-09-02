@@ -133,6 +133,63 @@ async def test_extract_with_no_claims_returns_empty_response() -> None:
     assert response.claims == []
 
 
+async def test_auto_mode_falls_back_to_json_object_when_gateway_rejects_schema() -> None:
+    captured: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        captured.append(request)
+        sent = json.loads(request.content)
+        if sent["response_format"]["type"] == "json_schema":
+            return httpx2.Response(
+                400,
+                json={
+                    "error": {
+                        "message": "response_format json_schema is not supported",
+                        "type": "invalid_request_error",
+                        "code": "unsupported_response_format",
+                    }
+                },
+            )
+        return httpx2.Response(
+            200,
+            json={
+                "id": "chatcmpl-fallback",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "gpt-oss-120b",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": '{"claims":[]}',
+                            "refusal": None,
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 3, "total_tokens": 13},
+            },
+        )
+
+    client = openai.AsyncOpenAI(
+        base_url="http://localhost:9999/v1",
+        api_key="not-needed",
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+    )
+    extractor = OpenAICompatibleStructuredExtractor(
+        client, "gpt-oss-120b", 0.0, None, InMemoryModelUsageLog(), "run-fallback"
+    )
+
+    response = await extractor.extract(_REQUEST)
+
+    assert response.claims == []
+    assert [
+        json.loads(request.content)["response_format"]["type"] for request in captured
+    ] == ["json_schema", "json_object"]
+    assert "JSON object matching" in json.loads(captured[1].content)["messages"][0]["content"]
+
+
 async def test_out_of_vocabulary_predicate_raises_validation_error_after_recording_usage() -> None:
     """A model that (despite the schema lock) emits an invented predicate
     fails our own defensive parsing — ExtractionPipeline already knows how

@@ -42,7 +42,7 @@ def test_duplicate_requests_have_one_business_window_identity() -> None:
     assert first.idempotency_key == second.idempotency_key
 
 
-def test_refresh_identity_changes_only_with_source_observations() -> None:
+def test_refresh_identity_changes_with_source_or_projection_revision() -> None:
     requested_at = datetime(2026, 8, 27, 8, tzinfo=UTC)
     arguments = (
         Settings(),
@@ -67,9 +67,18 @@ def test_refresh_identity_changes_only_with_source_observations() -> None:
         requested_at=requested_at,
         input_revision=("sa_sama_news:observation-2",),
     )
+    processed = AnalysisJob.request(
+        *arguments,
+        requested_at=requested_at,
+        input_revision=(
+            "sa_sama_news:observation-1",
+            "document:version-1:complete:2026-08-27T08:01:00+00:00",
+        ),
+    )
 
     assert first.job_id == duplicate.job_id
     assert first.job_id != updated.job_id
+    assert first.job_id != processed.job_id
     assert first.input_manifest["input_revision"] == ["sa_sama_news:observation-1"]
 
 
@@ -81,6 +90,7 @@ def test_api_has_no_background_analysis_task_ownership() -> None:
     assert "_analysis_tasks" not in source
     assert "_jobs.enqueue" in source
     assert "source_observation_v2" in source
+    assert "document_processing_job_v4" in source
     assert "Fetch failed:" in source
     assert "refresh=refresh" in source
     assert "idempotency_key           TEXT NOT NULL UNIQUE" in migration

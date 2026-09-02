@@ -7,6 +7,7 @@ rather than passing loggers around, which keeps call sites honest.
 
 import hashlib
 import logging
+import re
 import uuid
 from typing import Any
 
@@ -57,10 +58,48 @@ def safe_error_summary(error: BaseException) -> str:
     return f"{type(error).__name__} ({reason_field}message_sha256={digest})"
 
 
+def safe_console_error_message(error: BaseException, *, max_length: int = 1_000) -> str:
+    """Return a useful bounded console diagnostic with obvious credentials redacted.
+
+    Unlike :func:`safe_error_summary`, this value is never persisted. It exists
+    so an operator looking at the local container console can see a gateway's
+    actionable HTTP/schema error instead of only an opaque digest.
+    """
+
+    if max_length < 1:
+        raise ValueError("console error message limit must be positive")
+    message = " ".join(str(error).split())
+    substitutions = (
+        (r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;]+", r"\1[REDACTED]"),
+        (r"(?i)(api[_-]?key\s*[:=]\s*)[^\s,;]+", r"\1[REDACTED]"),
+        (r"(?i)(password\s*[:=]\s*)[^\s,;]+", r"\1[REDACTED]"),
+        (r"(?i)(https?://)[^/@\s]+@", r"\1[REDACTED]@"),
+    )
+    for pattern, replacement in substitutions:
+        message = re.sub(pattern, replacement, message)
+    return message[:max_length]
+
+
 def _safe_error_reason(error: BaseException, message: str) -> str | None:
     """Classify common infrastructure failures without retaining their raw text."""
 
     lowered = message.casefold()
+    status_code = getattr(error, "status_code", None)
+    if isinstance(status_code, int):
+        if status_code == 400:
+            return "model_or_http_bad_request"
+        if status_code == 401:
+            return "authentication_failed"
+        if status_code == 403:
+            return "permission_denied"
+        if status_code == 404:
+            return "endpoint_or_model_not_found"
+        if status_code == 422:
+            return "structured_request_rejected"
+        if status_code == 429:
+            return "rate_limited"
+        if status_code >= 500:
+            return "upstream_service_error"
     if "proxy authentication required" in lowered or (
         "proxy" in lowered and "407" in lowered
     ):
@@ -83,4 +122,6 @@ def _safe_error_reason(error: BaseException, message: str) -> str | None:
         return "network_timeout"
     if "connection refused" in lowered:
         return "connection_refused"
+    if type(error).__name__ in {"JSONDecodeError", "ValidationError"}:
+        return "invalid_structured_model_output"
     return None

@@ -164,6 +164,12 @@ class Settings(BaseSettings):
     llm_trust_env: bool = True
     llm_tls_verify: bool = True
     llm_timeout_seconds: float = Field(default=120.0, gt=0)
+    # `auto` starts with strict JSON Schema and falls back once per model
+    # adapter to the older JSON-object response format when an on-prem
+    # OpenAI-compatible gateway rejects schema-constrained output.
+    llm_structured_output_mode: Literal[
+        "auto", "json_schema", "json_object", "prompt_json"
+    ] = "auto"
     llm_basic_auth_username: str | None = None
     llm_basic_auth_password: SecretStr | None = None
     extraction_model: str = "gpt-oss-120b"

@@ -1,8 +1,9 @@
 """Evidence-bound reasoning through an OpenAI-compatible completions API.
 
-Responses use a strict JSON schema, and usage is recorded before domain
-validation. The adapter has no tool access and receives only authorized
-evidence supplied by its caller.
+Responses prefer a strict JSON schema and negotiate compatible JSON modes for
+older on-prem gateways. Usage is recorded before domain validation. The
+adapter has no tool access and receives only authorized evidence supplied by
+its caller.
 """
 
 import json
@@ -18,10 +19,6 @@ from openai.types.chat.chat_completion_system_message_param import (
 )
 from openai.types.chat.chat_completion_user_message_param import ChatCompletionUserMessageParam
 from openai.types.shared.reasoning_effort import ReasoningEffort
-from openai.types.shared_params.response_format_json_schema import (
-    JSONSchema,
-    ResponseFormatJSONSchema,
-)
 from pydantic import BaseModel, ConfigDict
 
 from fi_intel.agents.opportunity_research import (
@@ -34,7 +31,12 @@ from fi_intel.config import Settings
 from fi_intel.governance.model_registry import ModelArtifact, ModelComponent
 from fi_intel.governance.model_transport import build_llm_client
 from fi_intel.governance.model_usage import ModelCallEvent, ModelUsageLog, estimate_cost_usd
-from fi_intel.logging import get_logger
+from fi_intel.governance.structured_output import (
+    StructuredOutputMode,
+    StructuredOutputNegotiator,
+    decode_structured_json,
+)
+from fi_intel.logging import get_logger, safe_console_error_message, safe_error_summary
 from fi_intel.tools.evidence import OpportunityClaimKind, OpportunityStatus
 
 
@@ -110,6 +112,7 @@ class OpenAICompatibleReasoningModel:
         usage_log: ModelUsageLog,
         run_id: str,
         artifact: ModelArtifact | None = None,
+        structured_output_mode: StructuredOutputMode = "auto",
     ) -> None:
         if artifact is not None and (
             artifact.component is not ModelComponent.REASONING or artifact.model_id != model
@@ -123,6 +126,7 @@ class OpenAICompatibleReasoningModel:
         self._run_id = run_id
         self._artifact = artifact
         self._log = get_logger(component="agents.reasoning.openai_compatible")
+        self._structured_output = StructuredOutputNegotiator(structured_output_mode)
 
     @property
     def model_version(self) -> str:
@@ -139,10 +143,6 @@ class OpenAICompatibleReasoningModel:
             ChatCompletionSystemMessageParam(role="system", content=request.instruction),
             ChatCompletionUserMessageParam(role="user", content=_build_user_prompt(request)),
         ]
-        response_format = ResponseFormatJSONSchema(
-            type="json_schema",
-            json_schema=JSONSchema(name="research_result", schema=_SCHEMA, strict=True),
-        )
         # The serving stack defines and validates supported effort values.
         effort = (
             cast(ReasoningEffort, self._reasoning_effort)
@@ -150,10 +150,12 @@ class OpenAICompatibleReasoningModel:
             else openai.omit
         )
         try:
-            completion = await self._client.chat.completions.create(
+            completion = await self._structured_output.create(
+                self._client,
                 model=self._model,
                 messages=messages,
-                response_format=response_format,
+                schema_name="research_result",
+                schema=_SCHEMA,
                 temperature=self._temperature,
                 reasoning_effort=effort,
             )
@@ -177,7 +179,16 @@ class OpenAICompatibleReasoningModel:
                     schema_version="opportunity-v2",
                 )
             )
-            self._log.warning("research.api_error", entity=request.entity_name, model=self._model)
+            self._log.error(
+                "research.api_error",
+                entity=request.entity_name,
+                model=self._model,
+                structured_output_mode=self._structured_output.selected_mode,
+                status_code=getattr(exc, "status_code", None),
+                error_type=type(exc).__name__,
+                error_message=safe_console_error_message(exc),
+                safe_error_summary=safe_error_summary(exc),
+            )
             raise
         latency_ms = (time.monotonic() - started) * 1000.0
 
@@ -188,7 +199,7 @@ class OpenAICompatibleReasoningModel:
         parse_error: Exception | None = None
         if content is not None:
             try:
-                wire = _WireResearchOut.model_validate(json.loads(content))
+                wire = _WireResearchOut.model_validate(decode_structured_json(content))
             except Exception as exc:
                 parse_error = exc
         await self._usage_log.record(
@@ -267,4 +278,5 @@ def build_reasoning_model(
         usage_log=usage_log,
         run_id=run_id,
         artifact=artifact,
+        structured_output_mode=settings.llm_structured_output_mode,
     )

@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from fi_intel.ledger.models import OutboxEvent
 from fi_intel.ledger.repository import IntelligenceLedger
-from fi_intel.logging import safe_error_summary
+from fi_intel.logging import get_logger, safe_error_summary
 
 OutboxHandler = Callable[[OutboxEvent], Awaitable[None]]
 
@@ -318,6 +318,7 @@ class OutboxDispatcher:
         self._circuit_cooldown_seconds = circuit_cooldown_seconds
         self._leases = leases
         self._circuits: dict[str, _Circuit] = {}
+        self._log = get_logger(component="outbox-dispatcher")
 
     async def dispatch_pending(self, *, limit: int = 100) -> OutboxDispatchReport:  # noqa: C901
         events = (
@@ -377,6 +378,21 @@ class OutboxDispatcher:
                     break
                 except Exception as exc:
                     final_error = exc
+                    self._log.warning(
+                        "outbox.handler.failed",
+                        event_id=str(event.event_id),
+                        event_type=event.event_type,
+                        aggregate_type=event.aggregate_type,
+                        aggregate_id=str(event.aggregate_id),
+                        attempt=attempt,
+                        max_attempts=self._max_attempts,
+                        will_retry=(
+                            attempt < self._max_attempts
+                            and not isinstance(exc, (ValueError, TypeError))
+                        ),
+                        error_type=type(exc).__name__,
+                        safe_error_summary=safe_error_summary(exc),
+                    )
                     if isinstance(exc, (ValueError, TypeError)):
                         break
                     if attempt < self._max_attempts:
@@ -403,6 +419,17 @@ class OutboxDispatcher:
                 # replay must create a new, explicitly correlated event.
                 await self._ledger.mark_event_published(event.event_id, datetime.now(UTC))
                 quarantined += 1
+                self._log.error(
+                    "outbox.event.quarantined",
+                    event_id=str(event.event_id),
+                    event_type=event.event_type,
+                    aggregate_type=event.aggregate_type,
+                    aggregate_id=str(event.aggregate_id),
+                    attempt_count=attempts,
+                    retryable=retryable,
+                    error_type=type(final_error).__name__,
+                    safe_error_summary=safe_error_summary(final_error),
+                )
         return OutboxDispatchReport(
             attempted=attempted,
             published=published,

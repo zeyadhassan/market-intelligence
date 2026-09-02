@@ -241,7 +241,9 @@ _STAGE_ONE_JS_TEMPLATE = """(() => {
   "use strict";
 
 __FI_INTEL_TOKEN_PROVIDER__
-  const state = { topics: [], selectedTopic: null, resultSets: new Map() };
+  const state = {
+    topics: [], selectedTopic: null, resultSets: new Map(), lastDiagnosticKey: null
+  };
   const byId = (id) => document.getElementById(id);
   const toast = byId("toast");
 
@@ -361,7 +363,7 @@ __FI_INTEL_TOKEN_PROVIDER__
       }
       if (state.selectedTopic !== topicId) return;
       renderResultSet(resultSet);
-      if (["queued", "running"].includes(resultSet.analysis_status)) {
+      if (["queued", "running", "deferred", "retryable_failed"].includes(resultSet.analysis_status)) {
         window.setTimeout(() => {
           state.resultSets.delete(topicId);
           if (state.selectedTopic === topicId) selectTopic(topicId, force);
@@ -542,8 +544,11 @@ __FI_INTEL_TOKEN_PROVIDER__
 
   function renderResultSet(resultSet) {
     const complete = resultSet.coverage_state === "complete";
+    const pending = ["queued", "running", "deferred", "retryable_failed"].includes(
+      resultSet.analysis_status
+    );
     setAnalysisState(
-      complete ? "complete" : "incomplete",
+      pending ? "loading" : complete ? "complete" : "incomplete",
       resultSet.message,
       `Analysis as of ${formatDate(resultSet.as_of)} · ${resultSet.coverage_state.replaceAll("_", " ")} coverage`
     );
@@ -561,9 +566,13 @@ __FI_INTEL_TOKEN_PROVIDER__
       const empty = document.createElement("div");
       empty.className = "empty-results";
       const strong = document.createElement("strong");
-      strong.textContent = complete ? "Nothing new for this topic" : "No result can be claimed";
+      strong.textContent = pending
+        ? "Finishing document processing"
+        : complete ? "Nothing new for this topic" : "No result can be claimed";
       const detail = document.createElement("span");
-      detail.textContent = complete
+      detail.textContent = pending
+        ? "The source run completed. Extraction, projection, and indexing are still active."
+        : complete
         ? (resultSet.mode === "fixture"
           ? "The deterministic fixture produced no result above its triage threshold."
           : "All required authorized sources completed and produced no supported result for this topic.")
@@ -576,6 +585,14 @@ __FI_INTEL_TOKEN_PROVIDER__
   }
 
   function logResultDiagnostics(resultSet) {
+    const diagnosticKey = [
+      resultSet.topic_id,
+      resultSet.analysis_status,
+      resultSet.run_id || resultSet.analysis_job_id || "unknown",
+      resultSet.scope_notice || ""
+    ].join(":");
+    if (state.lastDiagnosticKey === diagnosticKey) return;
+    state.lastDiagnosticKey = diagnosticKey;
     const statuses = resultSet.source_statuses || [];
     const failed = statuses.filter((item) => item.status !== "complete");
     const heading = `[FI Intel] analysis ${resultSet.coverage_state}: ${resultSet.run_id || "unknown run"}`;
@@ -615,13 +632,19 @@ __FI_INTEL_TOKEN_PROVIDER__
     const ledger = byId("coverage-ledger");
     ledger.replaceChildren();
     ledger.hidden = false;
+    const pending = ["queued", "running", "deferred", "retryable_failed"].includes(
+      resultSet.analysis_status
+    );
     const summary = document.createElement("div");
     summary.className = "coverage-summary";
     const label = document.createElement("strong");
     label.textContent = `Live source ledger: ${resultSet.successful_source_count}/${resultSet.required_source_count} completed`;
     const model = document.createElement("small");
-    const modelState = resultSet.model_name ||
-      (resultSet.coverage_state === "complete" ? "lineage not recorded" : "not invoked (coverage incomplete)");
+    const calls = resultSet.model_call_count || 0;
+    const failures = resultSet.model_failure_count || 0;
+    const modelState = calls
+      ? `${resultSet.model_name || "configured model"} · ${calls} call(s)${failures ? `, ${failures} failed` : ""}`
+      : (pending ? "waiting for document processing" : "not needed (no supported signal)");
     model.textContent = `Model ${modelState} · run ${resultSet.run_id || "unknown"} · ${resultSet.rejected_candidate_count} unsupported candidate(s) rejected`;
     summary.append(label, model);
     const grid = document.createElement("div");
@@ -636,7 +659,7 @@ __FI_INTEL_TOKEN_PROVIDER__
       const name = document.createElement("strong");
       name.textContent = `${item.country} · ${item.display_name}`;
       const status = document.createElement("small");
-      status.textContent = `${item.status.replaceAll("_", " ")} · ${item.candidate_count} accepted`;
+      status.textContent = `${item.status.replaceAll("_", " ")} · ${item.candidate_count} document(s) available`;
       chip.append(name, status);
       if (item.status !== "complete") {
         const detail = document.createElement("small");

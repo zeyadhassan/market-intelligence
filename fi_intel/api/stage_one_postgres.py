@@ -121,14 +121,39 @@ class PostgresStageOneService:
             rows = await pool.fetch(
                 """
                 SELECT DISTINCT ON (source_id)
-                       source_id, observation_id
+                       source_id, observation_id, run_id
                 FROM source_observation_v2
                 WHERE source_id = ANY($1::text[])
                 ORDER BY source_id, finished_at DESC, observation_id DESC
                 """,
                 list(required_source_ids),
             )
-            input_revision = tuple(f"{row['source_id']}:{row['observation_id']}" for row in rows)
+            revisions = [f"{row['source_id']}:{row['observation_id']}" for row in rows]
+            run_ids = [row["run_id"] for row in rows]
+            if run_ids:
+                processing = await pool.fetch(
+                    """
+                    SELECT DISTINCT ingest.result_document_version_id,
+                           COALESCE(job.state, 'queued') AS processing_state,
+                           job.updated_at
+                    FROM ingest_job_v2 ingest
+                    LEFT JOIN document_processing_job_v4 job
+                      ON job.document_version_id=ingest.result_document_version_id
+                    WHERE ingest.run_id = ANY($1::uuid[])
+                      AND ingest.status IN ('committed','not_novel')
+                      AND ingest.result_document_version_id IS NOT NULL
+                    ORDER BY ingest.result_document_version_id
+                    """,
+                    run_ids,
+                )
+                revisions.extend(
+                    "document:"
+                    f"{row['result_document_version_id']}:"
+                    f"{row['processing_state']}:"
+                    f"{row['updated_at'].isoformat() if row['updated_at'] else 'not-started'}"
+                    for row in processing
+                )
+            input_revision = tuple(revisions)
         job = AnalysisJob.request(
             self._settings,
             principal,
@@ -308,6 +333,8 @@ class PostgresStageOneService:
                 message=(
                     "Canonical analysis failed; its durable job remains inspectable."
                     if failed
+                    else "Source data is ready; document extraction and indexing are finishing."
+                    if queued_job.state is AnalysisJobState.DEFERRED
                     else "Canonical analysis is queued for an independent worker."
                 ),
                 mode=self._mode,
@@ -361,6 +388,10 @@ class PostgresStageOneService:
             )
         coverage = _json_object(read_model["coverage_summary"])
         required = tuple(str(item) for item in _json_items(coverage.get("required_source_ids")))
+        required_documents = tuple(
+            str(item)
+            for item in _json_items(coverage.get("required_document_version_ids"))
+        )
         completed = frozenset(
             str(item) for item in _json_items(coverage.get("completed_source_ids"))
         )
@@ -388,6 +419,25 @@ class PostgresStageOneService:
             list(required),
             read_model["temporal_pin"],
         )
+        document_count_rows = await pool.fetch(
+            """
+            SELECT identity.source_id, count(*) AS document_count
+            FROM document_identity identity
+            WHERE identity.source_id = ANY($1::text[])
+              AND EXISTS (
+                SELECT 1 FROM document_version version
+                WHERE version.document_id=identity.document_id
+                  AND version.recorded_at <= $2
+              )
+            GROUP BY identity.source_id
+            """,
+            list(required),
+            read_model["temporal_pin"],
+        )
+        document_counts = {
+            str(row["source_id"]): int(row["document_count"])
+            for row in document_count_rows
+        }
         source_observations = {str(row["source_id"]): row for row in source_rows}
         source_matrix = {source.source_id: source for source in GCC_OFFICIAL_SOURCES}
         coverage_reasons = tuple(str(item) for item in _json_items(coverage.get("reasons")))
@@ -432,9 +482,7 @@ class PostgresStageOneService:
                 fetched_at=(
                     observation["finished_at"] if observation is not None else latest_source_time
                 ),
-                candidate_count=(
-                    int(observation["committed_count"] or 0) if observation is not None else 0
-                ),
+                candidate_count=document_counts.get(source_id, 0),
                 rejected_candidate_count=(
                     int(observation["quarantine_count"] or 0) if observation is not None else 0
                 ),
@@ -443,14 +491,33 @@ class PostgresStageOneService:
 
         statuses = tuple(source_status(source_id) for source_id in required)
         message = str(read_model["safe_message"])
+        result_model_names = {
+            lineage.model_id
+            for row in rows
+            for lineage in ImmutableResultManifest.model_validate(
+                _json_object(row["manifest"])
+            ).model_lineages
+        }
+        model_usage_rows = await pool.fetch(
+            """
+            SELECT model, status, count(*) AS call_count
+            FROM model_call_log
+            WHERE ($1::text IS NOT NULL AND run_id=$1)
+               OR subject_id = ANY($2::text[])
+            GROUP BY model, status
+            ORDER BY model, status
+            """,
+            str(read_model["run_id"]) if read_model["run_id"] else None,
+            list(required_documents),
+        )
         model_names = sorted(
-            {
-                lineage.model_id
-                for row in rows
-                for lineage in ImmutableResultManifest.model_validate(
-                    _json_object(row["manifest"])
-                ).model_lineages
-            }
+            result_model_names | {str(row["model"]) for row in model_usage_rows}
+        )
+        model_call_count = sum(int(row["call_count"]) for row in model_usage_rows)
+        model_failure_count = sum(
+            int(row["call_count"])
+            for row in model_usage_rows
+            if str(row["status"]) != "succeeded"
         )
         job_state = str(read_model["job_state"])
         analysis_status = job_state
@@ -465,8 +532,15 @@ class PostgresStageOneService:
             AnalysisJobState.HELD,
         }:
             analysis_status = queued_job.state.value
-            message = "A durable refresh is queued; showing the last immutable result set."
-            scope_notice = "The page joined the shared durable daily analysis job."
+            message = (
+                "Source data is ready; document extraction and indexing are finishing."
+                if queued_job.state is AnalysisJobState.DEFERRED
+                else "A durable refresh is queued; showing the last immutable result set."
+            )
+            scope_notice = (
+                queued_job.safe_error_summary
+                or "The page joined the shared durable daily analysis job."
+            )
         counts_raw = _json_object(read_model["lifecycle_counts"])
         lifecycle_counts = {
             str(key): _json_integer(value, key=str(key)) for key, value in counts_raw.items()
@@ -481,6 +555,8 @@ class PostgresStageOneService:
             mode=self._mode,
             scope_notice=scope_notice,
             model_name=", ".join(model_names) or None,
+            model_call_count=model_call_count,
+            model_failure_count=model_failure_count,
             run_id=(str(read_model["run_id"]) if read_model["run_id"] else None),
             analysis_job_id=str(read_model["analysis_job_id"]),
             business_date=read_model["business_date"].isoformat(),

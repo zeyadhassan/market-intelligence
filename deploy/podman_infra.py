@@ -392,6 +392,7 @@ def main() -> int:  # noqa: C901 - explicit bounded operator-action dispatch
             "status",
             "logs",
             "source-check",
+            "diagnose",
             "migrate",
             "test",
         ),
@@ -508,6 +509,24 @@ def main() -> int:  # noqa: C901 - explicit bounded operator-action dispatch
                 env=container_environment,
                 app_config=True,
             )
+        elif action == "diagnose":
+            app_environment = _load_app_environment(required=True)
+            for operator_arguments in (
+                ("operator", "status"),
+                ("operator", "projection-failures", "--limit", str(arguments.tail)),
+                ("operator", "dead-letters", "--limit", str(arguments.tail)),
+            ):
+                _compose(
+                    "--profile",
+                    "app",
+                    "run",
+                    "--rm",
+                    "--no-deps",
+                    "projection-worker",
+                    *operator_arguments,
+                    env=app_environment,
+                    app_config=True,
+                )
         elif action == "migrate":
             _migrate()
         else:

@@ -75,6 +75,10 @@ class DailyAnalysisOutcome(BaseModel):
     topic_messages: dict[str, str]
 
 
+class AnalysisInputsPending(RuntimeError):
+    """The immutable source run is complete but its projections are still active."""
+
+
 def _json_items(value: object) -> tuple[object, ...]:
     if value is None:
         return ()
@@ -546,14 +550,37 @@ class ProcessedDailyAnalysis:
             reasons.append(
                 f"{len(missing_processing)} current document versions are not fully processed"
             )
+            failure_rows = await pool.fetch(
+                """
+                SELECT state, COALESCE(safe_error_summary, 'unclassified') AS error,
+                       count(*) AS total
+                FROM document_processing_job_v4
+                WHERE document_version_id = ANY($1::uuid[])
+                  AND state IN ('retryable_failed','terminal_failed','held')
+                GROUP BY state, COALESCE(safe_error_summary, 'unclassified')
+                ORDER BY total DESC, state, error
+                """,
+                sorted(missing_processing),
+            )
+            reasons.extend(
+                f"{int(row['total'])} document projection(s) {row['state']}: {row['error']}"
+                for row in failure_rows
+            )
         pending_projection = await pool.fetchval(
             """
-            SELECT count(*) FROM transactional_outbox
-            WHERE published_at IS NULL AND occurred_at <= $1
-              AND event_type IN ('document.versioned.v1','assertion.accepted.v1',
-                                 'signal.transitioned.v1')
+            SELECT count(*) FROM transactional_outbox event
+            WHERE event.published_at IS NULL AND event.occurred_at <= $1
+              AND (
+                (event.event_type='document.versioned.v1'
+                 AND event.aggregate_id = ANY($2::uuid[]))
+                OR
+                (event.event_type='assertion.accepted.v1'
+                 AND event.payload #>> '{projection,source_id}' = ANY($3::text[]))
+              )
             """,
             job.temporal_pin,
+            sorted(required_documents),
+            sorted(required_sources),
         )
         if int(pending_projection or 0):
             reasons.append(f"{int(pending_projection)} projection events remain pending")
@@ -562,8 +589,13 @@ class ProcessedDailyAnalysis:
             SELECT count(*) FROM outbox_dead_letter_v3 dead
             JOIN transactional_outbox event USING (event_id)
             WHERE event.occurred_at <= $1
-              AND event.event_type IN ('document.versioned.v1','assertion.accepted.v1',
-                                       'signal.transitioned.v1')
+              AND (
+                (event.event_type='document.versioned.v1'
+                 AND event.aggregate_id = ANY($2::uuid[]))
+                OR
+                (event.event_type='assertion.accepted.v1'
+                 AND event.payload #>> '{projection,source_id}' = ANY($3::text[]))
+              )
               AND NOT EXISTS (
                 SELECT 1 FROM transactional_outbox replay
                 WHERE replay.causation_id=event.event_id
@@ -575,11 +607,19 @@ class ProcessedDailyAnalysis:
               )
             """,
             job.temporal_pin,
+            sorted(required_documents),
+            sorted(required_sources),
         )
         if int(quarantined_projection or 0):
             reasons.append(
                 f"{int(quarantined_projection)} projection events require operator recovery"
             )
+        if int(pending_projection or 0):
+            # Do not freeze or terminally hold an analysis merely because the
+            # independently restartable projection worker is still processing
+            # documents from the source run. The job worker will durably defer
+            # and retry this same temporal pin.
+            raise AnalysisInputsPending("; ".join(reasons))
         all_versions = await pool.fetch(
             """
             SELECT version.document_version_id, identity.source_id,
@@ -602,6 +642,27 @@ class ProcessedDailyAnalysis:
         )
         if index_state is None:
             reasons.append("retrieval index is not ready")
+        indexed_rows = (
+            await pool.fetch(
+                """
+                SELECT DISTINCT document_version_id FROM document_chunk
+                WHERE canonical_lineage
+                  AND document_version_id = ANY($1::uuid[])
+                  AND embedding IS NOT NULL
+                """,
+                sorted(required_documents),
+            )
+            if required_documents
+            else []
+        )
+        indexed_documents = {str(row["document_version_id"]) for row in indexed_rows}
+        missing_index = required_documents - indexed_documents
+        if missing_index:
+            reasons.append(f"{len(missing_index)} current document versions are not indexed")
+        if not int(quarantined_projection or 0) and (
+            index_state is None or missing_index
+        ):
+            raise AnalysisInputsPending("; ".join(reasons))
         frozen: dict[str, object] = {
             **job.input_manifest,
             "temporal_pin": job.temporal_pin.isoformat(),
@@ -647,6 +708,7 @@ class ProcessedDailyAnalysis:
             "completed_source_ids": sorted(completed_sources),
             "required_document_version_ids": sorted(required_documents),
             "processed_document_version_ids": sorted(processed_documents),
+            "indexed_document_version_ids": sorted(indexed_documents),
             "reasons": reasons,
         }
         return frozen, coverage, latest_source_time
@@ -738,6 +800,23 @@ class CanonicalAnalysisJobWorker:
                 coverage_reasons=reasons,
             )
             return finished
+        except AnalysisInputsPending as exc:
+            deferred = await self._jobs.defer(
+                job.job_id,
+                self._worker_id,
+                safe_detail=str(exc),
+                delay_seconds=settings.worker_poll_interval_seconds,
+            )
+            self._resources.telemetry.record_queue_transition("analysis", deferred.state.value)
+            log.info(
+                "analysis.job.deferred",
+                run_id=str(job.run_id or job.job_id),
+                job_id=str(job.job_id),
+                worker_id=self._worker_id,
+                reason=str(exc),
+                retry_in_seconds=settings.worker_poll_interval_seconds,
+            )
+            return deferred
         except Exception as exc:
             failed = await self._jobs.fail(
                 job.job_id,
@@ -760,6 +839,7 @@ class CanonicalAnalysisJobWorker:
 
 
 __all__ = [
+    "AnalysisInputsPending",
     "CanonicalAnalysisJobWorker",
     "DailyAnalysisOutcome",
     "ProcessedDailyAnalysis",

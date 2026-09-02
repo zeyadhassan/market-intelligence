@@ -15,10 +15,6 @@ from openai.types.chat.chat_completion_system_message_param import (
 )
 from openai.types.chat.chat_completion_user_message_param import ChatCompletionUserMessageParam
 from openai.types.shared.reasoning_effort import ReasoningEffort
-from openai.types.shared_params.response_format_json_schema import (
-    JSONSchema,
-    ResponseFormatJSONSchema,
-)
 from pydantic import BaseModel, ConfigDict, Field
 
 from fi_intel.config import Settings
@@ -30,6 +26,12 @@ from fi_intel.governance.model_usage import (
     ModelUsageLog,
     estimate_cost_usd,
 )
+from fi_intel.governance.structured_output import (
+    StructuredOutputMode,
+    StructuredOutputNegotiator,
+    decode_structured_json,
+)
+from fi_intel.logging import get_logger, safe_console_error_message, safe_error_summary
 from fi_intel.tools.evidence import EntailmentStatus, EvidenceItem
 
 ENTAILMENT_PROMPT_VERSION = "entailment-v1"
@@ -84,6 +86,7 @@ class OpenAICompatibleEntailmentVerifier:
         usage_log: ModelUsageLog,
         run_id: str,
         artifact: ModelArtifact | None = None,
+        structured_output_mode: StructuredOutputMode = "auto",
     ) -> None:
         if artifact is not None and (
             artifact.component is not ModelComponent.ENTAILMENT or artifact.model_id != model
@@ -96,6 +99,8 @@ class OpenAICompatibleEntailmentVerifier:
         self._usage_log = usage_log
         self._run_id = run_id
         self._artifact = artifact
+        self._structured_output = StructuredOutputNegotiator(structured_output_mode)
+        self._log = get_logger(component="agents.entailment")
 
     @property
     def model_version(self) -> str:
@@ -129,13 +134,12 @@ class OpenAICompatibleEntailmentVerifier:
         )
         started = time.monotonic()
         try:
-            completion = await self._client.chat.completions.create(
+            completion = await self._structured_output.create(
+                self._client,
                 model=self._model,
                 messages=messages,
-                response_format=ResponseFormatJSONSchema(
-                    type="json_schema",
-                    json_schema=JSONSchema(name="entailment_decision", schema=_SCHEMA, strict=True),
-                ),
+                schema_name="entailment_decision",
+                schema=_SCHEMA,
                 temperature=self._temperature,
                 reasoning_effort=effort,
             )
@@ -146,6 +150,15 @@ class OpenAICompatibleEntailmentVerifier:
                 status="timed_out" if isinstance(exc, openai.APITimeoutError) else "failed",
                 error_type=type(exc).__name__,
             )
+            self._log.error(
+                "entailment.api_error",
+                model=self._model,
+                structured_output_mode=self._structured_output.selected_mode,
+                status_code=getattr(exc, "status_code", None),
+                error_type=type(exc).__name__,
+                error_message=safe_console_error_message(exc),
+                safe_error_summary=safe_error_summary(exc),
+            )
             raise
         usage = completion.usage
         content = completion.choices[0].message.content
@@ -154,7 +167,7 @@ class OpenAICompatibleEntailmentVerifier:
         parse_error: Exception | None = None
         if content is not None:
             try:
-                decision = EntailmentDecision.model_validate_json(content)
+                decision = EntailmentDecision.model_validate(decode_structured_json(content))
             except Exception as exc:
                 parse_error = exc
         await self._record_call(
@@ -222,6 +235,7 @@ def build_entailment_verifier(
         usage_log=usage_log,
         run_id=run_id,
         artifact=artifact,
+        structured_output_mode=settings.llm_structured_output_mode,
     )
 
 

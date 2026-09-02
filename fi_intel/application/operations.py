@@ -21,6 +21,19 @@ class DeadLetterView(BaseModel):
     attempt_count: int
     safe_error_summary: str
     quarantined_at: datetime
+    aggregate_id: UUID
+    source_id: str | None = None
+
+
+class ProjectionFailureView(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    document_version_id: UUID
+    source_id: str
+    state: str
+    attempt_count: int
+    safe_error_summary: str | None
+    updated_at: datetime
 
 
 class RuntimeQueueStatus(BaseModel):
@@ -43,8 +56,14 @@ class OperatorService:
             raise ValueError("dead-letter limit must be between 1 and 1000")
         rows = await self._resources.postgres_pool.fetch(
             """
-            SELECT * FROM outbox_dead_letter_v3
-            ORDER BY quarantined_at DESC, dead_letter_id DESC LIMIT $1
+            SELECT dead.*, event.aggregate_id, identity.source_id
+            FROM outbox_dead_letter_v3 dead
+            JOIN transactional_outbox event USING (event_id)
+            LEFT JOIN document_version version
+              ON event.event_type='document.versioned.v1'
+             AND version.document_version_id=event.aggregate_id
+            LEFT JOIN document_identity identity USING (document_id)
+            ORDER BY dead.quarantined_at DESC, dead.dead_letter_id DESC LIMIT $1
             """,
             limit,
         )
@@ -57,6 +76,42 @@ class OperatorService:
                 attempt_count=int(row["attempt_count"]),
                 safe_error_summary=str(row["safe_error_summary"]),
                 quarantined_at=row["quarantined_at"],
+                aggregate_id=row["aggregate_id"],
+                source_id=(str(row["source_id"]) if row["source_id"] is not None else None),
+            )
+            for row in rows
+        ]
+
+    async def projection_failures(self, *, limit: int = 100) -> list[ProjectionFailureView]:
+        """List document projection failures with their originating source."""
+
+        if not 1 <= limit <= 1_000:
+            raise ValueError("projection-failure limit must be between 1 and 1000")
+        rows = await self._resources.postgres_pool.fetch(
+            """
+            SELECT job.document_version_id, identity.source_id, job.state,
+                   job.attempt_count, job.safe_error_summary, job.updated_at
+            FROM document_processing_job_v4 job
+            JOIN document_version version USING (document_version_id)
+            JOIN document_identity identity USING (document_id)
+            WHERE job.state <> 'complete'
+            ORDER BY job.updated_at DESC, job.document_version_id DESC
+            LIMIT $1
+            """,
+            limit,
+        )
+        return [
+            ProjectionFailureView(
+                document_version_id=row["document_version_id"],
+                source_id=str(row["source_id"]),
+                state=str(row["state"]),
+                attempt_count=int(row["attempt_count"]),
+                safe_error_summary=(
+                    str(row["safe_error_summary"])
+                    if row["safe_error_summary"] is not None
+                    else None
+                ),
+                updated_at=row["updated_at"],
             )
             for row in rows
         ]
@@ -252,4 +307,9 @@ async def _state_counts(
     return results
 
 
-__all__ = ["DeadLetterView", "OperatorService", "RuntimeQueueStatus"]
+__all__ = [
+    "DeadLetterView",
+    "OperatorService",
+    "ProjectionFailureView",
+    "RuntimeQueueStatus",
+]
