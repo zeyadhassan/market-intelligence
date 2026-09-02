@@ -1,0 +1,148 @@
+We got this report from Nvidia about the parallelization issue and when the VM team did these it was fixed. can you write a report about the issue so that my manager can understand what was the problem and how it was fixedd. include in the report that we also tested that on the dev server when it was implemented, and when it worked we replicated the same fix on the prod GPU server. Be very detailed and please make me look impressive in front of him without exaggerating or praising myself. this is the technical report I submitted about the issue initally
+
+
+
+# Multi-GPU inference blocked on cbq2-svd-dsgpu2 — vGPU CUDA IPC not permitted
+**Host:** cbq2-svd-dsgpu2 (10.1.94.110)
+**Date:** 18 August 2026
+**Raised by:** AI Engineering team
+**Impact:** No model larger than a single 141 GiB vGPU slice can be served on this host, regardless of the 564 GiB installed across four slices.
+---
+## 1. Summary
+The host has four NVIDIA **H200-141C vGPU** slices (144,384 MiB each, 564 GiB total). Any attempt to run a model across more than one slice — tensor parallelism — fails during NCCL initialisation, before any model weights are loaded.
+The failure is a driver-level refusal of **CUDA IPC (inter-process communication)** between vGPU slices. This is a virtualisation-layer restriction, not a hardware, driver-version, application, or configuration problem inside the guest.
+**Consequence:** the usable ceiling for any single model on this host is one slice — roughly 141 GiB — not the 282 GiB or 564 GiB the hardware inventory suggests.
+---
+## 2. Exact error
+Reproduced consistently across multiple attempts, on both worker ranks:
+```
+[rank 0] init.cc:491 NCCL WARN Cuda failure 'operation not supported'
+[rank 1] init.cc:491 NCCL WARN Cuda failure 'operation not supported'
+RuntimeError: NCCL error: unhandled cuda error
+File ".../vllm/distributed/device_communicators/pynccl_wrapper.py", line 388, in NCCL_CHECK
+File ".../vllm/distributed/device_communicators/pynccl.py", line 137, in __init__
+self.comm: ncclComm_t = self.ncclCommInitRank(...)
+File ".../vllm/distributed/device_communicators/cuda_communicator.py", line 84, in __init__
+self.pynccl_comm = PyNcclCommunicator(...)
+```
+Environment reported by NCCL at the point of failure:
+```
+NCCL version 2.28.9+cuda13.0
+cudaDriverVersion 13000
+NET/IB : No device found.
+NET/Socket : Using [0]eth0:10.89.0.9<0>
+Initialized NET plugin Socket
+Using network Socket
+init.cc:491 NCCL WARN Cuda failure 'operation not supported'
+```
+Note the sequence: NCCL successfully bootstrapped over TCP sockets and selected a network transport. The failure occurs *after* that, on a CUDA API call — this is the CUDA IPC memory-handle exchange, which is how NCCL ranks share device memory pointers with each other.
+---
+## 3. Why this is a virtualisation restriction and not something else
+Each of the following was tested and ruled out.
+**Not a topology problem.** The guest reports a full NVLink mesh:
+```
+nvidia-smi topo -m → NV6 between every GPU pair
+nvidia-smi topo -p2p r → OK in every direction
+nvidia-smi nvlink -s | grep -c "26.562 GB/s" → 72
+```
+18 active NVLink connections per GPU, ~478 GB/s per direction. **These readings describe the underlying physical hardware and do not reflect what the guest VM is actually permitted to do.** This is the critical point: the topology tool says peer-to-peer is available; the driver refuses the operation that would use it.
+**Not a transport-selection problem.** The failure persists with every NCCL transport explicitly disabled:
+```
+NCCL_P2P_DISABLE=1 (disables direct GPU-to-GPU)
+NCCL_SHM_DISABLE=1 (disables host shared memory)
+NCCL_CUMEM_ENABLE=0 (disables the CUDA VMM allocator path)
+```
+With all three set, NCCL falls back to plain TCP sockets — and still fails at the same line. The blocked call happens during communicator setup, before transport choice matters.
+**Not a process-model problem.** Tested with `VLLM_WORKER_MULTIPROC_METHOD=spawn`, `VLLM_USE_V1=0`, and `--distributed-executor-backend ray`. Identical failure in all cases.
+**Not an application problem.** The container is NVIDIA's own `nvcr.io/nim/nvidia/model-free-nim:latest`, running vLLM. The failure is in NVIDIA's NCCL library calling the NVIDIA driver.
+**Not a permissions problem inside the guest.** Containers run with `--security-opt=label=disable`, both devices passed explicitly via CDI (`--device nvidia.com/gpu=2 --device nvidia.com/gpu=3`), `--ipc=host` set. Both GPUs are visible to the process; single-GPU workloads on each slice work normally.
+**Consistent with existing estate behaviour.** Every model deployed on this host — across roughly 18 months and several teams — runs at TP=1 on a single slice. No multi-GPU workload has ever run here successfully. This failure is almost certainly why, though it was never diagnosed until now.
+---
+## 4. What we are asking for
+Please review the vGPU configuration for this VM and advise whether **CUDA IPC / peer-to-peer between vGPU slices assigned to the same guest** can be enabled.
+Specific points for the hypervisor / virtualisation team:
+1. **vGPU profile capability.** The slices are `H200-141C`. Does the licensed vGPU product (NVIDIA vGPU / vCS / AI Enterprise) on this host support peer-to-peer between multiple vGPUs assigned to one VM? Some profiles and licence tiers permit it; others do not.
+2. **Peer-to-peer setting.** On the hypervisor, is cross-vGPU P2P explicitly disabled for this VM? On VMware ESXi and KVM this is frequently off by default and requires an explicit setting on the VM configuration.
+3. **Physical placement.** Are all four slices carved from the same physical GPU board, or spread across separate boards or NUMA domains? If they are not on the same board, IPC between them may be impossible regardless of configuration.
+4. **If it cannot be enabled**, please confirm that in writing so we can plan capacity accordingly — the difference between "141 GiB per model" and "564 GiB per model" fundamentally changes which models this hardware can serve, and we need to state that constraint to the business.
+---
+## 5. Business impact
+Without cross-slice IPC:
+- The largest model deployable is bounded by **one 141 GiB slice**, minus KV cache. In practice this means models of roughly 100–120 GiB.
+- Current-generation large models — 235B-parameter and above, even when 4-bit quantised — require two or more slices and **cannot be served on this host**.
+- The four slices can only be used as four independent single-model servers. The 564 GiB total is not addressable by any single workload.
+- NVIDIA's own NIM containers for larger models ship only TP=4 and TP=8 profiles, so they are unusable here even where memory would otherwise be sufficient.
+---
+## 6. Reproduction (for the infrastructure team)
+Any two-GPU CUDA IPC workload will reproduce this. Minimal version:
+```bash
+podman run --rm --security-opt=label=disable \
+--device nvidia.com/gpu=2 --device nvidia.com/gpu=3 \
+-e NCCL_DEBUG=INFO \
+nvcr.io/nim/nvidia/model-free-nim:latest \
+python3 -c "
+import torch, torch.distributed as dist, os
+os.environ.setdefault('MASTER_ADDR','127.0.0.1')
+os.environ.setdefault('MASTER_PORT','29500')
+print('devices visible:', torch.cuda.device_count())
+dist.init_process_group('nccl', rank=0, world_size=1)
+print('nccl init ok')
+"
+```
+Expect `init.cc:491 NCCL WARN Cuda failure 'operation not supported'`.
+Full application-level logs are available from the failed container runs on 18 August 2026 between 13:05 and 13:15.
+
+
+
+Hello Woody,
+Thank you for the detailed write-up and for collecting the bug reports from both ESXi and the RHEL guest. The elimination work you did — ruling out topology, transport, process model and container permissions — is what let us isolate this quickly, and the host-side report contained the specific evidence we needed.
+I have good news, and it changes your capacity conclusion.
+This is not a CUDA IPC restriction. It is a missing VM configuration setting, and the 423 GiB you are preparing to write off is very likely not lost.
+The error points near init.cc:491 in NCCL 2.28.9, inside the function commAlloc(). In the v2.28.9-1 source, the block reads:
+
+props.handleTypes = cudaMemHandleTypeNone;               // line 491
+...
+CUDACHECK(cudaMemPoolCreate(&comm->memPool, &props));    // line 493
+This is the CUDA stream-ordered memory pool allocator, not the CUDA IPC memory-handle exchange. Two details in the surrounding code confirm it:
+• The pool is created with props.handleTypes = cudaMemHandleTypeNone — explicitly without an exportable IPC handle. This call cannot fail on an IPC restriction. • It sits in commAlloc(), which is purely local communicator setup. It runs before NCCL selects a transport and before any rank contacts any other rank.
+That second point explains the behaviour you found puzzling. NCCL_P2P_DISABLE=1, NCCL_SHM_DISABLE=1 and NCCL_CUMEM_ENABLE=0 had no effect because none of them gate this call — commAlloc contains no reads of those env vars, and NCCL_CUMEM_ENABLE specifically gates the separate cuMemCreate (VMM) path elsewhere in NCCL, not cudaMemPool*. It is also why the failure appears after NCCL reports "Using network Socket": the socket transport was selected successfully, and the failure is a separate, local CUDA capability check.
+When the device reports that CUDA memory pools are unavailable, the CUDA runtime returns an unsupported-operation error (typically cudaErrorNotSupported, numeric code 801). The CUDA error string is generic and does not name the missing capability, which is why the message is so easy to misread.
+For completeness: this call was introduced in NCCL 2.23 and is present in every release since. Changing NCCL version will not avoid it.
+Why the capability is missing on your VM 
+On NVIDIA vGPU, the CUDA memory-management path these pools depend on is gated behind Unified Virtual Memory (UVM), and UVM is disabled by default in a vGPU virtual machine. It must be enabled explicitly, once per attached vGPU, in the VM configuration.
+This requirement is documented publicly, and you can verify it independently:
+• NCCL troubleshooting guide, Unified Memory (UVM): https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/troubleshooting.html#unified-memory-uvm • NVIDIA AI Enterprise, vGPU UVM — known issues and limitations: https://docs.nvidia.com/ai-enterprise/release-8/latest/infra-software/vgpu/features/uvm.html
+Without UVM, the CUDA memory-pool creation calls that NCCL 2.23 and later make unconditionally will fail, and NCCL has no fallback path — which produces exactly the unhandled CUDA error you are seeing.
+We can confirm from your ESXi bug report that it is not currently enabled. The host log records, for all four vGPUs:
+
+vmiop_log: (0x0): vGPU migration enabled
+vmiop_log: (0x1): vGPU migration enabled
+vmiop_log: (0x2): vGPU migration enabled
+vmiop_log: (0x3): vGPU migration enabled
+Enabling UVM disables vGPU migration capability. Migration still being enabled on all four therefore tells us the setting has not been applied.
+Your configuration meets every prerequisite for enabling it:
+Requirement	Your system
+Full-framebuffer time-sliced vGPU profile (or a MIG-backed profile)	H200-141C, one vGPU per board, four separate boards (03:00.0, 42:00.0, 8c:00.0, c7:00.0) ✅
+Linux guest OS	RHEL 9 ✅
+Licensed	4/4 vGPUs licensed ✅
+Hopper on vSphere 8 Update 2 or later	ESXi 8.0.3 ✅
+ 
+The change to make
+With the VM powered off, add one advanced parameter per attached vGPU (vSphere Client → VM → Edit Settings → VM Options → Advanced → Configuration Parameters):
+
+pciPassthru0.cfg.enable_uvm = 1
+pciPassthru1.cfg.enable_uvm = 1
+pciPassthru2.cfg.enable_uvm = 1
+pciPassthru3.cfg.enable_uvm = 1
+Then power the VM back on. A guest reboot is not sufficient — the VM must be fully powered off and on.
+One trade-off you must agree before proceeding: enabling UVM disables live migration (vMotion) and suspend/resume for this VM. This is a documented and intentional limitation of the feature. If this host is in a DRS cluster or relies on vMotion for maintenance windows, please confirm with your infrastructure team that this is acceptable.
+While the VM is powered off, it is also worth confirming two related settings that are present in known-working configurations of this profile, and which we cannot see from the data provided:
+
+pciPassthru.use64bitMMIO    = TRUE
+pciPassthru.64bitMMIOSizeGB = 1024
+Four vGPUs of this size need 64-bit MMIO headroom in the VM. If these are already set appropriately, leave them as they are.
+Can you kindly ask your vGPU/Server Admin to make the above suggested chnages and kindly let us know if you are unblocked ?
+I would be happy to connect over a call on Monday in MS Team at a time that best suits you in case if needed (I am from In), let me know, but before that if you can enable UVM it would be great
+Kind Regards,
+Roshandev
+Enterprise Support
