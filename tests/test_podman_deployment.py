@@ -10,6 +10,8 @@ from deploy import podman_infra
 def test_podman_compose_uses_migration_only_bootstrap_and_qualified_images() -> None:
     compose = Path("deploy/compose.yml").read_text(encoding="utf-8")
 
+    assert "build:" not in compose
+    assert "image: localhost/fi-intel:dev" in compose
     assert "docker-entrypoint-initdb.d" not in compose
     assert "docker.io/pgvector/pgvector:pg16" in compose
     assert "docker.io/library/neo4j:5.26-community" in compose
@@ -64,10 +66,17 @@ def test_podman_launcher_enforces_infrastructure_suite() -> None:
     assert '"sync-access",' not in launcher
     assert '"sync-models",' not in launcher
     assert '"--env-file", str(APP_ENV_FILE)' in launcher
+    assert '"build"' in launcher
+    assert "str(CONTAINERFILE)" in launcher
+    assert '"--build"' not in launcher
 
     one_command_launcher = Path("run.cmd").read_text(encoding="utf-8")
     assert "deploy\\product.py" in one_command_launcher
-    assert "pip install -e" in one_command_launcher
+    assert "deploy\\bootstrap.py" in one_command_launcher
+
+    bootstrap = Path("deploy/bootstrap.py").read_text(encoding="utf-8")
+    assert '"pip", "install", "-e", ".[dev]"' in bootstrap
+    assert "FI_INTEL_SOURCE_HTTP_PROXY" in bootstrap
 
 
 def test_podman_launcher_accepts_explicit_binary_override(
@@ -105,3 +114,83 @@ def test_app_environment_parser_is_file_owned_and_rejects_shell_syntax(
     config.write_text("export FI_INTEL_ANALYSIS_MODE=shadow\n")
     with pytest.raises(RuntimeError, match="expected FI_INTEL_NAME=value"):
         podman_infra._load_app_environment(required=True)
+
+
+def test_podman_environment_owns_source_proxy_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(podman_infra, "_podman", lambda: "podman")
+    monkeypatch.setattr(podman_infra, "_podman_compose_provider", lambda: "podman-compose")
+
+    environment = podman_infra._podman_environment(
+        {
+            "PATH": "existing-path",
+            "FI_INTEL_SOURCE_HTTP_PROXY": "http://proxy.example:3128",
+            "FI_INTEL_SOURCE_HTTPS_PROXY": "http://proxy.example:3128",
+            "FI_INTEL_SOURCE_NO_PROXY": "localhost,internal.example",
+        }
+    )
+
+    assert environment["HTTP_PROXY"] == "http://proxy.example:3128"
+    assert environment["HTTPS_PROXY"] == "http://proxy.example:3128"
+    assert environment["NO_PROXY"] == "localhost,internal.example"
+    assert environment["PODMAN_COMPOSE_PROVIDER"] == "podman-compose"
+
+
+def test_app_image_build_uses_deploy_containerfile_and_configured_proxy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[tuple[str, ...], dict[str, str] | None]] = []
+    monkeypatch.setattr(podman_infra, "_podman", lambda: "podman")
+    monkeypatch.setattr(podman_infra, "_podman_compose_provider", lambda: "podman-compose")
+    monkeypatch.setattr(
+        podman_infra,
+        "_run",
+        lambda *arguments, **options: calls.append((arguments, options.get("env"))),
+    )
+
+    podman_infra._build_app_image(
+        {
+            "PATH": "existing-path",
+            "FI_INTEL_SOURCE_HTTP_PROXY": "http://proxy.example:3128",
+            "FI_INTEL_SOURCE_HTTPS_PROXY": "http://proxy.example:3128",
+            "FI_INTEL_SOURCE_NO_PROXY": "localhost,internal.example",
+        }
+    )
+
+    arguments, environment = calls[0]
+    assert arguments[:2] == ("podman", "build")
+    assert arguments[arguments.index("--file") + 1] == str(podman_infra.CONTAINERFILE)
+    assert arguments[arguments.index("--tag") + 1] == podman_infra.APP_IMAGE
+    assert "HTTP_PROXY=http://proxy.example:3128" in arguments
+    assert arguments[-1] == str(podman_infra.REPOSITORY_ROOT)
+    assert environment is not None
+    assert environment["HTTP_PROXY"] == "http://proxy.example:3128"
+
+
+def test_app_up_builds_explicitly_and_passes_proxy_to_infrastructure_pulls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = {"FI_INTEL_SOURCE_HTTP_PROXY": "http://proxy.example:3128"}
+    compose_calls: list[tuple[tuple[str, ...], dict[str, object]]] = []
+    builds: list[dict[str, str]] = []
+    monkeypatch.setattr(podman_infra.sys, "argv", ["podman_infra.py", "app-up"])
+    monkeypatch.setattr(podman_infra, "_load_app_environment", lambda *, required: environment)
+    monkeypatch.setattr(podman_infra, "_assert_engine", lambda: None)
+    monkeypatch.setattr(podman_infra, "_run", lambda *arguments, **options: "")
+    monkeypatch.setattr(podman_infra, "_wait_healthy", lambda: None)
+    monkeypatch.setattr(podman_infra, "_migrate", lambda env=None: None)
+    monkeypatch.setattr(
+        podman_infra,
+        "_compose",
+        lambda *arguments, **options: compose_calls.append((arguments, options)),
+    )
+    monkeypatch.setattr(podman_infra, "_build_app_image", builds.append)
+
+    assert podman_infra.main() == 0
+
+    assert builds == [environment]
+    assert compose_calls[0] == (("up", "--detach"), {"env": environment})
+    assert compose_calls[1][0] == ("--profile", "app", "up", "--detach")
+    assert compose_calls[1][1]["env"] is environment
+    assert "--build" not in compose_calls[1][0]

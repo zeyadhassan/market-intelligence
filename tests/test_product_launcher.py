@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from deploy import product
+from deploy import bootstrap, product
 from fi_intel.application.preflight import canonical_configuration_errors
 
 
@@ -60,3 +60,25 @@ def test_existing_configuration_is_upgraded_and_preserves_model_values(tmp_path:
     assert "FI_INTEL_SOURCE_HTTP_PROXY=http://proxy2.cbq.com.qa:3128" in configured
     assert "OIDC" not in configured
     assert "EVALUATION_DATASET" not in configured
+
+
+def test_first_run_bootstrap_uses_template_proxy_before_private_env_exists(
+    tmp_path: Path,
+) -> None:
+    template = tmp_path / "app.env.example"
+    template.write_text(
+        "FI_INTEL_SOURCE_HTTP_PROXY=http://proxy.example:3128\n"
+        "FI_INTEL_SOURCE_HTTPS_PROXY=http://proxy.example:3128\n"
+        "FI_INTEL_SOURCE_NO_PROXY=localhost,internal.example\n",
+        encoding="utf-8",
+    )
+
+    environment = bootstrap._bootstrap_environment(
+        tmp_path / "missing.env",
+        template,
+        base={"PATH": "existing-path"},
+    )
+
+    assert environment["HTTP_PROXY"] == "http://proxy.example:3128"
+    assert environment["HTTPS_PROXY"] == "http://proxy.example:3128"
+    assert environment["NO_PROXY"] == "localhost,internal.example"

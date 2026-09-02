@@ -1,11 +1,4 @@
 x-app: &app
-  build:
-    context: ..
-    dockerfile: deploy/Containerfile
-    args:
-      HTTP_PROXY: ${FI_INTEL_SOURCE_HTTP_PROXY:-}
-      HTTPS_PROXY: ${FI_INTEL_SOURCE_HTTPS_PROXY:-}
-      NO_PROXY: ${FI_INTEL_SOURCE_NO_PROXY:-}
   image: localhost/fi-intel:dev
   restart: unless-stopped
   profiles: ["app"]

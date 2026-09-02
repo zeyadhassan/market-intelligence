@@ -13,10 +13,17 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 COMPOSE_FILE = REPOSITORY_ROOT / "deploy" / "compose.yml"
 APP_ENV_FILE = REPOSITORY_ROOT / "deploy" / "app.env"
+CONTAINERFILE = REPOSITORY_ROOT / "deploy" / "Containerfile"
+APP_IMAGE = "localhost/fi-intel:dev"
 COMPOSE_PROJECT = COMPOSE_FILE.parent.name
 SERVICES = ("postgres", "neo4j")
 PODMAN_BINARY_ENV = "FI_INTEL_PODMAN_BIN"
 PODMAN_COMPOSE_PROVIDER_ENV = "FI_INTEL_PODMAN_COMPOSE_PROVIDER"
+SOURCE_PROXY_VARIABLES = {
+    "HTTP_PROXY": "FI_INTEL_SOURCE_HTTP_PROXY",
+    "HTTPS_PROXY": "FI_INTEL_SOURCE_HTTPS_PROXY",
+    "NO_PROXY": "FI_INTEL_SOURCE_NO_PROXY",
+}
 
 
 def _configured_executable(environment_variable: str) -> str | None:
@@ -88,7 +95,11 @@ def _podman_compose_provider() -> str:
 
 
 def _podman_environment(base: dict[str, str] | None = None) -> dict[str, str]:
-    environment = (base or os.environ).copy()
+    environment = (os.environ if base is None else base).copy()
+    for standard_name, application_name in SOURCE_PROXY_VARIABLES.items():
+        configured = environment.get(application_name)
+        if configured:
+            environment[standard_name] = configured
     podman = _podman()
     environment["PATH"] = str(Path(podman).parent) + os.pathsep + environment.get("PATH", "")
     environment["PODMAN_COMPOSE_PROVIDER"] = _podman_compose_provider()
@@ -124,6 +135,25 @@ def _compose(
         capture=capture,
         env=_podman_environment(env),
     )
+
+
+def _build_app_image(environment: dict[str, str]) -> None:
+    """Build the application without relying on provider-specific Compose build parsing."""
+
+    arguments = [
+        _podman(),
+        "build",
+        "--file",
+        str(CONTAINERFILE),
+        "--tag",
+        APP_IMAGE,
+    ]
+    for build_argument, application_name in SOURCE_PROXY_VARIABLES.items():
+        configured = environment.get(application_name)
+        if configured:
+            arguments.extend(("--build-arg", f"{build_argument}={configured}"))
+    arguments.append(str(REPOSITORY_ROOT))
+    _run(*arguments, env=_podman_environment(environment))
 
 
 def _load_app_environment(*, required: bool) -> dict[str, str]:
@@ -267,21 +297,22 @@ def main() -> int:
             return 0
         _assert_engine()
         if action == "up":
-            _compose("up", "--detach")
+            app_environment = _load_app_environment(required=False)
+            _compose("up", "--detach", env=app_environment)
             _wait_healthy()
             _migrate()
         elif action == "app-up":
             app_environment = _load_app_environment(required=True)
             _run(sys.executable, "-m", "fi_intel.cli", "preflight", env=app_environment)
-            _compose("up", "--detach")
+            _compose("up", "--detach", env=app_environment)
             _wait_healthy()
             _migrate(app_environment)
+            _build_app_image(app_environment)
             _compose(
                 "--profile",
                 "app",
                 "up",
                 "--detach",
-                "--build",
                 env=app_environment,
                 app_config=True,
             )

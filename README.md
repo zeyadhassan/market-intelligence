@@ -51,9 +51,10 @@ Copy-Item deploy\app.env.example deploy\app.env
 ```
 
 The file contains the chat and embedding endpoint settings plus the outbound source/package proxy
-used on the UAT network. Compose scopes that proxy to image builds and the source worker; internal
-model calls retain their explicit direct-routing policy. The checked-in values are already ready
-for the supplied UAT endpoints, so normally no editing is needed.
+used on the UAT network. The launcher maps that proxy into Podman pulls and the explicit application
+image build; Compose passes it only to the source worker at runtime. Internal model calls retain
+their explicit direct-routing policy. The checked-in values are already ready for the supplied UAT
+endpoints, so normally no editing is needed.
 
 Use a URL reachable from inside Podman. For endpoints running on this Windows host, use
 `host.containers.internal` instead of `127.0.0.1`.
@@ -149,6 +150,11 @@ Start the full independently restartable topology after `preflight` succeeds:
 .\.venv\Scripts\python.exe deploy\podman_infra.py app-up
 .\.venv\Scripts\python.exe deploy\podman_infra.py status
 ```
+
+On Windows the normal entry point is simply `.\run.cmd --no-browser`. It uses the template proxy
+even while creating `.venv`, then loads `deploy/app.env` for Podman pulls and builds directly with
+`deploy/Containerfile`; do not export `HTTP_PROXY` or copy the Containerfile into the repository
+root.
 
 This starts the API, scheduler, source, projection/document-processing, analysis, search, and
 delivery processes, plus PostgreSQL/pgvector, Neo4j, and Mailpit. The development raw archive is
