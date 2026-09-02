@@ -359,8 +359,8 @@ class CanonicalProjectionWorker:
                 event_id=str(event.event_id),
                 document_version_id=str(event.aggregate_id),
             )
-            await self._set_document_job(event, "running")
             try:
+                await self._set_document_job(event, "running")
                 await self._project_document_event(
                     event,
                     ledger=ledger,
@@ -368,10 +368,23 @@ class CanonicalProjectionWorker:
                     extraction=extraction,
                     resolution=resolution,
                 )
+                await self._set_document_job(event, "complete")
             except Exception as exc:
-                await self._set_document_job(
-                    event, "retryable_failed", safe_error=safe_error_summary(exc)
-                )
+                try:
+                    await self._set_document_job(
+                        event, "retryable_failed", safe_error=safe_error_summary(exc)
+                    )
+                except Exception as state_error:
+                    log.error(
+                        "projection.document.state_update_failed",
+                        run_id=run_id,
+                        event_id=str(event.event_id),
+                        document_version_id=str(event.aggregate_id),
+                        target_state="retryable_failed",
+                        error_type=type(state_error).__name__,
+                        error_message=safe_console_error_message(state_error),
+                        safe_error_summary=safe_error_summary(state_error),
+                    )
                 log.error(
                     "projection.document.failed",
                     run_id=run_id,
@@ -383,7 +396,6 @@ class CanonicalProjectionWorker:
                     safe_error_summary=safe_error_summary(exc),
                 )
                 raise
-            await self._set_document_job(event, "complete")
             log.info(
                 "projection.document.completed",
                 run_id=run_id,
@@ -479,6 +491,13 @@ class CanonicalProjectionWorker:
         if state not in {"running", "complete", "retryable_failed"}:
             raise ValueError("unsupported document processing state")
         now = datetime.now(UTC)
+        lease_owner = self._worker_id if state == "running" else None
+        lease_expires_at = (
+            now + timedelta(seconds=self._settings.worker_lease_seconds)
+            if state == "running"
+            else None
+        )
+        processed_at = now if state == "complete" else None
         pool = self._resources.postgres_pool
         await pool.execute(
             """
@@ -487,10 +506,8 @@ class CanonicalProjectionWorker:
                 next_attempt_at, lease_owner, lease_expires_at,
                 safe_error_summary, processed_at, updated_at
             ) VALUES (
-                $1,$2,$3,1,$4,
-                CASE WHEN $3='running' THEN $5 ELSE NULL END,
-                CASE WHEN $3='running' THEN $6 ELSE NULL END,
-                $7, CASE WHEN $3='complete' THEN $4 ELSE NULL END, $4
+                $1::uuid,$2::uuid,$3::text,1,$4::timestamptz,
+                $5::text,$6::timestamptz,$7::text,$8::timestamptz,$4::timestamptz
             )
             ON CONFLICT (document_version_id) DO UPDATE SET
                 event_id=EXCLUDED.event_id,
@@ -509,9 +526,10 @@ class CanonicalProjectionWorker:
             event.event_id,
             state,
             now,
-            self._worker_id,
-            now + timedelta(seconds=self._settings.worker_lease_seconds),
+            lease_owner,
+            lease_expires_at,
             safe_error,
+            processed_at,
         )
 
     async def _project_document_event(
