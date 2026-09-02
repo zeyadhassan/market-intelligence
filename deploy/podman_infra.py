@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 COMPOSE_FILE = REPOSITORY_ROOT / "deploy" / "compose.yml"
@@ -24,6 +27,8 @@ SOURCE_PROXY_VARIABLES = {
     "HTTPS_PROXY": "FI_INTEL_SOURCE_HTTPS_PROXY",
     "NO_PROXY": "FI_INTEL_SOURCE_NO_PROXY",
 }
+API_HOST_PORT_ENV = "FI_INTEL_API_HOST_PORT"
+LOCAL_API_TOKEN = "fi-intel-local"  # noqa: S105 - built-in local identity, not a secret
 
 
 def _configured_executable(environment_variable: str) -> str | None:
@@ -254,6 +259,61 @@ def _migrate(env: dict[str, str] | None = None) -> None:
     _run(sys.executable, "-m", "fi_intel.cli", "db", "migrate", env=env)
 
 
+def _api_host_port(environment: dict[str, str]) -> int:
+    raw = environment.get(API_HOST_PORT_ENV, "8000")
+    try:
+        port = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{API_HOST_PORT_ENV} must be an integer, got {raw!r}") from exc
+    if not 1 <= port <= 65_535:
+        raise RuntimeError(f"{API_HOST_PORT_ENV} must be between 1 and 65535")
+    return port
+
+
+def _wait_for_application_identity(
+    environment: dict[str, str], *, timeout_seconds: float = 60.0
+) -> str:
+    """Prove that the published port serves this product, not another local app."""
+
+    port = _api_host_port(environment)
+    url = f"http://127.0.0.1:{port}/v1/session"
+    deadline = time.monotonic() + timeout_seconds
+    last_connection_error = "connection refused"
+    while time.monotonic() < deadline:
+        request = Request(url, headers={"Authorization": f"Bearer {LOCAL_API_TOKEN}"})
+        try:
+            with urlopen(request, timeout=3) as response:  # noqa: S310 - fixed loopback URL
+                body = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            raise RuntimeError(
+                f"Port {port} answered HTTP {exc.code}, but it is not the FI Intel API. "
+                f"Set {API_HOST_PORT_ENV} to a free local port."
+            ) from exc
+        except (json.JSONDecodeError, UnicodeDecodeError, KeyError, TypeError) as exc:
+            raise RuntimeError(
+                f"Port {port} returned an unexpected response; another application owns it. "
+                f"Set {API_HOST_PORT_ENV} to a free local port."
+            ) from exc
+        except URLError as exc:
+            last_connection_error = str(exc.reason)
+            time.sleep(1)
+            continue
+        except TimeoutError as exc:
+            last_connection_error = str(exc)
+            time.sleep(1)
+            continue
+        if not isinstance(body, dict) or body.get("principal_id") != "local-analyst":
+            raise RuntimeError(
+                f"Port {port} is serving a different application identity. "
+                f"Set {API_HOST_PORT_ENV} to a free local port."
+            )
+        return f"http://127.0.0.1:{port}/"
+    raise RuntimeError(
+        f"FI Intel API did not become reachable on port {port} within the deadline "
+        f"(last connection error: {last_connection_error})."
+    )
+
+
 def _test() -> None:
     environment = os.environ.copy()
     environment.update(
@@ -266,7 +326,7 @@ def _test() -> None:
     _run(sys.executable, "-m", "pytest", "-q", env=environment)
 
 
-def main() -> int:
+def main() -> int:  # noqa: C901 - explicit bounded operator-action dispatch
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "action",
@@ -279,6 +339,7 @@ def main() -> int:
             "down",
             "reset",
             "status",
+            "logs",
             "migrate",
             "test",
         ),
@@ -317,6 +378,7 @@ def main() -> int:
                 env=app_environment,
                 app_config=True,
             )
+            _wait_for_application_identity(app_environment)
         elif action == "down":
             app_environment = _load_app_environment(required=False)
             _compose(
@@ -340,6 +402,22 @@ def main() -> int:
                 app_config=APP_ENV_FILE.is_file(),
             )
             _run(sys.executable, "-m", "fi_intel.cli", "db", "status")
+        elif action == "logs":
+            app_environment = _load_app_environment(required=True)
+            _compose(
+                "--profile",
+                "app",
+                "logs",
+                "--follow",
+                "--tail",
+                "200",
+                "source-worker",
+                "projection-worker",
+                "analysis-worker",
+                "api",
+                env=app_environment,
+                app_config=True,
+            )
         elif action == "migrate":
             _migrate()
         else:

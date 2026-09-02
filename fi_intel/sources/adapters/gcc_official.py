@@ -9,10 +9,12 @@ from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from urllib.parse import urldefrag, urljoin, urlparse
+from uuid import uuid4
 
 from fi_intel.application.raw import RawHeader, RawSourceEnvelope
 from fi_intel.config import Settings
 from fi_intel.ledger.models import AccessPolicy
+from fi_intel.logging import get_logger, safe_error_summary
 from fi_intel.sources.acquisition import (
     DetailValidator,
     RawAcquiredItem,
@@ -345,10 +347,13 @@ class OfficialGccRawAdapter:
         *,
         transport: SourceHttpTransport | None = None,
         clock: Callable[[], datetime] | None = None,
+        run_id: str | None = None,
     ) -> None:
         self._source = source
         self._settings = settings
         self._policy = policy
+        self._log = get_logger(component="gcc-official-source-adapter")
+        self._run_id = run_id or f"source-poll:{self.source_id}:{uuid4()}"
         self._client = HardenedSourceClient(
             transport or HttpxSourceTransport(),
             allowed_origins=self._source.allowed_origins,
@@ -454,10 +459,20 @@ class OfficialGccRawAdapter:
                         else None
                     ),
                 )
-            except SourceTransportError:
+            except SourceTransportError as exc:
                 if previous is not None:
                     validators.append(previous)
                 failed += 1
+                self._log.warning(
+                    "source.detail.fetch_failed",
+                    run_id=self._run_id,
+                    source_id=self.source_id,
+                    source_url=self._source.url,
+                    detail_url=detail_url,
+                    error_type=type(exc).__name__,
+                    safe_error_summary=safe_error_summary(exc),
+                    error_message=str(exc),
+                )
                 continue
             if detail.not_modified:
                 if previous is None:

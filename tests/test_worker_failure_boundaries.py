@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -15,6 +16,7 @@ from fi_intel.application.search import (
     SearchState,
     plan_search,
 )
+from fi_intel.application.workers import run_continuously
 from fi_intel.config import Settings
 from fi_intel.governance.access import RequestPrincipal
 from fi_intel.retrieval.entitlement import Principal, Side
@@ -140,3 +142,24 @@ def test_analysis_read_model_commit_precedes_terminal_job_transition() -> None:
 
     assert source.index("materialize_topic") < source.index("self._jobs.finish")
     assert "process death before this line" in source
+
+
+async def test_continuous_worker_logs_and_retries_after_iteration_failure() -> None:
+    stop = asyncio.Event()
+    attempts = 0
+
+    async def operation() -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("injected transient failure")
+        stop.set()
+
+    await run_continuously(
+        operation,
+        interval_seconds=0.001,
+        stop=stop,
+        operation_name="failure-boundary-test",
+    )
+
+    assert attempts == 2

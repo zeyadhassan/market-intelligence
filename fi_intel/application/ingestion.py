@@ -33,6 +33,7 @@ from fi_intel.ledger.models import (
     outbox_event_id,
 )
 from fi_intel.ledger.repository import IntelligenceLedger
+from fi_intel.logging import get_logger, safe_error_summary
 from fi_intel.sources.canonical import CanonicalDocument, document_text
 
 _APPLICATION_NAMESPACE = UUID("7038e023-3145-5ff3-962c-bbee110b6bd0")
@@ -92,6 +93,7 @@ class ReplayableIngestionService:
         self._ledger = ledger
         self._control = control
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._log = get_logger(component="replayable-ingestion")
 
     async def begin_run(
         self,
@@ -410,6 +412,18 @@ class ReplayableIngestionService:
             return await self._terminal_result(job)
         recorded_at = self._after(job.updated_at)
         error_type = type(error).__name__
+        self._log.error(
+            "ingestion.job.quarantined",
+            run_id=str(job.run_id),
+            job_id=str(job.job_id),
+            raw_asset_id=str(job.raw_asset_id),
+            source_id=job.source_id,
+            stage=stage,
+            attempt=job.attempt,
+            error_type=error_type,
+            safe_error_summary=safe_error_summary(error),
+            error_message=str(error),
+        )
         quarantine_id = uuid5(
             _APPLICATION_NAMESPACE,
             f"quarantine:{job.job_id}:{job.attempt}:{stage}:{error_type}",

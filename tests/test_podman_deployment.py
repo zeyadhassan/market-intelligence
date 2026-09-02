@@ -21,7 +21,7 @@ def test_podman_compose_uses_migration_only_bootstrap_and_qualified_images() -> 
     assert "FI_INTEL_OIDC_ISSUER" not in compose
     assert "FI_INTEL_MODEL_EVALUATION_DATASET_DIGEST" not in compose
     assert "FI_INTEL_COVERED_ENTITY_LEIS" not in compose
-    assert '"127.0.0.1:8000:8000"' in compose
+    assert '"127.0.0.1:${FI_INTEL_API_HOST_PORT:-8000}:8000"' in compose
     assert 'profiles: ["app"]' in compose
     for service in (
         "source-worker:",
@@ -59,6 +59,7 @@ def test_podman_launcher_enforces_infrastructure_suite() -> None:
     assert '"db", "migrate"' in launcher
     assert '"fi_intel.cli", "migrate"' not in launcher
     assert '"app-up"' in launcher
+    assert '"logs"' in launcher
     assert 'environment["PODMAN_COMPOSE_PROVIDER"]' in launcher
     assert "Docker Compose is intentionally not used" in launcher
     assert "label=io.podman.compose.service=" in launcher
@@ -180,6 +181,7 @@ def test_app_up_builds_explicitly_and_passes_proxy_to_infrastructure_pulls(
     monkeypatch.setattr(podman_infra, "_run", lambda *arguments, **options: "")
     monkeypatch.setattr(podman_infra, "_wait_healthy", lambda: None)
     monkeypatch.setattr(podman_infra, "_migrate", lambda env=None: None)
+    monkeypatch.setattr(podman_infra, "_wait_for_application_identity", lambda env: None)
     monkeypatch.setattr(
         podman_infra,
         "_compose",
@@ -200,3 +202,24 @@ def test_app_up_builds_explicitly_and_passes_proxy_to_infrastructure_pulls(
     )
     assert compose_calls[1][1]["env"] is environment
     assert "--build" not in compose_calls[1][0]
+
+
+def test_application_identity_check_rejects_another_service_on_the_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class WrongResponse:
+        def __enter__(self) -> "WrongResponse":
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"principal_id":"some-other-app"}'
+
+    monkeypatch.setattr(podman_infra, "urlopen", lambda *_args, **_kwargs: WrongResponse())
+
+    with pytest.raises(RuntimeError, match="different application identity"):
+        podman_infra._wait_for_application_identity(
+            {"FI_INTEL_API_HOST_PORT": "8123"}, timeout_seconds=0.1
+        )

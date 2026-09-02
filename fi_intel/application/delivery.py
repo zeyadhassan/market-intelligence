@@ -373,6 +373,7 @@ class PostgresNotificationService:
                 [(topic, result_id, state) for topic, result_id, state in items],
                 all_complete,
                 preference.link_only,
+                self._settings.api_host_port,
             ]
         )
         digest_id = stable_digest([preference.principal_id, business_date, scope, digest_version])
@@ -382,6 +383,7 @@ class PostgresNotificationService:
             manifests,
             include_nothing_new=not items,
             link_only=preference.link_only,
+            product_base_url=f"http://localhost:{self._settings.api_host_port}",
         )
         attempt_id = stable_digest([digest_id, "sandbox-smtp"])
         idempotency_key = (
@@ -837,6 +839,7 @@ def _render_digest(
     *,
     include_nothing_new: bool,
     link_only: bool,
+    product_base_url: str = "http://localhost:8000",
 ) -> tuple[str, str, str]:
     subject = f"FI Intelligence daily digest - {business_date.isoformat()}"
     if include_nothing_new:
@@ -848,7 +851,7 @@ def _render_digest(
     for topic_id, result_id, lifecycle in items:
         manifest = manifests[result_id]
         opportunity = manifest.opportunity
-        url = f"http://localhost:8000/stage-one?topic={topic_id}&result={result_id}"
+        url = f"{product_base_url.rstrip('/')}/stage-one?topic={topic_id}&result={result_id}"
         text_parts.extend(
             [
                 f"[{lifecycle.upper()}] {opportunity.title}",

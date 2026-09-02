@@ -51,6 +51,10 @@ def test_default_stage_one_page_describes_the_local_product_path() -> None:
     assert 'model_name || "unavailable"' not in STAGE_ONE_JS
     assert "window.sessionStorage" not in STAGE_ONE_JS
     assert "OIDC access token" not in STAGE_ONE_JS
+    assert "console.table" in STAGE_ONE_JS
+    assert "[FI Intel] source" in STAGE_ONE_JS
+    assert "backend logs: .venv" in STAGE_ONE_JS
+    assert 'detail.className = "source-detail"' in STAGE_ONE_JS
 
 
 def test_live_preflight_requires_only_model_endpoints() -> None:

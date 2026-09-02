@@ -109,6 +109,7 @@ def worker_source(
         await run_continuously(
             poll,
             interval_seconds=resources.settings.worker_poll_interval_seconds,
+            operation_name="source",
         )
         return "stopped"
 
@@ -130,6 +131,7 @@ def worker_projection(
         await run_continuously(
             worker.run_once,
             interval_seconds=resources.settings.worker_poll_interval_seconds,
+            operation_name="projection",
         )
         return "stopped"
 
@@ -152,6 +154,7 @@ def worker_analysis(
         await run_continuously(
             worker.run_once,
             interval_seconds=resources.settings.worker_poll_interval_seconds,
+            operation_name="analysis",
         )
         return "stopped"
 
@@ -174,6 +177,7 @@ def worker_search(
         await run_continuously(
             worker.run_once,
             interval_seconds=resources.settings.worker_poll_interval_seconds,
+            operation_name="search",
         )
         return "stopped"
 
@@ -213,6 +217,7 @@ def worker_delivery(
         await run_continuously(
             deliver,
             interval_seconds=resources.settings.worker_poll_interval_seconds,
+            operation_name="delivery",
         )
         return "stopped"
 
@@ -235,6 +240,7 @@ def scheduler_run(
         await run_continuously(
             scheduler.run_once,
             interval_seconds=resources.settings.worker_poll_interval_seconds,
+            operation_name="scheduler",
         )
         return "stopped"
 

@@ -206,6 +206,7 @@ h1 { margin: 0; max-width: 680px; font-size: clamp(30px, 4vw, 48px); line-height
 .source-chip strong, .source-chip small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-chip strong { font-size: 11px; }
 .source-chip small { margin-top: 3px; color: var(--muted); font-size: 10px; }
+.source-chip .source-detail { margin-top: 5px; white-space: normal; line-height: 1.35; }
 .source-chip.complete { border-color: #9ac9b2; }
 .source-chip.fetch_failed, .source-chip.analysis_failed { border-color: #dfb0aa; background: var(--red-soft); }
 .loading-row { grid-column: 1 / -1; min-height: 90px; display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--muted); }
@@ -547,7 +548,10 @@ __FI_INTEL_TOKEN_PROVIDER__
       `Analysis as of ${formatDate(resultSet.as_of)} · ${resultSet.coverage_state.replaceAll("_", " ")} coverage`
     );
     if (resultSet.mode === "fixture") byId("coverage-ledger").hidden = true;
-    else renderCoverageLedger(resultSet);
+    else {
+      renderCoverageLedger(resultSet);
+      logResultDiagnostics(resultSet);
+    }
     const scopeParagraph = byId("scope-note").querySelector("p");
     if (resultSet.scope_notice) scopeParagraph.textContent = resultSet.scope_notice;
     byId("results-heading").textContent = resultSet.label;
@@ -569,6 +573,42 @@ __FI_INTEL_TOKEN_PROVIDER__
       return;
     }
     resultSet.results.forEach((result) => list.append(resultNode(result)));
+  }
+
+  function logResultDiagnostics(resultSet) {
+    const statuses = resultSet.source_statuses || [];
+    const failed = statuses.filter((item) => item.status !== "complete");
+    const heading = `[FI Intel] analysis ${resultSet.coverage_state}: ${resultSet.run_id || "unknown run"}`;
+    console.groupCollapsed(heading);
+    console.info("[FI Intel] analysis context", {
+      topic_id: resultSet.topic_id,
+      analysis_status: resultSet.analysis_status,
+      coverage_state: resultSet.coverage_state,
+      as_of: resultSet.as_of,
+      run_id: resultSet.run_id,
+      successful_sources: resultSet.successful_source_count,
+      required_sources: resultSet.required_source_count,
+      rejected_candidates: resultSet.rejected_candidate_count,
+      scope_notice: resultSet.scope_notice
+    });
+    console.table(statuses.map((item) => ({
+      source_id: item.source_id,
+      country: item.country,
+      status: item.status,
+      accepted: item.candidate_count,
+      rejected: item.rejected_candidate_count,
+      fetched_at: item.fetched_at,
+      detail: item.detail,
+      source_url: item.source_url
+    })));
+    failed.forEach((item) => console.error(
+      `[FI Intel] source ${item.source_id} ${item.status}: ${item.detail}`,
+      { run_id: resultSet.run_id, source_url: item.source_url, fetched_at: item.fetched_at }
+    ));
+    if (failed.length) {
+      console.info("[FI Intel] backend logs: .venv\\Scripts\\python.exe deploy\\podman_infra.py logs");
+    }
+    console.groupEnd();
   }
 
   function renderCoverageLedger(resultSet) {
@@ -598,6 +638,12 @@ __FI_INTEL_TOKEN_PROVIDER__
       const status = document.createElement("small");
       status.textContent = `${item.status.replaceAll("_", " ")} · ${item.candidate_count} accepted`;
       chip.append(name, status);
+      if (item.status !== "complete") {
+        const detail = document.createElement("small");
+        detail.className = "source-detail";
+        detail.textContent = item.detail;
+        chip.append(detail);
+      }
       grid.append(chip);
     });
     ledger.append(summary, grid);

@@ -31,6 +31,8 @@ def test_first_run_copies_ready_configuration_without_prompts(tmp_path: Path) ->
     assert canonical_configuration_errors(settings) == ()
     assert settings.embedding_model == "nvidia/llama-3.2-nv-embedqa-1b-v2"
     assert settings.embedding_dim == 2048
+    assert settings.api_host_port == 8000
+    assert product._product_url(settings) == "http://127.0.0.1:8000/"
     assert settings.source_http_proxy == "http://proxy2.cbq.com.qa:3128"
     assert settings.source_https_proxy == "http://proxy2.cbq.com.qa:3128"
     assert ".cbq.com.qa" in settings.source_no_proxy

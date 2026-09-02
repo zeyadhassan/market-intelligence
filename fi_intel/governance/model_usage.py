@@ -35,7 +35,7 @@ class ModelCallEvent(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     run_id: str
-    component: str  # extraction, reasoning, embedding, reranking, or entailment
+    component: str  # extract, research, embedding, reranker, or entailment
     model: str
     input_tokens: int
     output_tokens: int

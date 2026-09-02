@@ -153,5 +153,6 @@ def test_source_coordinate_page_and_email_share_one_admitted_result_version() ->
     assert page.evidence[0].content_hash == source.content_hash
     assert result.result_version_id in text_body
     assert result.result_version_id in html_body
+    assert "http://localhost:8000/stage-one" in html_body
     assert page.title in text_body and page.title in html_body
     assert page.summary in text_body and page.summary in html_body

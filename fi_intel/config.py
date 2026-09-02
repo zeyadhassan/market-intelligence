@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     # model, coverage, and execution-path capabilities before doing work.
     analysis_mode: Literal["fixture", "shadow", "pilot", "production"] = "shadow"
 
+    # Host-only port used by the local Podman product launcher. The API still
+    # listens on 8000 inside its container; keeping the published port explicit
+    # prevents another local web service from being mistaken for FI Intel.
+    api_host_port: int = Field(default=8000, ge=1, le=65_535)
+
     # Defaults are local-dev only, matching deploy/compose.yml (Podman Compose).
     # Real credentials arrive via FI_INTEL_* environment variables.
     postgres_dsn: str = "postgresql://fi_intel:fi_intel@localhost:5432/fi_intel"  # noqa: S105

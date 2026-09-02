@@ -52,6 +52,7 @@ from fi_intel.graph.registry import PatternRegistry
 from fi_intel.graph.signals import signal_authorization_scope
 from fi_intel.ingest.store import PostgresDocumentStore
 from fi_intel.ledger.repository import PostgresIntelligenceLedger
+from fi_intel.logging import get_logger, safe_error_summary
 from fi_intel.results.manifest import (
     ChangeClassification,
     SourceVersionManifest,
@@ -684,12 +685,23 @@ class CanonicalAnalysisJobWorker:
         self._opportunities = PostgresOpportunityRepository(
             resources.settings.postgres_dsn, pool=resources.postgres_pool
         )
+        self._log = get_logger(component="canonical-analysis-worker")
 
     async def run_once(self) -> AnalysisJob | None:
         settings = self._resources.settings
+        log = getattr(self, "_log", get_logger(component="canonical-analysis-worker"))
         job = await self._jobs.claim(self._worker_id, settings.worker_lease_seconds)
         if job is None:
             return None
+        log.info(
+            "analysis.job.started",
+            run_id=str(job.run_id or job.job_id),
+            job_id=str(job.job_id),
+            worker_id=self._worker_id,
+            attempt_count=job.attempt_count,
+            topic_ids=job.topic_ids,
+            required_source_ids=job.input_manifest.get("required_source_ids", []),
+        )
         self._resources.telemetry.record_queue_transition("analysis", "running")
         try:
             outcome = await self._analysis.run(job)
@@ -720,6 +732,15 @@ class CanonicalAnalysisJobWorker:
                 safe_detail="; ".join(str(item) for item in reasons)[:500] or None,
             )
             self._resources.telemetry.record_queue_transition("analysis", finished.state.value)
+            log.info(
+                "analysis.job.completed",
+                run_id=str(outcome.run_id),
+                job_id=str(job.job_id),
+                worker_id=self._worker_id,
+                state=finished.state.value,
+                coverage_complete=bool(outcome.coverage.get("complete", False)),
+                coverage_reasons=reasons,
+            )
             return finished
         except Exception as exc:
             failed = await self._jobs.fail(
@@ -730,6 +751,15 @@ class CanonicalAnalysisJobWorker:
                 max_attempts=settings.worker_max_attempts,
             )
             self._resources.telemetry.record_queue_transition("analysis", failed.state.value)
+            log.exception(
+                "analysis.job.failed",
+                run_id=str(job.run_id or job.job_id),
+                job_id=str(job.job_id),
+                worker_id=self._worker_id,
+                state=failed.state.value,
+                error_type=type(exc).__name__,
+                safe_error_summary=safe_error_summary(exc),
+            )
             return failed
 
 

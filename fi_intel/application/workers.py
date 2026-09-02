@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4, uuid5
@@ -39,6 +40,7 @@ from fi_intel.ingest.resolve_store import PostgresResolutionStore
 from fi_intel.ingest.store import PostgresDocumentStore
 from fi_intel.ledger.models import OutboxEvent
 from fi_intel.ledger.repository import PostgresIntelligenceLedger
+from fi_intel.logging import get_logger, safe_error_summary
 from fi_intel.retrieval.entitlement import Principal, Side
 from fi_intel.retrieval.store import PostgresCorpusStore
 from fi_intel.sources.adapters.gcc_official import (
@@ -80,6 +82,7 @@ class CanonicalSourceWorker:
     def __init__(self, resources: RuntimeResources) -> None:
         self._resources = resources
         self._settings = resources.settings
+        self._log = get_logger(component="canonical-source-worker")
 
     async def run_once(  # noqa: C901 - bounded orchestration across registered sources
         self, *, force: bool = False
@@ -93,6 +96,13 @@ class CanonicalSourceWorker:
         failed: list[str] = []
         committed = 0
         semaphore = asyncio.Semaphore(settings.gcc_source_max_parallel_sources)
+        self._log.info(
+            "source.batch.started",
+            run_id=str(run_uuid),
+            force=force,
+            source_count=len(GCC_OFFICIAL_SOURCES),
+            max_parallel_sources=settings.gcc_source_max_parallel_sources,
+        )
 
         async def poll(source: GccOfficialSource) -> None:
             nonlocal committed
@@ -105,16 +115,57 @@ class CanonicalSourceWorker:
                 and state.updated_at + timedelta(seconds=registration.cadence_seconds) > now
             ):
                 skipped.append(source.source_id)
+                self._log.info(
+                    "source.poll.skipped",
+                    run_id=str(run_uuid),
+                    source_id=source.source_id,
+                    source_url=source.url,
+                    reason="cadence_not_due",
+                    next_eligible_at=(
+                        state.updated_at + timedelta(seconds=registration.cadence_seconds)
+                    ).isoformat(),
+                )
                 return
             async with semaphore:
+                started = time.monotonic()
+                self._log.info(
+                    "source.poll.started",
+                    run_id=str(run_uuid),
+                    source_id=source.source_id,
+                    source_url=source.url,
+                )
                 try:
                     result = await self._poll_gcc_source(source, run_uuid, operations)
                     polled.append(source.source_id)
                     committed += len(result.document_version_ids)
                     if result.observation.health is SourceHealth.FAILED:
                         failed.append(source.source_id)
-                except Exception:
+                    self._log.info(
+                        "source.poll.completed",
+                        run_id=str(run_uuid),
+                        source_run_id=str(result.run_id),
+                        source_id=source.source_id,
+                        source_url=source.url,
+                        health=result.observation.health.value,
+                        complete=result.observation.complete,
+                        discovered_count=result.observation.discovered_count,
+                        acquired_count=result.observation.acquired_count,
+                        committed_count=result.observation.committed_count,
+                        unchanged_count=result.observation.unchanged_count,
+                        quarantine_count=result.observation.quarantine_count,
+                        duration_ms=round((time.monotonic() - started) * 1000),
+                    )
+                except Exception as exc:
                     failed.append(source.source_id)
+                    self._log.exception(
+                        "source.poll.failed",
+                        run_id=str(run_uuid),
+                        source_id=source.source_id,
+                        source_url=source.url,
+                        error_type=type(exc).__name__,
+                        safe_error_summary=safe_error_summary(exc),
+                        duration_ms=round((time.monotonic() - started) * 1000),
+                    )
 
         await asyncio.gather(*(poll(source) for source in GCC_OFFICIAL_SOURCES))
         leis = frozenset(
@@ -128,8 +179,15 @@ class CanonicalSourceWorker:
                 else:
                     polled.append("gleif")
                     committed += len(result.document_version_ids)
-            except Exception:
+            except Exception as exc:
                 failed.append("gleif")
+                self._log.exception(
+                    "source.poll.failed",
+                    run_id=str(run_uuid),
+                    source_id="gleif",
+                    error_type=type(exc).__name__,
+                    safe_error_summary=safe_error_summary(exc),
+                )
         report = SourceWorkerReport(
             polled_source_ids=tuple(sorted(set(polled))),
             skipped_source_ids=tuple(sorted(set(skipped))),
@@ -142,6 +200,14 @@ class CanonicalSourceWorker:
             self._resources.telemetry.record_source_operation(source_id, "skipped")
         for source_id in report.failed_source_ids:
             self._resources.telemetry.record_source_operation(source_id, "failed")
+        self._log.info(
+            "source.batch.completed",
+            run_id=str(run_uuid),
+            polled_source_ids=report.polled_source_ids,
+            skipped_source_ids=report.skipped_source_ids,
+            failed_source_ids=report.failed_source_ids,
+            committed_document_versions=report.committed_document_versions,
+        )
         return report
 
     async def _poll_gcc_source(
@@ -160,7 +226,8 @@ class CanonicalSourceWorker:
             ledger,
             PostgresIngestionControlStore(settings.postgres_dsn, pool=pool),
         )
-        adapter = OfficialGccRawAdapter(source, settings, policy)
+        source_run_id = uuid5(run_uuid, source.source_id)
+        adapter = OfficialGccRawAdapter(source, settings, policy, run_id=str(source_run_id))
         coordinator = SourceIngestionCoordinator(
             production_source_catalog(settings).require(source.source_id),
             policy,
@@ -171,7 +238,7 @@ class CanonicalSourceWorker:
         try:
             return await coordinator.run(
                 requested_by="canonical-source-worker",
-                run_id=uuid5(run_uuid, source.source_id),
+                run_id=source_run_id,
             )
         finally:
             await adapter.close()
@@ -234,6 +301,8 @@ class CanonicalProjectionWorker:
         settings = self._settings
         pool = self._resources.postgres_pool
         run_id = f"projection:{self._worker_id}:{uuid4()}"
+        log = get_logger(component="canonical-projection-worker")
+        log.info("projection.batch.started", run_id=run_id, worker_id=self._worker_id)
         ledger = PostgresIntelligenceLedger(settings.postgres_dsn, pool=pool)
         documents = PostgresDocumentStore(settings.postgres_dsn, pool=pool)
         resolution = PostgresResolutionStore(settings.postgres_dsn, pool=pool)
@@ -361,6 +430,12 @@ class CanonicalProjectionWorker:
         )
         self._resources.telemetry.record_retrieval(
             "index", "chunks", projection_report.indexed_chunks
+        )
+        log.info(
+            "projection.batch.completed",
+            run_id=run_id,
+            worker_id=self._worker_id,
+            **projection_report.model_dump(),
         )
         return projection_report
 
@@ -506,14 +581,42 @@ async def run_continuously(
     *,
     interval_seconds: float,
     stop: asyncio.Event | None = None,
+    operation_name: str | None = None,
 ) -> None:
-    """Run one bounded worker operation repeatedly with responsive shutdown."""
+    """Run a bounded operation repeatedly, logging failures without killing the worker."""
 
     if interval_seconds <= 0:
         raise ValueError("worker poll interval must be positive")
     stop_event = stop or asyncio.Event()
+    name = operation_name or getattr(operation, "__qualname__", type(operation).__name__)
+    log = get_logger(component="worker-loop", operation=name)
+    loop_run_id = f"worker-loop:{uuid4()}"
+    log.info(
+        "worker.loop.started",
+        run_id=loop_run_id,
+        interval_seconds=interval_seconds,
+    )
     while not stop_event.is_set():
-        await operation()
+        started = time.monotonic()
+        try:
+            await operation()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.exception(
+                "worker.iteration.failed",
+                run_id=loop_run_id,
+                error_type=type(exc).__name__,
+                safe_error_summary=safe_error_summary(exc),
+                duration_ms=round((time.monotonic() - started) * 1000),
+                retry_in_seconds=interval_seconds,
+            )
+        else:
+            log.info(
+                "worker.iteration.completed",
+                run_id=loop_run_id,
+                duration_ms=round((time.monotonic() - started) * 1000),
+            )
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
         except TimeoutError:

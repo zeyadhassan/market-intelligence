@@ -24,7 +24,6 @@ APP_ENV_FILE = REPOSITORY_ROOT / "deploy" / "app.env"
 APP_ENV_TEMPLATE = REPOSITORY_ROOT / "deploy" / "app.env.example"
 PODMAN_INFRA = REPOSITORY_ROOT / "deploy" / "podman_infra.py"
 MODEL_SMOKE = REPOSITORY_ROOT / "deploy" / "model_smoke.py"
-PRODUCT_URL = "http://127.0.0.1:8000/"
 MAILPIT_URL = "http://127.0.0.1:8025/"
 
 
@@ -73,6 +72,10 @@ def _settings(values: dict[str, str]) -> Settings:
         if f"FI_INTEL_{field_name.upper()}" in values
     }
     return Settings.model_validate(field_values)
+
+
+def _product_url(settings: Settings) -> str:
+    return f"http://127.0.0.1:{settings.api_host_port}/"
 
 
 def configure_environment(
@@ -162,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-browser", action="store_true", help="Do not open the product URL.")
     arguments = parser.parse_args(argv)
     try:
-        configure_environment()
+        settings = configure_environment()
         if arguments.configure_only:
             return 0
         if not arguments.skip_model_smoke:
@@ -174,11 +177,13 @@ def main(argv: list[str] | None = None) -> int:
     except (RuntimeError, subprocess.CalledProcessError) as exc:
         parser.exit(1, f"product startup error: {exc}\n")
 
+    product_url = _product_url(settings)
     print("\nProduct is ready:")
-    print(f"  Product:           {PRODUCT_URL}")
+    print(f"  Product:           {product_url}")
     print(f"  Development email: {MAILPIT_URL}")
+    print("  Live diagnostics:  .venv\\Scripts\\python.exe deploy\\podman_infra.py logs")
     if not arguments.no_browser:
-        webbrowser.open(PRODUCT_URL)
+        webbrowser.open(product_url)
     return 0
 
 
