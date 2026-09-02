@@ -106,7 +106,9 @@ def assess_source_poll(
         registration.expected_min_items <= poll.discovered_count <= registration.expected_max_items
     )
     complete = (
-        poll.discovered_count == len(poll.items) + poll.unchanged_count and quarantine_count == 0
+        poll.failed_count == 0
+        and poll.discovered_count == len(poll.items) + poll.unchanged_count
+        and quarantine_count == 0
     )
     health = (
         SourceHealth.HEALTHY

@@ -57,6 +57,7 @@ class RawSourcePoll(AcquisitionModel):
     page_count: int = Field(ge=1)
     discovered_count: int = Field(ge=0)
     unchanged_count: int = Field(ge=0)
+    failed_count: int = Field(default=0, ge=0)
     items: tuple[RawAcquiredItem, ...]
     next_cursor: RawSourceCursor
 
@@ -66,7 +67,7 @@ class RawSourcePoll(AcquisitionModel):
             raise ValueError("poll cursor belongs to another source")
         if self.next_cursor.partition_key != self.partition_key:
             raise ValueError("poll cursor belongs to another partition")
-        if self.discovered_count != self.unchanged_count + len(self.items):
+        if self.discovered_count != self.unchanged_count + self.failed_count + len(self.items):
             raise ValueError("poll discovery counts are incomplete")
         sequences = [item.sequence_number for item in self.items]
         if sequences and sequences != list(range(sequences[0], sequences[-1] + 1)):

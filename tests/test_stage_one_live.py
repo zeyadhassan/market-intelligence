@@ -16,6 +16,7 @@ from fi_intel.sources.adapters.gcc_official import (
     OfficialGccRawAdapter,
 )
 from fi_intel.sources.canonical import BarrierSide
+from fi_intel.sources.transport import SourceTransportError
 from tests.source_support import ScriptedSourceTransport, source_response
 
 NOW = datetime(2026, 8, 27, 10, tzinfo=UTC)
@@ -157,4 +158,52 @@ async def test_official_source_adapter_archives_bounded_detail_pages_and_resumes
     assert second.items == ()
     assert second.unchanged_count == 2
     assert all("If-None-Match" in request[1] for request in transport.requests[-2:])
+    transport.assert_exhausted()
+
+
+async def test_official_source_adapter_reports_failed_details_as_incomplete() -> None:
+    landing_url = "https://regulator.example/news"
+    detail_url = "https://regulator.example/news/detail?id=42"
+    source = GccOfficialSource(
+        source_id="example_official",
+        country="Example",
+        display_name="Example regulator",
+        source_type="regulator",
+        url=landing_url,
+        allowed_origins=("https://regulator.example",),
+    )
+    landing = (
+        "<html><head><title>News</title></head><body>"
+        f"<a href='{detail_url}'>Material announcement</a>"
+        + ("Official market updates. " * 20)
+        + "</body></html>"
+    ).encode()
+    transport = ScriptedSourceTransport(
+        [
+            (
+                landing_url,
+                source_response(200, landing, headers=(("content-type", "text/html"),)),
+            ),
+            (detail_url, SourceTransportError("detail unavailable")),
+        ]
+    )
+    policy = AccessPolicy(
+        policy_id=uuid4(),
+        barrier_side=BarrierSide.PUBLIC,
+        allowed_entitlement_groups=frozenset({"fi_gcc_public"}),
+        created_at=NOW - timedelta(days=1),
+    )
+    adapter = OfficialGccRawAdapter(
+        source,
+        Settings(source_http_max_attempts=1),
+        policy,
+        transport=transport,
+        clock=lambda: NOW,
+    )
+
+    poll = await adapter.poll()
+
+    assert poll.discovered_count == 2
+    assert len(poll.items) == 1
+    assert poll.failed_count == 1
     transport.assert_exhausted()

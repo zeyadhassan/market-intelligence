@@ -313,6 +313,7 @@ def main() -> int:
                 "app",
                 "up",
                 "--detach",
+                "--force-recreate",
                 env=app_environment,
                 app_config=True,
             )

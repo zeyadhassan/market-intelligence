@@ -117,7 +117,17 @@ class HttpxSourceTransport:
                         raise SourceResponseTooLargeError(
                             f"response exceeded the {max_bytes}-byte limit"
                         )
-                if declared_size is not None and len(body) != declared_size:
+                # Content-Length describes bytes transferred on the wire, while
+                # aiter_bytes() deliberately returns the decoded representation
+                # consumed by canonicalizers.  HTTPX's real transport detects a
+                # truncated encoded stream, so only perform our additional
+                # decoded-length check when no content coding is in use.
+                content_encoding = response.headers.get("content-encoding")
+                if (
+                    declared_size is not None
+                    and not content_encoding
+                    and len(body) != declared_size
+                ):
                     raise SourceResponseTruncatedError(
                         f"response declared {declared_size} bytes but delivered {len(body)}"
                     )

@@ -191,6 +191,12 @@ def test_app_up_builds_explicitly_and_passes_proxy_to_infrastructure_pulls(
 
     assert builds == [environment]
     assert compose_calls[0] == (("up", "--detach"), {"env": environment})
-    assert compose_calls[1][0] == ("--profile", "app", "up", "--detach")
+    assert compose_calls[1][0] == (
+        "--profile",
+        "app",
+        "up",
+        "--detach",
+        "--force-recreate",
+    )
     assert compose_calls[1][1]["env"] is environment
     assert "--build" not in compose_calls[1][0]

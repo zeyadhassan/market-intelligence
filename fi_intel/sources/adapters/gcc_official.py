@@ -387,6 +387,7 @@ class OfficialGccRawAdapter:
         items: list[RawAcquiredItem] = []
         validators: list[DetailValidator] = []
         unchanged = 0
+        failed = 0
         feed_hash = hashlib.sha256()
         latest = cursor.latest_source_published_at if cursor is not None else None
         landing_previous = prior.get("landing-page")
@@ -456,6 +457,7 @@ class OfficialGccRawAdapter:
             except SourceTransportError:
                 if previous is not None:
                     validators.append(previous)
+                failed += 1
                 continue
             if detail.not_modified:
                 if previous is None:
@@ -517,6 +519,7 @@ class OfficialGccRawAdapter:
             page_count=1 + len(detail_urls),
             discovered_count=1 + len(detail_urls),
             unchanged_count=unchanged,
+            failed_count=failed,
             items=tuple(items),
             next_cursor=next_cursor,
         )

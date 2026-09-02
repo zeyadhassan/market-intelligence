@@ -1,5 +1,6 @@
 """Security and boundedness contracts for registered-source HTTP."""
 
+import gzip
 from datetime import UTC, datetime
 
 import httpx
@@ -105,4 +106,28 @@ async def test_httpx_transport_rejects_oversize_and_truncated_responses() -> Non
     transport = HttpxSourceTransport(truncated)
     with pytest.raises(SourceResponseTruncatedError):
         await transport.send("https://www.sec.gov/x", {}, timeout_seconds=1, max_bytes=20)
+    await transport.close()
+
+
+async def test_httpx_transport_validates_wire_length_for_compressed_responses() -> None:
+    decoded = b"a valid compressed response body" * 20
+    encoded = gzip.compress(decoded)
+    compressed = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            content=encoded,
+            headers={
+                "content-encoding": "gzip",
+                "content-length": str(len(encoded)),
+            },
+            request=request,
+        )
+    )
+    transport = HttpxSourceTransport(compressed)
+
+    response = await transport.send(
+        "https://www.sec.gov/x", {}, timeout_seconds=1, max_bytes=len(decoded)
+    )
+
+    assert response.payload == decoded
     await transport.close()
