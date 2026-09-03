@@ -52,6 +52,11 @@ def test_default_stage_one_page_describes_the_local_product_path() -> None:
     assert "window.sessionStorage" not in STAGE_ONE_JS
     assert "OIDC access token" not in STAGE_ONE_JS
     assert "console.table" in STAGE_ONE_JS
+    assert "/v1/operations/dashboard?event_limit=200" in STAGE_ONE_JS
+    assert "copyDiagnostics" in STAGE_ONE_JS
+    assert "Pause live updates" in STAGE_ONE_HTML
+    assert "Activity log" in STAGE_ONE_HTML
+    assert "Ask the knowledge base" in STAGE_ONE_HTML
     assert "[FI Intel] source" in STAGE_ONE_JS
     assert (
         "backend logs: python deploy/podman_infra.py logs --no-follow --tail 500"

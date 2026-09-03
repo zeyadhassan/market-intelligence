@@ -101,9 +101,11 @@ def worker_source(
 ) -> None:
     """Acquire registered sources into the raw archive and PostgreSQL ledger."""
 
+    from fi_intel.application.observability import PostgresRuntimeMonitor
     from fi_intel.application.workers import CanonicalSourceWorker, run_continuously
 
     async def run(resources: RuntimeResources) -> object:
+        worker_id = f"source-{uuid4()}"
         worker = CanonicalSourceWorker(resources)
         if once:
             return await worker.run_once(force=force)
@@ -115,6 +117,12 @@ def worker_source(
             poll,
             interval_seconds=resources.settings.worker_poll_interval_seconds,
             operation_name="source",
+            monitor=PostgresRuntimeMonitor(
+                resources.postgres_pool,
+                worker_id=worker_id,
+                worker_type="source",
+                operation="poll configured sources",
+            ),
         )
         return "stopped"
 
@@ -127,16 +135,24 @@ def worker_projection(
 ) -> None:
     """Project committed document, assertion, and signal events."""
 
+    from fi_intel.application.observability import PostgresRuntimeMonitor
     from fi_intel.application.workers import CanonicalProjectionWorker, run_continuously
 
     async def run(resources: RuntimeResources) -> object:
-        worker = CanonicalProjectionWorker(resources, worker_id=f"projection-{uuid4()}")
+        worker_id = f"projection-{uuid4()}"
+        worker = CanonicalProjectionWorker(resources, worker_id=worker_id)
         if once:
             return await worker.run_once()
         await run_continuously(
             worker.run_once,
             interval_seconds=resources.settings.worker_poll_interval_seconds,
             operation_name="projection",
+            monitor=PostgresRuntimeMonitor(
+                resources.postgres_pool,
+                worker_id=worker_id,
+                worker_type="projection",
+                operation="project, extract, and index documents",
+            ),
         )
         return "stopped"
 
@@ -150,16 +166,24 @@ def worker_analysis(
     """Analyze only frozen, already-processed daily inputs."""
 
     from fi_intel.application.daily_worker import CanonicalAnalysisJobWorker
+    from fi_intel.application.observability import PostgresRuntimeMonitor
     from fi_intel.application.workers import run_continuously
 
     async def run(resources: RuntimeResources) -> object:
-        worker = CanonicalAnalysisJobWorker(resources, worker_id=f"analysis-{uuid4()}")
+        worker_id = f"analysis-{uuid4()}"
+        worker = CanonicalAnalysisJobWorker(resources, worker_id=worker_id)
         if once:
             return await worker.run_once() or "idle"
         await run_continuously(
             worker.run_once,
             interval_seconds=resources.settings.worker_poll_interval_seconds,
             operation_name="analysis",
+            monitor=PostgresRuntimeMonitor(
+                resources.postgres_pool,
+                worker_id=worker_id,
+                worker_type="analysis",
+                operation="detect and research opportunities",
+            ),
         )
         return "stopped"
 
@@ -173,16 +197,24 @@ def worker_search(
     """Execute typed, bounded, asynchronous interactive searches."""
 
     from fi_intel.application.search import CanonicalSearchWorker
+    from fi_intel.application.observability import PostgresRuntimeMonitor
     from fi_intel.application.workers import run_continuously
 
     async def run(resources: RuntimeResources) -> object:
-        worker = CanonicalSearchWorker(resources, worker_id=f"search-{uuid4()}")
+        worker_id = f"search-{uuid4()}"
+        worker = CanonicalSearchWorker(resources, worker_id=worker_id)
         if once:
             return await worker.run_once() or "idle"
         await run_continuously(
             worker.run_once,
             interval_seconds=resources.settings.worker_poll_interval_seconds,
             operation_name="search",
+            monitor=PostgresRuntimeMonitor(
+                resources.postgres_pool,
+                worker_id=worker_id,
+                worker_type="search",
+                operation="execute analyst searches",
+            ),
         )
         return "stopped"
 
@@ -196,9 +228,11 @@ def worker_delivery(
     """Assemble immutable digests and deliver through sandbox SMTP."""
 
     from fi_intel.application.delivery import PostgresNotificationService
+    from fi_intel.application.observability import PostgresRuntimeMonitor
     from fi_intel.application.workers import run_continuously
 
     async def run(resources: RuntimeResources) -> object:
+        worker_id = f"delivery-{uuid4()}"
         service = PostgresNotificationService(
             resources.settings,
             pool=resources.postgres_pool,
@@ -206,7 +240,7 @@ def worker_delivery(
 
         async def deliver() -> object:
             assembly = await service.assemble_due()
-            delivery = await service.deliver_once(worker_id=f"delivery-{uuid4()}")
+            delivery = await service.deliver_once(worker_id=worker_id)
             for state in (
                 "accepted",
                 "suppressed",
@@ -223,6 +257,12 @@ def worker_delivery(
             deliver,
             interval_seconds=resources.settings.worker_poll_interval_seconds,
             operation_name="delivery",
+            monitor=PostgresRuntimeMonitor(
+                resources.postgres_pool,
+                worker_id=worker_id,
+                worker_type="delivery",
+                operation="assemble and deliver digests",
+            ),
         )
         return "stopped"
 
@@ -236,9 +276,11 @@ def scheduler_run(
     """Coalesce active subscriptions into deterministic daily jobs."""
 
     from fi_intel.application.scheduler import CanonicalScheduler
+    from fi_intel.application.observability import PostgresRuntimeMonitor
     from fi_intel.application.workers import run_continuously
 
     async def run(resources: RuntimeResources) -> object:
+        worker_id = f"scheduler-{uuid4()}"
         scheduler = CanonicalScheduler(resources)
         if once:
             return await scheduler.run_once()
@@ -246,6 +288,12 @@ def scheduler_run(
             scheduler.run_once,
             interval_seconds=resources.settings.worker_poll_interval_seconds,
             operation_name="scheduler",
+            monitor=PostgresRuntimeMonitor(
+                resources.postgres_pool,
+                worker_id=worker_id,
+                worker_type="scheduler",
+                operation="schedule subscribed topic analysis",
+            ),
         )
         return "stopped"
 

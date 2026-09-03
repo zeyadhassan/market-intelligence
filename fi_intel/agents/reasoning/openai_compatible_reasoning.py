@@ -139,6 +139,14 @@ class OpenAICompatibleReasoningModel:
 
     async def research(self, request: ResearchRequest) -> ResearchResponse:
         started = time.monotonic()
+        subject_id = f"{request.signal_pattern}:{request.entity_name}"
+        activity_id = await self._usage_log.start_call(
+            run_id=self._run_id,
+            component="research",
+            model=self._model,
+            subject_id=subject_id,
+            started_at=datetime.now(UTC),
+        )
         messages: list[ChatCompletionMessageParam] = [
             ChatCompletionSystemMessageParam(role="system", content=request.instruction),
             ChatCompletionUserMessageParam(role="user", content=_build_user_prompt(request)),
@@ -169,7 +177,7 @@ class OpenAICompatibleReasoningModel:
                     output_tokens=0,
                     cost_usd=0.0,
                     latency_ms=(time.monotonic() - started) * 1_000.0,
-                    subject_id=f"{request.signal_pattern}:{request.entity_name}",
+                    subject_id=subject_id,
                     recorded_at=datetime.now(UTC),
                     status=("timed_out" if isinstance(exc, openai.APITimeoutError) else "failed"),
                     error_type=type(exc).__name__,
@@ -177,7 +185,8 @@ class OpenAICompatibleReasoningModel:
                     artifact_digest=(self._artifact.artifact_digest if self._artifact else None),
                     prompt_version=RESEARCH_PROMPT_VERSION,
                     schema_version="opportunity-v2",
-                )
+                ),
+                activity_id=activity_id,
             )
             self._log.error(
                 "research.api_error",
@@ -215,7 +224,7 @@ class OpenAICompatibleReasoningModel:
                     usage.completion_tokens if usage else 0,
                 ),
                 latency_ms=latency_ms,
-                subject_id=f"{request.signal_pattern}:{request.entity_name}",
+                subject_id=subject_id,
                 recorded_at=datetime.now(UTC),
                 status=(
                     "refused" if content is None else "malformed" if parse_error else "succeeded"
@@ -225,7 +234,8 @@ class OpenAICompatibleReasoningModel:
                 artifact_digest=(self._artifact.artifact_digest if self._artifact else None),
                 prompt_version=RESEARCH_PROMPT_VERSION,
                 schema_version="opportunity-v2",
-            )
+            ),
+            activity_id=activity_id,
         )
 
         if content is None:

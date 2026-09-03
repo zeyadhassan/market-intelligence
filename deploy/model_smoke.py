@@ -101,11 +101,22 @@ async def smoke_embedding(settings: Settings) -> None:
             dim=settings.embedding_dim,
             query_prefix=settings.embedding_query_prefix,
             document_prefix=settings.embedding_document_prefix,
+            batch_size=settings.embedding_batch_size,
         )
-        vectors = await embedder.embed_batch(["connectivity check"], kind="query")
+        # Exercise the configured request width, not only the one-item case.
+        # A single query can pass while production document batches are rejected
+        # by the NIM profile's max_batch_size.
+        vectors = await embedder.embed_batch(
+            ["connectivity check"] * settings.embedding_batch_size,
+            kind="query",
+        )
     finally:
         await client.aclose()
-    print(f"NVIDIA NIM embedding endpoint OK ({len(vectors[0])} dimensions)", flush=True)
+    print(
+        "NVIDIA NIM embedding endpoint OK "
+        f"({len(vectors[0])} dimensions, batch {len(vectors)})",
+        flush=True,
+    )
 
 
 async def _smoke(settings: Settings, *, chat: bool = True, embedding: bool = True) -> None:

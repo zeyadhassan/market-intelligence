@@ -31,13 +31,14 @@ from fi_intel.application.jobs import (
     PostgresAnalysisJobStore,
     PrincipalSnapshot,
 )
+from fi_intel.application.operations import OperatorService, RuntimeDashboardView
 from fi_intel.application.runtime_resources import PostgresPoolProvider
 from fi_intel.application.search import PostgresSearchStore
 from fi_intel.application.topics import PostgresTopicCatalog
 from fi_intel.config import Settings
 from fi_intel.graph.signals import signal_authorization_scope
 from fi_intel.results.manifest import ImmutableResultManifest
-from fi_intel.sources.adapters.gcc_official import GCC_OFFICIAL_SOURCES
+from fi_intel.sources.adapters.gcc_official import GCC_OFFICIAL_SOURCES, GccOfficialSource
 from fi_intel.telemetry import PipelineStage, Telemetry
 
 STAGE_ONE_DESK = "fi_gcc"
@@ -324,6 +325,79 @@ class PostgresStageOneService:
                 AnalysisJobState.RETRYABLE_FAILED,
                 AnalysisJobState.TERMINAL_FAILED,
             }
+            required = tuple(
+                str(item)
+                for item in _json_items(
+                    queued_job.input_manifest.get("required_source_ids")
+                )
+            )
+            source_rows = await pool.fetch(
+                """
+                SELECT registry.source_id, registry.display_name,
+                       observation.health, observation.complete,
+                       observation.fresh, observation.silent,
+                       observation.within_expected_volume,
+                       observation.finished_at, observation.quarantine_count,
+                       observation.error_type, observation.error_message
+                FROM source_registry registry
+                LEFT JOIN LATERAL (
+                    SELECT health, complete, fresh, silent,
+                           within_expected_volume, finished_at,
+                           quarantine_count, error_type, error_message
+                    FROM source_observation_v2
+                    WHERE source_id = registry.source_id AND finished_at <= $2
+                    ORDER BY finished_at DESC, observation_id DESC LIMIT 1
+                ) observation ON TRUE
+                WHERE registry.source_id = ANY($1::text[])
+                ORDER BY registry.source_id
+                """,
+                list(required),
+                queued_job.temporal_pin,
+            )
+            document_count_rows = await pool.fetch(
+                """
+                SELECT identity.source_id, count(*) AS document_count
+                FROM document_identity identity
+                WHERE identity.source_id = ANY($1::text[])
+                  AND EXISTS (
+                    SELECT 1 FROM document_version version
+                    WHERE version.document_id=identity.document_id
+                      AND version.recorded_at <= $2
+                  )
+                GROUP BY identity.source_id
+                """,
+                list(required),
+                queued_job.temporal_pin,
+            )
+            document_counts = {
+                str(row["source_id"]): int(row["document_count"])
+                for row in document_count_rows
+            }
+            source_observations = {
+                str(row["source_id"]): row for row in source_rows
+            }
+            source_matrix = {
+                source.source_id: source for source in GCC_OFFICIAL_SOURCES
+            }
+            completed = {
+                source_id
+                for source_id, row in source_observations.items()
+                if row["health"] == "healthy"
+                and row["complete"]
+                and row["fresh"]
+                and not row["silent"]
+                and row["within_expected_volume"]
+            }
+            statuses = tuple(
+                self._pending_source_status(
+                    source_id,
+                    source_observations.get(source_id),
+                    source_matrix,
+                    document_counts,
+                    source_id in completed,
+                )
+                for source_id in required
+            )
             return TopicResultsView(
                 topic_id=topic_id,
                 label=topic.label,
@@ -344,6 +418,12 @@ class PostgresStageOneService:
                 ),
                 analysis_job_id=queued_job.job_id,
                 business_date=queued_job.business_date.isoformat(),
+                required_source_count=len(required),
+                successful_source_count=len(completed),
+                rejected_candidate_count=sum(
+                    item.rejected_candidate_count for item in statuses
+                ),
+                source_statuses=statuses,
             )
         result_ids = tuple(str(item) for item in read_model["ordered_result_version_ids"])
         lifecycle_raw = _json_object(read_model["result_lifecycle"])
@@ -569,6 +649,55 @@ class PostgresStageOneService:
         )
 
     @staticmethod
+    def _pending_source_status(
+        source_id: str,
+        observation: asyncpg.Record | None,
+        source_matrix: dict[str, GccOfficialSource],
+        document_counts: dict[str, int],
+        complete: bool,
+    ) -> LiveSourceStatusView:
+        source = source_matrix.get(source_id)
+        if complete:
+            status = "complete"
+            detail = "Completed before the analysis pin."
+        elif observation is not None and observation["health"] == "failed":
+            status = "fetch_failed"
+            detail = (
+                f"Fetch failed: {observation['error_type'] or 'source error'}; "
+                f"{observation['error_message'] or 'no safe error summary'}"
+            )
+        elif observation is None or observation["health"] is None:
+            status = "incomplete"
+            detail = "No source observation completed before the analysis pin."
+        else:
+            status = "incomplete"
+            detail = "Source work did not complete freshness and volume checks."
+        return LiveSourceStatusView(
+            source_id=source_id,
+            display_name=(
+                str(observation["display_name"])
+                if observation is not None
+                else source_id
+            ),
+            country=source.country if source is not None else "Unknown",
+            source_type=(
+                source.source_type
+                if source is not None
+                else "registered_authorized_source"
+            ),
+            source_url=source.url if source is not None else "",
+            status=status,
+            fetched_at=(observation["finished_at"] if observation is not None else None),
+            candidate_count=document_counts.get(source_id, 0),
+            rejected_candidate_count=(
+                int(observation["quarantine_count"] or 0)
+                if observation is not None
+                else 0
+            ),
+            detail=detail,
+        )
+
+    @staticmethod
     def _view(
         manifest: ImmutableResultManifest,
         result_version_id: str,
@@ -720,6 +849,18 @@ class PostgresStageOneService:
             answer=job.answer,
             safe_error_summary=job.safe_error_summary,
         )
+
+    async def operations_dashboard(
+        self,
+        principal: RequestPrincipal,
+        *,
+        event_limit: int = 200,
+    ) -> RuntimeDashboardView:
+        self._authorize(principal)
+        return await OperatorService(
+            settings=self._settings,
+            pool=await self._get_pool(),
+        ).dashboard(event_limit=event_limit)
 
     async def close(self) -> None:
         errors: list[Exception] = []

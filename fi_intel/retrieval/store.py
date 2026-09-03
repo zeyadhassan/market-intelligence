@@ -12,6 +12,11 @@ from typing import Any
 import asyncpg
 
 from fi_intel.ingest.resolve import DocumentEntityLink
+from fi_intel.logging import (
+    get_logger,
+    safe_console_error_message,
+    safe_error_summary,
+)
 from fi_intel.retrieval.chunking import (
     CHUNKER_VERSION,
     EMBEDDING_DIM,
@@ -26,6 +31,8 @@ from fi_intel.retrieval.corpus import (
 )
 from fi_intel.retrieval.entitlement import Principal, Side, grants_for
 from fi_intel.sources.canonical import CanonicalDocument
+
+_log = get_logger(component="retrieval.index")
 
 
 class InMemoryCorpusStore:
@@ -141,10 +148,36 @@ class RetrievalIndexVersionError(RetrievalIndexError):
     """The configured embedder is incompatible with the active index."""
 
 
+class RetrievalIndexBuildError(RetrievalIndexError):
+    """One or more documents failed while an incremental index pass continued."""
+
+
 _INDEX_STATE_SQL = """
 SELECT embed_model_version, embedding_dim, chunker_version, status
 FROM retrieval_index_state
 WHERE index_name = $1
+"""
+
+
+_DOCUMENT_INDEX_ROWS_SQL = """
+SELECT d.source_id, d.doc_id, d.title, d.body, d.language,
+       d.document_class, d.barrier_side, d.published_at,
+       d.recorded_at, d.content_hash,
+       version.document_version_id, version.policy_id
+FROM document d
+LEFT JOIN document_version version
+  ON version.document_version_id = CASE
+    WHEN d.metadata->>'ledger_document_version_id' ~
+         '^[0-9a-fA-F-]{36}$'
+    THEN (d.metadata->>'ledger_document_version_id')::uuid
+    ELSE NULL END
+WHERE $1::boolean OR NOT EXISTS (
+    SELECT 1 FROM document_chunk c
+    WHERE c.source_id = d.source_id AND c.doc_id = d.doc_id
+      AND c.embedding IS NOT NULL
+)
+ORDER BY d.source_id, d.doc_id
+LIMIT $2::integer
 """
 
 
@@ -553,11 +586,10 @@ class PostgresCorpusStore:
                 raise RetrievalIndexNotReadyError(msg)
 
     @staticmethod
-    async def _write_document_chunks(
-        conn: asyncpg.Connection,
+    async def _prepare_document_chunks(
         row: Any,
         embedder: Embedder,
-    ) -> int:
+    ) -> tuple[list[Chunk], list[list[float]]]:
         doc = CanonicalDocument(
             doc_id=row["doc_id"],
             source_id=row["source_id"],
@@ -571,20 +603,32 @@ class PostgresCorpusStore:
         )
         chunks = chunk_document(doc)
         if not chunks:
-            return 0
-        embeddings = await embedder.embed_batch([chunk.text for chunk in chunks], kind="document")
+            raise RetrievalIndexBuildError("canonical document produced no retrieval chunks")
+        embeddings = await embedder.embed_batch(
+            [chunk.text for chunk in chunks], kind="document"
+        )
         if len(embeddings) != len(chunks):
             msg = f"embedder returned {len(embeddings)} vectors for {len(chunks)} chunks"
             raise RetrievalIndexVersionError(msg)
-
-        written = 0
-        for chunk, embedding in zip(chunks, embeddings, strict=True):
+        for embedding in embeddings:
             if len(embedding) != embedder.dim:
                 msg = (
                     f"document embedding dimension {len(embedding)} does not "
                     f"match configured dimension {embedder.dim}"
                 )
                 raise RetrievalIndexVersionError(msg)
+        return chunks, embeddings
+
+    @staticmethod
+    async def _write_document_chunks(
+        conn: asyncpg.Connection,
+        row: Any,
+        chunks: list[Chunk],
+        embeddings: list[list[float]],
+        embedder: Embedder,
+    ) -> int:
+        written = 0
+        for chunk, embedding in zip(chunks, embeddings, strict=True):
             chunk_id = await conn.fetchval(
                 """
                 INSERT INTO document_chunk
@@ -594,6 +638,11 @@ class PostgresCorpusStore:
                      canonical_lineage)
                 VALUES ($1,$2,$3,$4,$5,$6,$7::vector,$8,$9,$10,$11,$12,$13,$14)
                 ON CONFLICT (source_id, doc_id, chunk_index) DO UPDATE SET
+                    char_start = EXCLUDED.char_start,
+                    char_end = EXCLUDED.char_end,
+                    text = EXCLUDED.text,
+                    embedding = EXCLUDED.embedding,
+                    embed_model_version = EXCLUDED.embed_model_version,
                     document_version_id = EXCLUDED.document_version_id,
                     policy_id = EXCLUDED.policy_id,
                     chunker_version = EXCLUDED.chunker_version,
@@ -629,6 +678,69 @@ class PostgresCorpusStore:
                 )
             written += 1
         return written
+
+    @staticmethod
+    async def _mark_index_ready(conn: asyncpg.Connection, embedder: Embedder) -> None:
+        await conn.execute(
+            """
+            INSERT INTO retrieval_index_state
+                (index_name, embed_model_version, embedding_dim,
+                 chunker_version, status, indexed_at)
+            VALUES ($1, $2, $3, $4, 'ready', now())
+            ON CONFLICT (index_name) DO UPDATE SET
+                embed_model_version = EXCLUDED.embed_model_version,
+                embedding_dim = EXCLUDED.embedding_dim,
+                chunker_version = EXCLUDED.chunker_version,
+                status = EXCLUDED.status,
+                indexed_at = EXCLUDED.indexed_at
+            """,
+            INDEX_STATE_NAME,
+            embedder.model_version,
+            embedder.dim,
+            CHUNKER_VERSION,
+        )
+
+    async def _commit_document_chunks(
+        self,
+        row: Any,
+        chunks: list[Chunk],
+        embeddings: list[list[float]],
+        embedder: Embedder,
+    ) -> int:
+        pool = await self._get_pool()
+        async with pool.acquire() as conn, conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock($1)", INDEX_BUILD_LOCK_ID)
+            await self._validate_build_request(conn, embedder, False)
+            already_indexed = await conn.fetchval(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM document_chunk
+                    WHERE source_id=$1 AND doc_id=$2
+                      AND embedding IS NOT NULL
+                      AND embed_model_version=$3
+                      AND chunker_version=$4
+                )
+                """,
+                row["source_id"],
+                row["doc_id"],
+                embedder.model_version,
+                CHUNKER_VERSION,
+            )
+            if already_indexed:
+                return 0
+            # Per-document replacement is atomic. A failed model request never
+            # deletes a prior projection, and a failed database write cannot
+            # leave a partially indexed document visible to analysis.
+            await conn.execute(
+                "DELETE FROM document_chunk WHERE source_id=$1 AND doc_id=$2",
+                row["source_id"],
+                row["doc_id"],
+            )
+            written = await self._write_document_chunks(
+                conn, row, chunks, embeddings, embedder
+            )
+            await self._mark_index_ready(conn, embedder)
+            return written
 
     @staticmethod
     async def _link_chunk_authority(
@@ -691,65 +803,100 @@ class PostgresCorpusStore:
             char_end,
         )
 
-    async def index_chunks(self, embedder: Embedder, *, force: bool = False) -> int:
+    async def index_chunks(
+        self,
+        embedder: Embedder,
+        *,
+        force: bool = False,
+        max_documents: int = 25,
+    ) -> int:
         """Build a version-homogeneous chunk index.
 
         Incremental indexing is allowed only when the active model, vector
-        dimension, and chunker version exactly match. A forced rebuild deletes
-        and replaces chunks in the same transaction, so an embedding failure
-        cannot leave the production index empty.
+        dimension, and chunker version exactly match. Incremental work commits
+        one complete document at a time, so a later model failure does not
+        discard earlier progress. A forced rebuild prepares all embeddings
+        before atomically replacing the production index.
         """
+        if max_documents < 1:
+            raise ValueError("maximum documents per index pass must be positive")
         pool = await self._get_pool()
-        written = 0
+        # Fail fast on an incompatible active index. The same check is repeated
+        # under the write lock so a concurrent rebuild cannot create a race.
         async with pool.acquire() as conn, conn.transaction():
-            # Version validation and all writes are protected by the same
-            # transaction-scoped lock. Concurrent builders cannot validate
-            # against one version and then commit rows for another.
             await conn.execute("SELECT pg_advisory_xact_lock($1)", INDEX_BUILD_LOCK_ID)
             await self._validate_build_request(conn, embedder, force)
-            rows = await conn.fetch(
-                """
-                SELECT d.source_id, d.doc_id, d.title, d.body, d.language,
-                       d.document_class, d.barrier_side, d.published_at,
-                       d.recorded_at, d.content_hash,
-                       version.document_version_id, version.policy_id
-                FROM document d
-                LEFT JOIN document_version version
-                  ON version.document_version_id = CASE
-                    WHEN d.metadata->>'ledger_document_version_id' ~
-                         '^[0-9a-fA-F-]{36}$'
-                    THEN (d.metadata->>'ledger_document_version_id')::uuid
-                    ELSE NULL END
-                WHERE $1 OR NOT EXISTS (
-                    SELECT 1 FROM document_chunk c
-                    WHERE c.source_id = d.source_id AND c.doc_id = d.doc_id
-                )
-                ORDER BY d.source_id, d.doc_id
-                """,
-                force,
-            )
-            if force:
-                await conn.execute("DELETE FROM document_chunk")
+        rows = await pool.fetch(
+            _DOCUMENT_INDEX_ROWS_SQL,
+            force,
+            2_147_483_647 if force else max_documents,
+        )
+        if not rows:
+            async with pool.acquire() as conn, conn.transaction():
+                await conn.execute("SELECT pg_advisory_xact_lock($1)", INDEX_BUILD_LOCK_ID)
+                await self._validate_build_request(conn, embedder, force)
+                state = await conn.fetchrow(_INDEX_STATE_SQL, INDEX_STATE_NAME)
+                if state is None:
+                    await self._mark_index_ready(conn, embedder)
+            return 0
+
+        if force:
+            prepared: list[tuple[Any, list[Chunk], list[list[float]]]] = []
             for row in rows:
-                written += await self._write_document_chunks(conn, row, embedder)
-            await conn.execute(
-                """
-                INSERT INTO retrieval_index_state
-                    (index_name, embed_model_version, embedding_dim,
-                     chunker_version, status, indexed_at)
-                VALUES ($1, $2, $3, $4, 'ready', now())
-                ON CONFLICT (index_name) DO UPDATE SET
-                    embed_model_version = EXCLUDED.embed_model_version,
-                    embedding_dim = EXCLUDED.embedding_dim,
-                    chunker_version = EXCLUDED.chunker_version,
-                    status = EXCLUDED.status,
-                    indexed_at = EXCLUDED.indexed_at
-                """,
-                INDEX_STATE_NAME,
-                embedder.model_version,
-                embedder.dim,
-                CHUNKER_VERSION,
+                chunks, embeddings = await self._prepare_document_chunks(
+                    row, embedder
+                )
+                prepared.append((row, chunks, embeddings))
+            written = 0
+            async with pool.acquire() as conn, conn.transaction():
+                await conn.execute("SELECT pg_advisory_xact_lock($1)", INDEX_BUILD_LOCK_ID)
+                await self._validate_build_request(conn, embedder, True)
+                await conn.execute("DELETE FROM document_chunk")
+                for row, chunks, embeddings in prepared:
+                    written += await self._write_document_chunks(
+                        conn, row, chunks, embeddings, embedder
+                    )
+                await self._mark_index_ready(conn, embedder)
+            return written
+
+        written = 0
+        failures: list[tuple[str, Exception]] = []
+        for row in rows:
+            document_version_id = str(row["document_version_id"] or row["doc_id"])
+            _log.info(
+                "retrieval.index.document.started",
+                document_version_id=document_version_id,
+                source_id=str(row["source_id"]),
             )
+            try:
+                chunks, embeddings = await self._prepare_document_chunks(row, embedder)
+                document_written = await self._commit_document_chunks(
+                    row, chunks, embeddings, embedder
+                )
+            except Exception as exc:
+                failures.append((document_version_id, exc))
+                _log.error(
+                    "retrieval.index.document.failed",
+                    document_version_id=document_version_id,
+                    source_id=str(row["source_id"]),
+                    error_type=type(exc).__name__,
+                    error_message=safe_console_error_message(exc),
+                    safe_error_summary=safe_error_summary(exc),
+                )
+                continue
+            written += document_written
+            _log.info(
+                "retrieval.index.document.completed",
+                document_version_id=document_version_id,
+                source_id=str(row["source_id"]),
+                indexed_chunks=document_written,
+            )
+        if failures:
+            failed_ids = ", ".join(item[0] for item in failures[:5])
+            suffix = "" if len(failures) <= 5 else f" and {len(failures) - 5} more"
+            raise RetrievalIndexBuildError(
+                f"{len(failures)} document(s) failed indexing: {failed_ids}{suffix}"
+            ) from failures[0][1]
         return written
 
     async def close(self) -> None:

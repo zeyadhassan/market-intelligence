@@ -114,6 +114,41 @@ async def test_embed_batch_sorts_by_response_index_defensively() -> None:
     assert result == [[1.0], [9.0]]
 
 
+async def test_embed_batch_splits_requests_at_the_configured_nim_limit() -> None:
+    captured: list[list[str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        inputs = json.loads(request.content)["input"]
+        captured.append(inputs)
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "data": [
+                    {
+                        "object": "embedding",
+                        "embedding": [float(value)],
+                        "index": index,
+                    }
+                    for index, value in enumerate(inputs)
+                ],
+                "model": "m",
+                "usage": {"total_tokens": len(inputs)},
+            },
+        )
+
+    client = httpx.AsyncClient(
+        base_url="http://localhost:9998/v1",
+        transport=httpx.MockTransport(handler),
+    )
+    embedder = OpenAICompatibleEmbedder(client, model="m", dim=1, batch_size=2)
+
+    result = await embedder.embed_batch(["1", "2", "3", "4", "5"])
+
+    assert captured == [["1", "2"], ["3", "4"], ["5"]]
+    assert result == [[1.0], [2.0], [3.0], [4.0], [5.0]]
+
+
 async def test_dim_and_model_version() -> None:
     client = httpx.AsyncClient(base_url="http://localhost:9998/v1")
     embedder = OpenAICompatibleEmbedder(client, model="local-embedder", dim=2048)

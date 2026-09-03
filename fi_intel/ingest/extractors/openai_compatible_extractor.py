@@ -143,6 +143,13 @@ class OpenAICompatibleStructuredExtractor:
         # the JSON ourselves afterward means spend is recorded for every
         # completed HTTP call, unconditionally.
         started = time.monotonic()
+        activity_id = await self._usage_log.start_call(
+            run_id=self._run_id,
+            component="extract",
+            model=self._model,
+            subject_id=request.doc_id,
+            started_at=datetime.now(UTC),
+        )
         messages: list[ChatCompletionMessageParam] = [
             ChatCompletionSystemMessageParam(role="system", content=request.system_instruction),
             ChatCompletionUserMessageParam(
@@ -184,7 +191,8 @@ class OpenAICompatibleStructuredExtractor:
                     artifact_digest=(self._artifact.artifact_digest if self._artifact else None),
                     prompt_version=PROMPT_VERSION,
                     schema_version="extraction-response-v1",
-                )
+                ),
+                activity_id=activity_id,
             )
             self._log.error(
                 "extract.api_error",
@@ -232,7 +240,8 @@ class OpenAICompatibleStructuredExtractor:
                 artifact_digest=(self._artifact.artifact_digest if self._artifact else None),
                 prompt_version=PROMPT_VERSION,
                 schema_version="extraction-response-v1",
-            )
+            ),
+            activity_id=activity_id,
         )
 
         if content is None:

@@ -51,6 +51,7 @@ from fi_intel.api.service import (
 )
 from fi_intel.api.stage_one_page import STAGE_ONE_CSS, STAGE_ONE_HTML, STAGE_ONE_JS
 from fi_intel.api.workbench import WORKBENCH_CSS, WORKBENCH_HTML, WORKBENCH_JS
+from fi_intel.application.operations import RuntimeDashboardView
 from fi_intel.logging import get_logger
 from fi_intel.telemetry import Telemetry
 
@@ -306,6 +307,16 @@ def create_app(  # noqa: C901 - route registration is intentionally centralized
                 response.status_code = status.HTTP_202_ACCEPTED
             return result
 
+        @app.get("/v1/operations/dashboard", response_model=RuntimeDashboardView)
+        async def operations_dashboard(
+            principal: principal_dependency,
+            event_limit: Annotated[int, Query(ge=1, le=500)] = 200,
+        ) -> RuntimeDashboardView:
+            return await stage_one.operations_dashboard(
+                principal,
+                event_limit=event_limit,
+            )
+
     @app.get("/v1/signals", response_model=list[SignalView])
     async def list_signals(
         principal: principal_dependency,
@@ -414,6 +425,7 @@ def create_app(  # noqa: C901 - route registration is intentionally centralized
             "/v1/results/{result_id}/evaluation",
             "/v1/searches",
             "/v1/searches/{search_id}",
+            "/v1/operations/dashboard",
         }
         app.router.routes[:] = [
             route for route in app.router.routes if getattr(route, "path", None) in supported_paths

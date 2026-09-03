@@ -19,7 +19,7 @@ def test_repository_migration_plan_is_contiguous_and_checksummed() -> None:
     plan = discover_migrations()
     assert [item.version for item in plan] == list(range(1, len(plan) + 1))
     assert plan[0].filename == "init.sql"
-    assert plan[-1].filename == "0026_model_call_subject_index.sql"
+    assert plan[-1].filename == "0027_runtime_observability.sql"
     assert all(len(item.checksum) == 64 for item in plan)
     assert any(item.filename == "0004_replayable_ingestion.sql" for item in plan)
     nomic_migration = Path("deploy/migrations/0023_nomic_embedding_dimension.sql").read_text(
@@ -39,6 +39,12 @@ def test_repository_migration_plan_is_contiguous_and_checksummed() -> None:
     )
     for component in ("extract", "research", "embedding", "reranker", "entailment"):
         assert f"'{component}'" in component_migration
+    runtime_migration = Path("deploy/migrations/0027_runtime_observability.sql").read_text(
+        encoding="utf-8"
+    )
+    assert "runtime_worker_state_v1" in runtime_migration
+    assert "runtime_event_v1" in runtime_migration
+    assert "input_payload" not in runtime_migration
 
 
 def test_discovery_rejects_duplicate_versions(tmp_path: Path) -> None:
@@ -78,10 +84,11 @@ async def test_live_postgres_migrations_are_idempotent() -> None:
             SELECT COUNT(*) FROM pg_class
             WHERE relname IN (
                 'raw_asset', 'document_version', 'transactional_outbox',
-                'ingest_run_v2', 'ingest_job_v2', 'ingest_watermark_v2'
+                'ingest_run_v2', 'ingest_job_v2', 'ingest_watermark_v2',
+                'runtime_worker_state_v1', 'runtime_event_v1'
             ) AND relkind = 'r'
             """
         )
-        assert tables == 6
+        assert tables == 8
     finally:
         await conn.close()

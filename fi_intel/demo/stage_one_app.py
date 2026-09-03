@@ -30,16 +30,16 @@ from fi_intel.api.models import (
 )
 from fi_intel.api.service import InMemoryAnalystService, ResourceNotFoundError
 from fi_intel.api.stage_one_page import STAGE_ONE_FIXTURE_HTML, STAGE_ONE_FIXTURE_JS
-from fi_intel.application.topics import (
-    TOPIC_BY_PATTERN as _TOPIC_BY_PATTERN,
+from fi_intel.application.operations import (
+    PipelineStageRuntimeView,
+    RuntimeDashboardView,
+    RuntimeEventView,
+    RuntimeQueueStatus,
 )
 from fi_intel.application.topics import (
     TOPICS as _TOPICS,
-)
-from fi_intel.application.topics import (
     TOPICS_BY_ID as _TOPICS_BY_ID,
-)
-from fi_intel.application.topics import (
+    TOPIC_BY_PATTERN as _TOPIC_BY_PATTERN,
     TopicDefinition as _TopicDefinition,
 )
 from fi_intel.demo.runner import POCDemoArtifacts, run_poc_demo
@@ -261,6 +261,55 @@ class StageOneDemoService:
         if search is None:
             raise ResourceNotFoundError(f"unknown search {search_id!r}")
         return search
+
+    async def operations_dashboard(
+        self,
+        principal: RequestPrincipal,
+        *,
+        event_limit: int = 200,
+    ) -> RuntimeDashboardView:
+        self._authorize(principal)
+        del event_limit
+        now = datetime.now(UTC)
+        return RuntimeDashboardView(
+            generated_at=now,
+            overall_status="fixture",
+            queue=RuntimeQueueStatus(
+                analysis_jobs={},
+                search_jobs={},
+                document_jobs={},
+                outbox_pending=0,
+                dead_letters=0,
+                deliveries={},
+                retrieval_index_status="fixture",
+                indexed_document_versions=0,
+                unindexed_document_versions=0,
+                embedding_calls_last_hour={},
+            ),
+            workers=(),
+            stages=(
+                PipelineStageRuntimeView(
+                    stage="fixture",
+                    label="Synthetic fixture pipeline",
+                    status="complete",
+                    detail="No live workers, sources, or model gateways are used in fixture mode.",
+                    completed=1,
+                    last_activity_at=now,
+                ),
+            ),
+            sources=(),
+            models=(),
+            events=(
+                RuntimeEventView(
+                    event_id="fixture-runtime",
+                    occurred_at=now,
+                    stage="fixture",
+                    operation="fixture analysis",
+                    status="succeeded",
+                    message="Synthetic fixture dashboard initialized.",
+                ),
+            ),
+        )
 
     async def _ensure_analysis(self) -> None:
         if self._artifacts is not None:

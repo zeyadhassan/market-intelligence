@@ -11,6 +11,7 @@ import json
 import time
 from datetime import UTC, datetime
 from typing import Literal
+from uuid import UUID
 
 import httpx
 
@@ -87,6 +88,7 @@ class OllamaEmbedder:
         prefix = self._query_prefix if kind == "query" else self._document_prefix
         payload = [prefix + text for text in texts] if prefix else texts
         subject_id = "embedding-batch:" + hashlib.sha256("\x1f".join(payload).encode()).hexdigest()
+        activity_id = await self._start_call(subject_id)
         self._log.info("embed.start", n_texts=len(texts), model=self._model)
         started = time.monotonic()
         try:
@@ -104,6 +106,7 @@ class OllamaEmbedder:
                 input_tokens=0,
                 status="timed_out" if isinstance(exc, httpx.TimeoutException) else "failed",
                 error_type=type(exc).__name__,
+                activity_id=activity_id,
             )
             raise
         await self._record_call(
@@ -111,9 +114,21 @@ class OllamaEmbedder:
             latency_ms=(time.monotonic() - started) * 1_000.0,
             input_tokens=input_tokens,
             status="succeeded",
+            activity_id=activity_id,
         )
         self._log.info("embed.done", n_texts=len(texts), total_tokens=input_tokens)
         return vectors
+
+    async def _start_call(self, subject_id: str) -> UUID | None:
+        if self._usage_log is None or self._run_id is None:
+            return None
+        return await self._usage_log.start_call(
+            run_id=self._run_id,
+            component="embedding",
+            model=self._model,
+            subject_id=subject_id,
+            started_at=datetime.now(UTC),
+        )
 
     def _validated_response(
         self,
@@ -152,6 +167,7 @@ class OllamaEmbedder:
         input_tokens: int,
         status: Literal["succeeded", "failed", "timed_out"],
         error_type: str | None = None,
+        activity_id: UUID | None = None,
     ) -> None:
         if self._usage_log is None or self._run_id is None:
             return
@@ -172,7 +188,8 @@ class OllamaEmbedder:
                 artifact_digest=(self._artifact.artifact_digest if self._artifact else None),
                 prompt_version=INPUT_PREPROCESSING_VERSION,
                 schema_version=INDEX_IDENTITY_SCHEMA,
-            )
+            ),
+            activity_id=activity_id,
         )
 
 

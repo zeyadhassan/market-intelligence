@@ -28,6 +28,7 @@ from fi_intel.api.models import (
     TopicSubscriptionView,
     TopicTagView,
 )
+from fi_intel.application.operations import RuntimeDashboardView
 
 
 class ResourceNotFoundError(LookupError):
@@ -132,6 +133,10 @@ class StageOneService(Protocol):
     ) -> SearchView: ...
 
     async def get_search(self, principal: RequestPrincipal, search_id: str) -> SearchView: ...
+
+    async def operations_dashboard(
+        self, principal: RequestPrincipal, *, event_limit: int = 200
+    ) -> RuntimeDashboardView: ...
 
 
 class InMemoryAnalystService:

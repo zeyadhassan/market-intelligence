@@ -7,6 +7,7 @@ import re
 import time
 from datetime import UTC, datetime
 from typing import Protocol, cast, runtime_checkable
+from uuid import UUID
 
 import openai
 from openai.lib._pydantic import to_strict_json_schema
@@ -163,6 +164,13 @@ class OpenAICompatibleReranker:
             if self._reasoning_effort is not None
             else openai.omit
         )
+        activity_id = await self._usage_log.start_call(
+            run_id=self._run_id,
+            component="reranker",
+            model=self._model,
+            subject_id=query[:200],
+            started_at=datetime.now(UTC),
+        )
         try:
             completion = await self._structured_output.create(
                 self._client,
@@ -192,6 +200,7 @@ class OpenAICompatibleReranker:
                 started=started,
                 status="timed_out" if isinstance(exc, openai.APITimeoutError) else "failed",
                 error_type=type(exc).__name__,
+                activity_id=activity_id,
             )
             self._log.error(
                 "reranker.api_error",
@@ -222,6 +231,7 @@ class OpenAICompatibleReranker:
             output_tokens=usage.completion_tokens if usage else 0,
             status=("refused" if content is None else "malformed" if parse_error else "succeeded"),
             error_type=type(parse_error).__name__ if parse_error else None,
+            activity_id=activity_id,
         )
         if content is None:
             detail = f" (refusal: {refusal})" if refusal else ""
@@ -254,6 +264,7 @@ class OpenAICompatibleReranker:
         error_type: str | None = None,
         input_tokens: int = 0,
         output_tokens: int = 0,
+        activity_id: UUID | None = None,
     ) -> None:
         await self._usage_log.record(
             ModelCallEvent(
@@ -272,7 +283,8 @@ class OpenAICompatibleReranker:
                 artifact_digest=self._artifact.artifact_digest if self._artifact else None,
                 prompt_version=RERANKER_PROMPT_VERSION,
                 schema_version=RERANKER_SCHEMA_VERSION,
-            )
+            ),
+            activity_id=activity_id,
         )
 
 

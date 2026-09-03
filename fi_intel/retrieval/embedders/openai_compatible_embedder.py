@@ -7,6 +7,7 @@ import json
 import time
 from datetime import UTC, datetime
 from typing import Literal
+from uuid import UUID
 
 import httpx
 
@@ -35,6 +36,7 @@ class OpenAICompatibleEmbedder:
         artifact: ModelArtifact | None = None,
         usage_log: ModelUsageLog | None = None,
         run_id: str | None = None,
+        batch_size: int = 8,
     ) -> None:
         if artifact is not None and (
             artifact.component is not ModelComponent.EMBEDDING or artifact.model_id != model
@@ -42,6 +44,8 @@ class OpenAICompatibleEmbedder:
             raise ValueError("embedding artifact does not match the configured serving model")
         if (usage_log is None) != (run_id is None):
             raise ValueError("embedding usage_log and run_id must be supplied together")
+        if batch_size < 1:
+            raise ValueError("embedding batch size must be positive")
         self._client = client
         self._model = model
         self._dim = dim
@@ -50,6 +54,7 @@ class OpenAICompatibleEmbedder:
         self._artifact = artifact
         self._usage_log = usage_log
         self._run_id = run_id
+        self._batch_size = batch_size
         identity = json.dumps(
             {
                 "dimension": dim,
@@ -84,47 +89,120 @@ class OpenAICompatibleEmbedder:
         """
         return self._model_version
 
-    async def embed_batch(self, texts: list[str], *, kind: str = "document") -> list[list[float]]:
+    async def embed_batch(
+        self, texts: list[str], *, kind: str = "document"
+    ) -> list[list[float]]:
         if not texts:
             return []
         # Some embedding models require different query and document prefixes.
         prefix = self._query_prefix if kind == "query" else self._document_prefix
         payload = [prefix + t for t in texts] if prefix else texts
 
-        self._log.info("embed.start", n_texts=len(texts), model=self._model)
-        started = time.monotonic()
-        subject_id = "embedding-batch:" + hashlib.sha256("\x1f".join(payload).encode()).hexdigest()
+        batch_count = (len(payload) + self._batch_size - 1) // self._batch_size
+        self._log.info(
+            "embed.start",
+            n_texts=len(texts),
+            batch_size=self._batch_size,
+            batch_count=batch_count,
+            model=self._model,
+        )
         input_type = "query" if kind == "query" else "passage"
-        try:
-            response = await self._client.post(
-                "embeddings",
-                json={
-                    "input": payload,
-                    "model": self._model,
-                    "input_type": input_type,
-                    "modality": "text",
-                    "encoding_format": "float",
-                },
+        vectors: list[list[float]] = []
+        total_tokens = 0
+        for batch_index, offset in enumerate(
+            range(0, len(payload), self._batch_size), start=1
+        ):
+            batch = payload[offset : offset + self._batch_size]
+            started = time.monotonic()
+            subject_id = "embedding-batch:" + hashlib.sha256(
+                "\x1f".join(batch).encode()
+            ).hexdigest()
+            activity_id = await self._start_call(subject_id)
+            self._log.info(
+                "embed.batch.started",
+                batch_index=batch_index,
+                batch_count=batch_count,
+                n_texts=len(batch),
+                model=self._model,
             )
-            response.raise_for_status()
-            vectors, input_tokens = self._validated_response(response.json(), len(texts))
-        except Exception as exc:
+            try:
+                response = await self._client.post(
+                    "embeddings",
+                    json={
+                        "input": batch,
+                        "model": self._model,
+                        "input_type": input_type,
+                        "modality": "text",
+                        "encoding_format": "float",
+                    },
+                )
+                response.raise_for_status()
+                batch_vectors, input_tokens = self._validated_response(
+                    response.json(), len(batch)
+                )
+            except Exception as exc:
+                status = (
+                    "timed_out" if isinstance(exc, httpx.TimeoutException) else "failed"
+                )
+                status_code = (
+                    exc.response.status_code
+                    if isinstance(exc, httpx.HTTPStatusError)
+                    else None
+                )
+                await self._record_call(
+                    subject_id=subject_id,
+                    latency_ms=(time.monotonic() - started) * 1_000.0,
+                    input_tokens=0,
+                    status=status,
+                    error_type=type(exc).__name__,
+                    activity_id=activity_id,
+                )
+                self._log.error(
+                    "embed.batch.failed",
+                    batch_index=batch_index,
+                    batch_count=batch_count,
+                    n_texts=len(batch),
+                    model=self._model,
+                    status_code=status_code,
+                    error_type=type(exc).__name__,
+                )
+                raise
             await self._record_call(
                 subject_id=subject_id,
                 latency_ms=(time.monotonic() - started) * 1_000.0,
-                input_tokens=0,
-                status="timed_out" if isinstance(exc, httpx.TimeoutException) else "failed",
-                error_type=type(exc).__name__,
+                input_tokens=input_tokens,
+                status="succeeded",
+                activity_id=activity_id,
             )
-            raise
-        await self._record_call(
-            subject_id=subject_id,
-            latency_ms=(time.monotonic() - started) * 1_000.0,
-            input_tokens=input_tokens,
-            status="succeeded",
+            vectors.extend(batch_vectors)
+            total_tokens += input_tokens
+            self._log.info(
+                "embed.batch.completed",
+                batch_index=batch_index,
+                batch_count=batch_count,
+                n_texts=len(batch),
+                total_tokens=input_tokens,
+                model=self._model,
+            )
+        self._log.info(
+            "embed.done",
+            n_texts=len(texts),
+            batch_count=batch_count,
+            total_tokens=total_tokens,
+            model=self._model,
         )
-        self._log.info("embed.done", n_texts=len(texts), total_tokens=input_tokens)
         return vectors
+
+    async def _start_call(self, subject_id: str) -> UUID | None:
+        if self._usage_log is None or self._run_id is None:
+            return None
+        return await self._usage_log.start_call(
+            run_id=self._run_id,
+            component="embedding",
+            model=self._model,
+            subject_id=subject_id,
+            started_at=datetime.now(UTC),
+        )
 
     def _validated_response(
         self,
@@ -170,6 +248,7 @@ class OpenAICompatibleEmbedder:
         input_tokens: int,
         status: Literal["succeeded", "failed", "timed_out"],
         error_type: str | None = None,
+        activity_id: UUID | None = None,
     ) -> None:
         if self._usage_log is None or self._run_id is None:
             return
@@ -190,7 +269,8 @@ class OpenAICompatibleEmbedder:
                 artifact_digest=(self._artifact.artifact_digest if self._artifact else None),
                 prompt_version=INPUT_PREPROCESSING_VERSION,
                 schema_version=INDEX_IDENTITY_SCHEMA,
-            )
+            ),
+            activity_id=activity_id,
         )
 
 
@@ -226,6 +306,7 @@ def build_embedder(
         artifact=artifact,
         usage_log=usage_log,
         run_id=run_id,
+        batch_size=settings.embedding_batch_size,
     )
 
 

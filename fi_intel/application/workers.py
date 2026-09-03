@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4, uuid5
 
@@ -20,6 +21,7 @@ from fi_intel.application.outbox import (
     PostgresHandlerCheckpointStore,
     PostgresOutboxLeaseStore,
 )
+from fi_intel.application.observability import RuntimeMonitor
 from fi_intel.application.policies import (
     POLICY_NAMESPACE,
     public_source_policy,
@@ -644,6 +646,7 @@ async def run_continuously(
     interval_seconds: float,
     stop: asyncio.Event | None = None,
     operation_name: str | None = None,
+    monitor: RuntimeMonitor | None = None,
 ) -> None:
     """Run a bounded operation repeatedly, logging failures without killing the worker."""
 
@@ -658,31 +661,64 @@ async def run_continuously(
         run_id=loop_run_id,
         interval_seconds=interval_seconds,
     )
-    while not stop_event.is_set():
-        started = time.monotonic()
-        try:
-            await operation()
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            log.exception(
-                "worker.iteration.failed",
-                run_id=loop_run_id,
-                error_type=type(exc).__name__,
-                safe_error_summary=safe_error_summary(exc),
-                duration_ms=round((time.monotonic() - started) * 1000),
-                retry_in_seconds=interval_seconds,
-            )
-        else:
-            log.info(
-                "worker.iteration.completed",
-                run_id=loop_run_id,
-                duration_ms=round((time.monotonic() - started) * 1000),
-            )
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-        except TimeoutError:
-            pass
+    if monitor is not None:
+        await monitor.loop_started(loop_run_id)
+    try:
+        while not stop_event.is_set():
+            started = time.monotonic()
+            if monitor is not None:
+                await monitor.iteration_started()
+            operation_task: asyncio.Future[object] | None = None
+            try:
+                if monitor is None:
+                    await operation()
+                else:
+                    operation_task = asyncio.ensure_future(operation())
+                    heartbeat_seconds = max(1.0, min(10.0, interval_seconds))
+                    while not operation_task.done():
+                        await asyncio.wait(
+                            {operation_task},
+                            timeout=heartbeat_seconds,
+                        )
+                        if not operation_task.done():
+                            await monitor.heartbeat()
+                    await operation_task
+            except asyncio.CancelledError:
+                if operation_task is not None and not operation_task.done():
+                    operation_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await operation_task
+                raise
+            except Exception as exc:
+                duration_ms = (time.monotonic() - started) * 1_000.0
+                if monitor is not None:
+                    await monitor.iteration_failed(exc, duration_ms)
+                log.exception(
+                    "worker.iteration.failed",
+                    run_id=loop_run_id,
+                    error_type=type(exc).__name__,
+                    safe_error_summary=safe_error_summary(exc),
+                    duration_ms=round(duration_ms),
+                    retry_in_seconds=interval_seconds,
+                )
+            else:
+                duration_ms = (time.monotonic() - started) * 1_000.0
+                if monitor is not None:
+                    await monitor.iteration_completed(duration_ms)
+                log.info(
+                    "worker.iteration.completed",
+                    run_id=loop_run_id,
+                    duration_ms=round(duration_ms),
+                )
+            if monitor is not None:
+                await monitor.heartbeat()
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+            except TimeoutError:
+                pass
+    finally:
+        if monitor is not None:
+            await monitor.loop_stopped()
 
 
 __all__ = [

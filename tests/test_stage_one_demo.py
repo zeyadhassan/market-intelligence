@@ -34,12 +34,26 @@ def test_stage_one_page_is_local_simple_and_explicitly_synthetic() -> None:
     assert "http://" not in page.text and "https://" not in page.text
     assert "grid-template-columns" in css.text and "@media" in css.text
     assert "/v1/topics" in javascript.text
+    assert "/v1/operations/dashboard" in javascript.text
     assert "/subscription" in javascript.text
     assert "/evaluation" in javascript.text
     assert "Useful" in javascript.text and "Too old" in javascript.text
     assert "stage-one-demo" in javascript.text
     assert "window.sessionStorage" not in javascript.text
     assert page.headers["content-security-policy"].startswith("default-src 'self'")
+
+
+def test_stage_one_control_room_exposes_runtime_contract() -> None:
+    client = TestClient(create_stage_one_demo_app())
+
+    response = client.get("/v1/operations/dashboard", headers=_headers())
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["overall_status"] == "fixture"
+    assert payload["stages"][0]["stage"] == "fixture"
+    assert payload["events"][0]["operation"] == "fixture analysis"
+    assert "queue" in payload and "models" in payload and "workers" in payload
 
 
 def test_stage_one_app_exposes_no_legacy_result_or_brief_path() -> None:

@@ -207,6 +207,10 @@ class Settings(BaseSettings):
     embedding_trust_env: bool = True
     embedding_tls_verify: bool = True
     embedding_timeout_seconds: float = Field(default=300.0, gt=0)
+    # Text Embedding NIM profiles have a configured maximum batch size. Keep
+    # requests below the smallest practical GPU profile instead of submitting
+    # every chunk from a large source document in one request.
+    embedding_batch_size: int = Field(default=8, ge=1, le=256)
     embedding_basic_auth_username: str | None = None
     embedding_basic_auth_password: SecretStr | None = None
     # Must match document_chunk.embedding's vector(N) column — update both

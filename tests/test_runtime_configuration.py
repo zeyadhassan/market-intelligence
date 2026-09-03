@@ -42,6 +42,7 @@ def test_checked_in_template_covers_every_external_runtime_input() -> None:
         "FI_INTEL_EMBEDDING_TLS_VERIFY",
         "FI_INTEL_EMBEDDING_MODEL",
         "FI_INTEL_EMBEDDING_DIM",
+        "FI_INTEL_EMBEDDING_BATCH_SIZE",
         "FI_INTEL_SOURCE_TLS_VERIFY",
         "FI_INTEL_COVERAGE_REQUIRED_SOURCE_IDS",
     }

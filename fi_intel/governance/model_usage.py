@@ -1,12 +1,13 @@
-"""Model-call cost/latency accounting.
+"""Model-call cost/latency accounting and live activity tracking.
 
 Model usage is recorded separately from document-access auditing. Usage
 logging is best-effort and does not fail the model call that produced it.
 """
 
+import hashlib
 from datetime import datetime
 from typing import Literal, Protocol, runtime_checkable
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import asyncpg
 from pydantic import BaseModel, ConfigDict, Field
@@ -146,7 +147,19 @@ class ModelCapacityLimits(BaseModel):
 
 @runtime_checkable
 class ModelUsageLog(Protocol):
-    async def record(self, event: ModelCallEvent) -> None: ...
+    async def start_call(
+        self,
+        *,
+        run_id: str,
+        component: str,
+        model: str,
+        subject_id: str,
+        started_at: datetime,
+    ) -> UUID | None: ...
+
+    async def record(
+        self, event: ModelCallEvent, *, activity_id: UUID | None = None
+    ) -> None: ...
 
     async def snapshot(self, run_id: str, component: str) -> ModelUsageSnapshot: ...
 
@@ -159,7 +172,22 @@ class InMemoryModelUsageLog:
     def __init__(self) -> None:
         self.events: list[ModelCallEvent] = []
 
-    async def record(self, event: ModelCallEvent) -> None:
+    async def start_call(
+        self,
+        *,
+        run_id: str,
+        component: str,
+        model: str,
+        subject_id: str,
+        started_at: datetime,
+    ) -> UUID | None:
+        del run_id, component, model, subject_id, started_at
+        return uuid4()
+
+    async def record(
+        self, event: ModelCallEvent, *, activity_id: UUID | None = None
+    ) -> None:
+        del activity_id
         self.events.append(event)
 
     def total_cost_usd(self) -> float:
@@ -201,36 +229,90 @@ class PostgresModelUsageLog:
             self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=4)
         return self._pool
 
-    async def record(self, event: ModelCallEvent) -> None:
+    async def start_call(
+        self,
+        *,
+        run_id: str,
+        component: str,
+        model: str,
+        subject_id: str,
+        started_at: datetime,
+    ) -> UUID | None:
+        activity_id = uuid4()
         try:
             pool = await self._get_pool()
             await pool.execute(
                 """
-                INSERT INTO model_call_log
-                    (run_id, component, model, input_tokens, output_tokens,
-                     cost_usd, latency_ms, gpu_seconds, subject_id, recorded_at,
-                     status, error_type, release_id, artifact_digest,
-                     prompt_version, schema_version)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                        $11, $12, $13, $14, $15, $16)
+                INSERT INTO runtime_event_v1 (
+                    category, component, operation, status, correlation_id,
+                    run_id, subject_digest, message, occurred_at
+                ) VALUES ('model',$1,'model inference','started',$2,$3,$4,$5,$6)
                 """,
-                event.run_id,
-                event.component,
-                event.model,
-                event.input_tokens,
-                event.output_tokens,
-                event.cost_usd,
-                event.latency_ms,
-                event.gpu_seconds,
-                event.subject_id,
-                event.recorded_at,
-                event.status,
-                event.error_type,
-                event.release_id,
-                event.artifact_digest,
-                event.prompt_version,
-                event.schema_version,
+                component,
+                activity_id,
+                run_id,
+                hashlib.sha256(subject_id.encode("utf-8")).hexdigest(),
+                f"Calling {component} model {model}.",
+                started_at,
             )
+        except Exception:  # best-effort by design, see module docstring
+            _log.exception(
+                "model_usage.start_failed", component=component, model=model
+            )
+            return None
+        return activity_id
+
+    async def record(
+        self, event: ModelCallEvent, *, activity_id: UUID | None = None
+    ) -> None:
+        try:
+            pool = await self._get_pool()
+            async with pool.acquire() as connection, connection.transaction():
+                await connection.execute(
+                    """
+                    INSERT INTO model_call_log
+                        (run_id, component, model, input_tokens, output_tokens,
+                         cost_usd, latency_ms, gpu_seconds, subject_id, recorded_at,
+                         status, error_type, release_id, artifact_digest,
+                         prompt_version, schema_version)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                            $11, $12, $13, $14, $15, $16)
+                    """,
+                    event.run_id,
+                    event.component,
+                    event.model,
+                    event.input_tokens,
+                    event.output_tokens,
+                    event.cost_usd,
+                    event.latency_ms,
+                    event.gpu_seconds,
+                    event.subject_id,
+                    event.recorded_at,
+                    event.status,
+                    event.error_type,
+                    event.release_id,
+                    event.artifact_digest,
+                    event.prompt_version,
+                    event.schema_version,
+                )
+                await connection.execute(
+                    """
+                    INSERT INTO runtime_event_v1 (
+                        category, component, operation, status, correlation_id,
+                        run_id, subject_digest, message, duration_ms,
+                        safe_error_summary, occurred_at
+                    ) VALUES ('model',$1,'model inference',$2,$3,$4,$5,$6,$7,$8,$9)
+                    """,
+                    event.component,
+                    event.status,
+                    activity_id or uuid4(),
+                    event.run_id,
+                    hashlib.sha256(event.subject_id.encode("utf-8")).hexdigest(),
+                    f"{event.component.capitalize()} model call {event.status}.",
+                    event.latency_ms,
+                    event.error_type,
+                    event.recorded_at,
+                )
         except Exception:  # best-effort by design, see module docstring
             _log.exception(
                 "model_usage.record_failed", component=event.component, model=event.model
