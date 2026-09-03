@@ -211,6 +211,11 @@ class Settings(BaseSettings):
     # requests below the smallest practical GPU profile instead of submitting
     # every chunk from a large source document in one request.
     embedding_batch_size: int = Field(default=8, ge=1, le=256)
+    # Absorb transient gateway failures before they can discard the successful
+    # batches already produced for the current document and force the next
+    # worker pass to start it again from the beginning.
+    embedding_max_attempts: int = Field(default=4, ge=1, le=10)
+    embedding_retry_base_seconds: float = Field(default=1.0, ge=0.0, le=60.0)
     embedding_basic_auth_username: str | None = None
     embedding_basic_auth_password: SecretStr | None = None
     # Must match document_chunk.embedding's vector(N) column — update both

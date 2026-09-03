@@ -1,6 +1,7 @@
 """Service-free contracts for bounded indexed Postgres retrieval."""
 
 import hashlib
+import inspect
 import json
 import os
 from datetime import UTC, datetime
@@ -139,6 +140,12 @@ def test_sql_contract_filters_before_bounded_lexical_and_vector_generation() -> 
     assert "d.source_id = any($5::text[])" in sql
     assert "d.published_at >= $6::date" in sql
     assert "d.published_at < ($7::date + 1)" in sql
+
+
+def test_incremental_index_does_not_delete_append_only_authority_links() -> None:
+    implementation = inspect.getsource(PostgresCorpusStore._commit_document_chunks)
+
+    assert "DELETE FROM document_chunk" not in implementation
     assert "c.embed_model_version = $10::text" in sql
     assert "c.normalized_search_vector as search_vector" in sql
     assert "c.canonical_lineage" in sql

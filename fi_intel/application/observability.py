@@ -100,6 +100,10 @@ class PostgresRuntimeMonitor:
         error_summary: str | None = None,
     ) -> None:
         now = datetime.now(UTC)
+        started_at = now if iteration_started else None
+        finished_at = now if iteration_finished else None
+        success_at = now if success else None
+        failure_at = now if failure else None
         try:
             await self._pool.execute(
                 """
@@ -109,12 +113,7 @@ class PostgresRuntimeMonitor:
                     iteration_finished_at, last_success_at, last_failure_at,
                     safe_error_summary, heartbeat_at
                 ) VALUES (
-                    $1,$2,$3,$4,$5,$6,
-                    CASE WHEN $7::boolean THEN $12 ELSE NULL END,
-                    CASE WHEN $8::boolean THEN $12 ELSE NULL END,
-                    CASE WHEN $9::boolean THEN $12 ELSE NULL END,
-                    CASE WHEN $10::boolean THEN $12 ELSE NULL END,
-                    $11,$12
+                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
                 )
                 ON CONFLICT (worker_id) DO UPDATE SET
                     worker_type=EXCLUDED.worker_type,
@@ -122,18 +121,27 @@ class PostgresRuntimeMonitor:
                     operation=EXCLUDED.operation,
                     loop_run_id=EXCLUDED.loop_run_id,
                     process_started_at=EXCLUDED.process_started_at,
-                    iteration_started_at=CASE WHEN $7::boolean
-                        THEN $12 ELSE runtime_worker_state_v1.iteration_started_at END,
+                    iteration_started_at=COALESCE(
+                        EXCLUDED.iteration_started_at,
+                        runtime_worker_state_v1.iteration_started_at
+                    ),
                     iteration_finished_at=CASE
-                        WHEN $7::boolean THEN NULL
-                        WHEN $8::boolean THEN $12
-                        ELSE runtime_worker_state_v1.iteration_finished_at END,
-                    last_success_at=CASE WHEN $9::boolean
-                        THEN $12 ELSE runtime_worker_state_v1.last_success_at END,
-                    last_failure_at=CASE WHEN $10::boolean
-                        THEN $12 ELSE runtime_worker_state_v1.last_failure_at END,
-                    safe_error_summary=$11,
-                    heartbeat_at=$12
+                        WHEN EXCLUDED.iteration_started_at IS NOT NULL THEN NULL
+                        ELSE COALESCE(
+                            EXCLUDED.iteration_finished_at,
+                            runtime_worker_state_v1.iteration_finished_at
+                        )
+                    END,
+                    last_success_at=COALESCE(
+                        EXCLUDED.last_success_at,
+                        runtime_worker_state_v1.last_success_at
+                    ),
+                    last_failure_at=COALESCE(
+                        EXCLUDED.last_failure_at,
+                        runtime_worker_state_v1.last_failure_at
+                    ),
+                    safe_error_summary=EXCLUDED.safe_error_summary,
+                    heartbeat_at=EXCLUDED.heartbeat_at
                 """,
                 self._worker_id,
                 self._worker_type,
@@ -141,10 +149,10 @@ class PostgresRuntimeMonitor:
                 self._operation,
                 self._loop_run_id,
                 self._process_started_at,
-                iteration_started,
-                iteration_finished,
-                success,
-                failure,
+                started_at,
+                finished_at,
+                success_at,
+                failure_at,
                 error_summary,
                 now,
             )
@@ -186,6 +194,7 @@ class PostgresRuntimeMonitor:
             worker_id=self._worker_id,
             worker_type=self._worker_type,
             error_type=type(error).__name__,
+            safe_error_summary=safe_error_summary(error),
         )
 
 

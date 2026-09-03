@@ -728,14 +728,12 @@ class PostgresCorpusStore:
             )
             if already_indexed:
                 return 0
-            # Per-document replacement is atomic. A failed model request never
-            # deletes a prior projection, and a failed database write cannot
-            # leave a partially indexed document visible to analysis.
-            await conn.execute(
-                "DELETE FROM document_chunk WHERE source_id=$1 AND doc_id=$2",
-                row["source_id"],
-                row["doc_id"],
-            )
+            # Document identities are immutable. Upsert their deterministic
+            # chunk coordinates in place: deleting the parent first can invoke
+            # the deliberately immutable authority-bridge delete triggers.
+            # The surrounding transaction still makes the document visible
+            # atomically, and legacy/incompatible chunker versions have already
+            # been rejected by _validate_build_request.
             written = await self._write_document_chunks(
                 conn, row, chunks, embeddings, embedder
             )

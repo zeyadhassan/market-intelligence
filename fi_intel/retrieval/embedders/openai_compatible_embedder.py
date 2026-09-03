@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import math
 import time
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Awaitable, Callable, Literal
 from uuid import UUID
 
 import httpx
@@ -37,6 +39,9 @@ class OpenAICompatibleEmbedder:
         usage_log: ModelUsageLog | None = None,
         run_id: str | None = None,
         batch_size: int = 8,
+        max_attempts: int = 4,
+        retry_base_seconds: float = 1.0,
+        sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
         if artifact is not None and (
             artifact.component is not ModelComponent.EMBEDDING or artifact.model_id != model
@@ -46,6 +51,10 @@ class OpenAICompatibleEmbedder:
             raise ValueError("embedding usage_log and run_id must be supplied together")
         if batch_size < 1:
             raise ValueError("embedding batch size must be positive")
+        if max_attempts < 1:
+            raise ValueError("embedding maximum attempts must be positive")
+        if retry_base_seconds < 0:
+            raise ValueError("embedding retry delay cannot be negative")
         self._client = client
         self._model = model
         self._dim = dim
@@ -55,6 +64,9 @@ class OpenAICompatibleEmbedder:
         self._usage_log = usage_log
         self._run_id = run_id
         self._batch_size = batch_size
+        self._max_attempts = max_attempts
+        self._retry_base_seconds = retry_base_seconds
+        self._sleep = sleep or asyncio.sleep
         identity = json.dumps(
             {
                 "dimension": dim,
@@ -113,66 +125,11 @@ class OpenAICompatibleEmbedder:
             range(0, len(payload), self._batch_size), start=1
         ):
             batch = payload[offset : offset + self._batch_size]
-            started = time.monotonic()
-            subject_id = "embedding-batch:" + hashlib.sha256(
-                "\x1f".join(batch).encode()
-            ).hexdigest()
-            activity_id = await self._start_call(subject_id)
-            self._log.info(
-                "embed.batch.started",
+            batch_vectors, input_tokens = await self._embed_batch_with_retries(
+                batch,
+                input_type=input_type,
                 batch_index=batch_index,
                 batch_count=batch_count,
-                n_texts=len(batch),
-                model=self._model,
-            )
-            try:
-                response = await self._client.post(
-                    "embeddings",
-                    json={
-                        "input": batch,
-                        "model": self._model,
-                        "input_type": input_type,
-                        "modality": "text",
-                        "encoding_format": "float",
-                    },
-                )
-                response.raise_for_status()
-                batch_vectors, input_tokens = self._validated_response(
-                    response.json(), len(batch)
-                )
-            except Exception as exc:
-                status = (
-                    "timed_out" if isinstance(exc, httpx.TimeoutException) else "failed"
-                )
-                status_code = (
-                    exc.response.status_code
-                    if isinstance(exc, httpx.HTTPStatusError)
-                    else None
-                )
-                await self._record_call(
-                    subject_id=subject_id,
-                    latency_ms=(time.monotonic() - started) * 1_000.0,
-                    input_tokens=0,
-                    status=status,
-                    error_type=type(exc).__name__,
-                    activity_id=activity_id,
-                )
-                self._log.error(
-                    "embed.batch.failed",
-                    batch_index=batch_index,
-                    batch_count=batch_count,
-                    n_texts=len(batch),
-                    model=self._model,
-                    status_code=status_code,
-                    error_type=type(exc).__name__,
-                )
-                raise
-            await self._record_call(
-                subject_id=subject_id,
-                latency_ms=(time.monotonic() - started) * 1_000.0,
-                input_tokens=input_tokens,
-                status="succeeded",
-                activity_id=activity_id,
             )
             vectors.extend(batch_vectors)
             total_tokens += input_tokens
@@ -192,6 +149,130 @@ class OpenAICompatibleEmbedder:
             model=self._model,
         )
         return vectors
+
+    async def _embed_batch_with_retries(
+        self,
+        batch: list[str],
+        *,
+        input_type: str,
+        batch_index: int,
+        batch_count: int,
+    ) -> tuple[list[list[float]], int]:
+        subject_id = "embedding-batch:" + hashlib.sha256(
+            "\x1f".join(batch).encode()
+        ).hexdigest()
+        for attempt in range(1, self._max_attempts + 1):
+            started = time.monotonic()
+            activity_id = await self._start_call(subject_id)
+            self._log.info(
+                "embed.batch.started",
+                batch_index=batch_index,
+                batch_count=batch_count,
+                n_texts=len(batch),
+                attempt=attempt,
+                max_attempts=self._max_attempts,
+                model=self._model,
+            )
+            try:
+                response = await self._client.post(
+                    "embeddings",
+                    json={
+                        "input": batch,
+                        "model": self._model,
+                        "input_type": input_type,
+                        "modality": "text",
+                        "encoding_format": "float",
+                    },
+                )
+                response.raise_for_status()
+                vectors, input_tokens = self._validated_response(
+                    response.json(), len(batch)
+                )
+            except Exception as exc:
+                status = (
+                    "timed_out" if isinstance(exc, httpx.TimeoutException) else "failed"
+                )
+                status_code = self._status_code(exc)
+                error_type = self._safe_error_type(exc)
+                await self._record_call(
+                    subject_id=subject_id,
+                    latency_ms=(time.monotonic() - started) * 1_000.0,
+                    input_tokens=0,
+                    status=status,
+                    error_type=error_type,
+                    activity_id=activity_id,
+                )
+                retryable = self._is_retryable(exc)
+                final_attempt = attempt == self._max_attempts
+                if not retryable or final_attempt:
+                    self._log.error(
+                        "embed.batch.failed",
+                        batch_index=batch_index,
+                        batch_count=batch_count,
+                        n_texts=len(batch),
+                        attempt=attempt,
+                        max_attempts=self._max_attempts,
+                        retryable=retryable,
+                        model=self._model,
+                        status_code=status_code,
+                        error_type=type(exc).__name__,
+                    )
+                    raise
+                retry_delay = self._retry_delay(exc, attempt)
+                self._log.warning(
+                    "embed.batch.retrying",
+                    batch_index=batch_index,
+                    batch_count=batch_count,
+                    n_texts=len(batch),
+                    attempt=attempt,
+                    max_attempts=self._max_attempts,
+                    retry_in_seconds=retry_delay,
+                    model=self._model,
+                    status_code=status_code,
+                    error_type=type(exc).__name__,
+                )
+                await self._sleep(retry_delay)
+                continue
+            await self._record_call(
+                subject_id=subject_id,
+                latency_ms=(time.monotonic() - started) * 1_000.0,
+                input_tokens=input_tokens,
+                status="succeeded",
+                activity_id=activity_id,
+            )
+            return vectors, input_tokens
+        raise RuntimeError("embedding retry loop terminated without a result")
+
+    @staticmethod
+    def _status_code(error: BaseException) -> int | None:
+        if isinstance(error, httpx.HTTPStatusError):
+            return error.response.status_code
+        return None
+
+    @classmethod
+    def _safe_error_type(cls, error: BaseException) -> str:
+        status_code = cls._status_code(error)
+        suffix = f":{status_code}" if status_code is not None else ""
+        return f"{type(error).__name__}{suffix}"
+
+    @classmethod
+    def _is_retryable(cls, error: BaseException) -> bool:
+        if isinstance(error, httpx.TransportError):
+            return True
+        status_code = cls._status_code(error)
+        return status_code in {408, 409, 425, 429} or (
+            status_code is not None and status_code >= 500
+        )
+
+    def _retry_delay(self, error: BaseException, attempt: int) -> float:
+        if isinstance(error, httpx.HTTPStatusError):
+            retry_after = error.response.headers.get("Retry-After")
+            if retry_after is not None:
+                try:
+                    return min(60.0, max(0.0, float(retry_after)))
+                except ValueError:
+                    pass
+        return min(60.0, self._retry_base_seconds * (2 ** (attempt - 1)))
 
     async def _start_call(self, subject_id: str) -> UUID | None:
         if self._usage_log is None or self._run_id is None:
@@ -234,7 +315,10 @@ class OpenAICompatibleEmbedder:
                 for value in raw_vector
             ):
                 raise RuntimeError("embedding response contains a non-numeric vector value")
-            indexed_vectors[index] = [float(value) for value in raw_vector]
+            vector = [float(value) for value in raw_vector]
+            if not all(math.isfinite(value) for value in vector):
+                raise RuntimeError("embedding response contains a non-finite vector value")
+            indexed_vectors[index] = vector
         usage = body.get("usage")
         raw_tokens = usage.get("total_tokens", 0) if isinstance(usage, dict) else 0
         input_tokens = raw_tokens if isinstance(raw_tokens, int) and raw_tokens >= 0 else 0
@@ -307,6 +391,8 @@ def build_embedder(
         usage_log=usage_log,
         run_id=run_id,
         batch_size=settings.embedding_batch_size,
+        max_attempts=settings.embedding_max_attempts,
+        retry_base_seconds=settings.embedding_retry_base_seconds,
     )
 
 

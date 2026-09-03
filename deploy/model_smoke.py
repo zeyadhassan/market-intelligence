@@ -102,6 +102,8 @@ async def smoke_embedding(settings: Settings) -> None:
             query_prefix=settings.embedding_query_prefix,
             document_prefix=settings.embedding_document_prefix,
             batch_size=settings.embedding_batch_size,
+            max_attempts=settings.embedding_max_attempts,
+            retry_base_seconds=settings.embedding_retry_base_seconds,
         )
         # Exercise the configured request width, not only the one-item case.
         # A single query can pass while production document batches are rejected

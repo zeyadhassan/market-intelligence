@@ -3,6 +3,10 @@
 The checked-in configuration limits NVIDIA NIM embedding requests to eight
 texts per HTTP call. The projection worker commits each completed document
 independently, so one failing document no longer rolls back the whole index.
+Transient embedding timeouts, connection failures, rate limits, and 5xx
+responses receive up to four attempts with bounded exponential backoff.
+Permanent request/schema errors still fail immediately and appear with a safe
+reason in the control room.
 
 The main page is now an operations-first control room. It refreshes every two
 seconds and shows all ten application stages, every configured source, worker
@@ -36,6 +40,8 @@ Confirm `deploy/app.env` contains these settings exactly once:
 ```text
 FI_INTEL_COVERAGE_REQUIRED_SOURCE_IDS=sa_sama_news
 FI_INTEL_EMBEDDING_BATCH_SIZE=8
+FI_INTEL_EMBEDDING_MAX_ATTEMPTS=4
+FI_INTEL_EMBEDDING_RETRY_BASE_SECONDS=1
 ```
 
 Do not reset the database for this recovery. Existing completed document jobs
@@ -53,7 +59,7 @@ For detailed progress or an exact failure:
 python deploy/podman_infra.py logs --no-follow --tail 500
 ```
 
-Look for `embed.batch.started`, `embed.batch.failed`,
+Look for `embed.batch.started`, `embed.batch.retrying`, `embed.batch.failed`,
 `retrieval.index.document.completed`, and `retrieval.index.document.failed`.
 After `unindexed_document_versions` reaches zero, refresh the application at
 `http://127.0.0.1:8000/` (or the configured API host port).

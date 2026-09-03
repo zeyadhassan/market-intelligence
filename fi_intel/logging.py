@@ -53,9 +53,25 @@ def safe_error_summary(error: BaseException) -> str:
 
     message = str(error)
     digest = hashlib.sha256(message.encode("utf-8", errors="replace")).hexdigest()
-    reason = _safe_error_reason(error, message)
+    chain = _error_chain(error)
+    reason = next(
+        (
+            candidate_reason
+            for candidate in chain
+            if (
+                candidate_reason := _safe_error_reason(candidate, str(candidate))
+            )
+            is not None
+        ),
+        None,
+    )
     reason_field = f"reason={reason}, " if reason is not None else ""
-    return f"{type(error).__name__} ({reason_field}message_sha256={digest})"
+    root = chain[-1]
+    cause_field = f"cause={type(root).__name__}, " if root is not error else ""
+    return (
+        f"{type(error).__name__} "
+        f"({reason_field}{cause_field}message_sha256={digest})"
+    )
 
 
 def safe_console_error_message(error: BaseException, *, max_length: int = 1_000) -> str:
@@ -85,6 +101,9 @@ def _safe_error_reason(error: BaseException, message: str) -> str | None:
 
     lowered = message.casefold()
     status_code = getattr(error, "status_code", None)
+    response = getattr(error, "response", None)
+    if not isinstance(status_code, int):
+        status_code = getattr(response, "status_code", None)
     if isinstance(status_code, int):
         if status_code == 400:
             return "model_or_http_bad_request"
@@ -124,4 +143,28 @@ def _safe_error_reason(error: BaseException, message: str) -> str | None:
         return "connection_refused"
     if type(error).__name__ in {"JSONDecodeError", "ValidationError"}:
         return "invalid_structured_model_output"
+    sqlstate = getattr(error, "sqlstate", None)
+    if isinstance(sqlstate, str):
+        if sqlstate.startswith("22"):
+            return "database_data_error"
+        if sqlstate.startswith("23"):
+            return "database_integrity_error"
+        if sqlstate.startswith(("53", "54")):
+            return "database_capacity_error"
+        return "database_error"
     return None
+
+
+def _error_chain(error: BaseException) -> tuple[BaseException, ...]:
+    """Return a bounded, cycle-safe explicit cause chain."""
+
+    chain = [error]
+    seen = {id(error)}
+    current = error
+    while current.__cause__ is not None and len(chain) < 5:
+        current = current.__cause__
+        if id(current) in seen:
+            break
+        seen.add(id(current))
+        chain.append(current)
+    return tuple(chain)

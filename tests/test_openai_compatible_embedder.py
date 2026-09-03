@@ -149,6 +149,70 @@ async def test_embed_batch_splits_requests_at_the_configured_nim_limit() -> None
     assert result == [[1.0], [2.0], [3.0], [4.0], [5.0]]
 
 
+async def test_embed_batch_retries_transient_gateway_failure() -> None:
+    attempts = 0
+    delays: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(503, request=request)
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "data": [{"embedding": [1.0], "index": 0}],
+                "usage": {"total_tokens": 1},
+            },
+        )
+
+    async def record_delay(delay: float) -> None:
+        delays.append(delay)
+
+    client = httpx.AsyncClient(
+        base_url="http://localhost:9998/v1",
+        transport=httpx.MockTransport(handler),
+    )
+    embedder = OpenAICompatibleEmbedder(
+        client,
+        model="m",
+        dim=1,
+        max_attempts=3,
+        retry_base_seconds=2.0,
+        sleep=record_delay,
+    )
+
+    assert await embedder.embed_batch(["text"]) == [[1.0]]
+    assert attempts == 2
+    assert delays == [2.0]
+
+
+async def test_embed_batch_does_not_retry_permanent_bad_request() -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(400, request=request)
+
+    client = httpx.AsyncClient(
+        base_url="http://localhost:9998/v1",
+        transport=httpx.MockTransport(handler),
+    )
+    embedder = OpenAICompatibleEmbedder(
+        client,
+        model="m",
+        dim=1,
+        max_attempts=4,
+        retry_base_seconds=0,
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await embedder.embed_batch(["text"])
+    assert attempts == 1
+
+
 async def test_dim_and_model_version() -> None:
     client = httpx.AsyncClient(base_url="http://localhost:9998/v1")
     embedder = OpenAICompatibleEmbedder(client, model="local-embedder", dim=2048)
@@ -172,6 +236,13 @@ async def test_embed_batch_rejects_wrong_dimension() -> None:
     embedder._dim = 3
 
     with pytest.raises(RuntimeError, match="configured dimension 3"):
+        await embedder.embed_batch(["text"])
+
+
+async def test_embed_batch_rejects_non_finite_vectors_before_database_write() -> None:
+    embedder, _ = _embedder_returning([[float("nan")]])
+
+    with pytest.raises(RuntimeError, match="non-finite"):
         await embedder.embed_batch(["text"])
 
 

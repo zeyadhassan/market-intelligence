@@ -938,17 +938,26 @@ class OperatorService:
         )
 
         embedding = model.get("embedding")
-        indexing_active = embedding.active_calls if embedding is not None else 0
-        indexing_failed = (
-            (embedding.failed_last_hour if embedding is not None else 0)
-            if queue.unindexed_document_versions
-            else 0
+        projection_worker = worker.get("projection")
+        embedding_active = embedding.active_calls if embedding is not None else 0
+        worker_indexing_active = int(
+            projection_worker is not None
+            and projection_worker.status in {"starting", "working"}
+        )
+        indexing_active = max(embedding_active, worker_indexing_active)
+        recent_embedding_failures = (
+            embedding.failed_last_hour if embedding is not None else 0
+        )
+        indexing_failed = int(
+            queue.unindexed_document_versions > 0
+            and projection_worker is not None
+            and projection_worker.status == "failed"
         )
         indexing_status = (
-            "failed"
-            if indexing_failed
-            else "working"
+            "working"
             if indexing_active
+            else "failed"
+            if indexing_failed
             else "complete"
             if queue.retrieval_index_status == "ready"
             and queue.unindexed_document_versions == 0
@@ -1107,12 +1116,32 @@ class OperatorService:
                 detail=(
                     f"{queue.indexed_document_versions} indexed; "
                     f"{queue.unindexed_document_versions} still missing."
+                    + (
+                        f" {recent_embedding_failures} embedding attempt(s) "
+                        "failed in the last hour."
+                        if recent_embedding_failures
+                        else ""
+                    )
                 ),
                 active=indexing_active,
                 pending=queue.unindexed_document_versions,
                 completed=queue.indexed_document_versions,
                 failed=indexing_failed,
-                last_activity_at=(embedding.last_call_at if embedding is not None else None),
+                last_activity_at=max(
+                    (
+                        timestamp
+                        for timestamp in (
+                            embedding.last_call_at if embedding is not None else None,
+                            (
+                                projection_worker.heartbeat_at
+                                if projection_worker is not None
+                                else None
+                            ),
+                        )
+                        if timestamp is not None
+                    ),
+                    default=None,
+                ),
             ),
             PipelineStageRuntimeView(
                 stage="analysis",
