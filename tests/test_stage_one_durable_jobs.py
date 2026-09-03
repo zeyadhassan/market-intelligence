@@ -155,6 +155,13 @@ def test_api_has_no_background_analysis_task_ownership() -> None:
     assert "idempotency_key           TEXT NOT NULL UNIQUE" in migration
 
 
+def test_topic_model_usage_is_attributed_to_the_analysis_run_only() -> None:
+    source = inspect.getsource(PostgresStageOneService.get_topic_results)
+
+    assert "run_id=$1" in source
+    assert "subject_id = ANY" not in source
+
+
 def test_topic_migration_retires_superseded_active_versions() -> None:
     migration = Path(
         "deploy/migrations/0029_retire_superseded_maturity_topic.sql"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -16,10 +16,11 @@ from fi_intel.application.search import (
     SearchState,
     plan_search,
 )
-from fi_intel.application.workers import run_continuously
+from fi_intel.application.workers import _source_next_eligible_at, run_continuously
 from fi_intel.config import Settings
 from fi_intel.governance.access import RequestPrincipal
 from fi_intel.retrieval.entitlement import Principal, Side
+from fi_intel.sources.operations import SourceOperationalState
 
 NOW = datetime(2026, 8, 27, 8, tzinfo=UTC)
 
@@ -27,6 +28,25 @@ NOW = datetime(2026, 8, 27, 8, tzinfo=UTC)
 class _Telemetry:
     def record_queue_transition(self, *_: object) -> None:
         pass
+
+
+def test_failed_source_poll_retries_before_the_normal_cadence() -> None:
+    state = SourceOperationalState(
+        source_id="sa_sama_news",
+        consecutive_failures=1,
+        updated_at=NOW,
+    )
+
+    assert _source_next_eligible_at(state, 900) == NOW + timedelta(seconds=60)
+    assert _source_next_eligible_at(
+        state.model_copy(update={"consecutive_failures": 2}), 900
+    ) == NOW + timedelta(seconds=120)
+    assert _source_next_eligible_at(
+        state.model_copy(update={"consecutive_failures": 10}), 900
+    ) == NOW + timedelta(seconds=900)
+    assert _source_next_eligible_at(
+        state.model_copy(update={"consecutive_failures": 0}), 900
+    ) == NOW + timedelta(seconds=900)
 
 
 def _principal() -> RequestPrincipal:

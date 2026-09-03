@@ -90,8 +90,13 @@ def test_database_summary_exposes_only_safe_structural_diagnostics() -> None:
 def test_runtime_counts_only_latest_logical_jobs_and_detectors() -> None:
     queue_source = inspect.getsource(_latest_search_state_counts)
     dashboard_source = inspect.getsource(OperatorService.dashboard)
+    events_source = inspect.getsource(OperatorService._recent_events)
 
     assert "DISTINCT ON" in queue_source
     assert "plan::text" in queue_source
     assert "latest_analysis_job" in dashboard_source
+    assert "latest_search_job" in dashboard_source
+    assert "search_error" in dashboard_source
     assert "current_detector" in dashboard_source
+    assert "FROM search_job_v4" in events_source
+    assert "safe_error_summary" in events_source

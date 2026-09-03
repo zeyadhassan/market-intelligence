@@ -8,6 +8,11 @@ responses receive up to four attempts with bounded exponential backoff.
 Permanent request/schema errors still fail immediately and appear with a safe
 reason in the control room.
 
+After a source poll fails, the source worker retries after 60 seconds, then
+120, 240, and so on, capped by that source's normal polling cadence. Successful
+polls continue to use the normal cadence. This keeps a transient source timeout
+from making the control room appear frozen for a full polling interval.
+
 The main page is now an operations-first control room. It refreshes every two
 seconds and shows all ten application stages, every configured source, worker
 heartbeats, queue depth, retrieval-index coverage, current and recent model
@@ -86,4 +91,6 @@ refinancing was announced.
 An on-demand search identity includes the active retrieval-index revision. If a
 question failed while the index was missing or building, submitting the same
 question again after the index becomes ready creates new durable work instead
-of returning the earlier terminal failure.
+of returning the earlier terminal failure. The control-room search stage and
+activity log also show the latest payload-safe terminal error so a failed search
+does not disappear behind "No research request is running."

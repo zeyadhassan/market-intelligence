@@ -489,10 +489,6 @@ class PostgresStageOneService:
             )
         coverage = _json_object(read_model["coverage_summary"])
         required = tuple(str(item) for item in _json_items(coverage.get("required_source_ids")))
-        required_documents = tuple(
-            str(item)
-            for item in _json_items(coverage.get("required_document_version_ids"))
-        )
         completed = frozenset(
             str(item) for item in _json_items(coverage.get("completed_source_ids"))
         )
@@ -603,13 +599,11 @@ class PostgresStageOneService:
             """
             SELECT model, status, count(*) AS call_count
             FROM model_call_log
-            WHERE ($1::text IS NOT NULL AND run_id=$1)
-               OR subject_id = ANY($2::text[])
+            WHERE $1::text IS NOT NULL AND run_id=$1
             GROUP BY model, status
             ORDER BY model, status
             """,
             str(read_model["run_id"]) if read_model["run_id"] else None,
-            list(required_documents),
         )
         model_names = sorted(
             result_model_names | {str(row["model"]) for row in model_usage_rows}

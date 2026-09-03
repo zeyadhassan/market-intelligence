@@ -56,7 +56,29 @@ from fi_intel.sources.adapters.government import GovernmentDetailCanonicalizer
 from fi_intel.sources.base import FetchCursor
 from fi_intel.sources.canonical import DocumentClass
 from fi_intel.sources.catalog import production_source_catalog
-from fi_intel.sources.operations import PostgresSourceOperationsStore, SourceHealth
+from fi_intel.sources.operations import (
+    PostgresSourceOperationsStore,
+    SourceHealth,
+    SourceOperationalState,
+)
+
+_SOURCE_FAILURE_RETRY_BASE_SECONDS = 60
+
+
+def _source_next_eligible_at(
+    state: SourceOperationalState,
+    cadence_seconds: int,
+) -> datetime:
+    """Retry failed polls sooner, with backoff bounded by the normal cadence."""
+
+    delay_seconds = cadence_seconds
+    if state.consecutive_failures:
+        exponent = min(state.consecutive_failures - 1, 30)
+        delay_seconds = min(
+            cadence_seconds,
+            _SOURCE_FAILURE_RETRY_BASE_SECONDS * (2**exponent),
+        )
+    return state.updated_at + timedelta(seconds=delay_seconds)
 
 
 class SourceWorkerReport(BaseModel):
@@ -122,10 +144,15 @@ class CanonicalSourceWorker:
             registration = production_source_catalog(settings).require(source.source_id)
             state = await operations.load_state(source.source_id)
             now = datetime.now(UTC)
+            next_eligible_at = (
+                _source_next_eligible_at(state, registration.cadence_seconds)
+                if state is not None
+                else None
+            )
             if (
                 not force
-                and state is not None
-                and state.updated_at + timedelta(seconds=registration.cadence_seconds) > now
+                and next_eligible_at is not None
+                and next_eligible_at > now
             ):
                 skipped.append(source.source_id)
                 self._log.info(
@@ -133,10 +160,12 @@ class CanonicalSourceWorker:
                     run_id=str(run_uuid),
                     source_id=source.source_id,
                     source_url=source.url,
-                    reason="cadence_not_due",
-                    next_eligible_at=(
-                        state.updated_at + timedelta(seconds=registration.cadence_seconds)
-                    ).isoformat(),
+                    reason=(
+                        "failure_backoff_not_due"
+                        if state is not None and state.consecutive_failures
+                        else "cadence_not_due"
+                    ),
+                    next_eligible_at=next_eligible_at.isoformat(),
                 )
                 return
             async with semaphore:
@@ -269,11 +298,15 @@ class CanonicalSourceWorker:
         settings = self._settings
         registration = production_source_catalog(settings).require("gleif")
         state = await operations.load_state("gleif")
+        next_eligible_at = (
+            _source_next_eligible_at(state, registration.cadence_seconds)
+            if state is not None
+            else None
+        )
         if (
             not force
-            and state is not None
-            and state.updated_at + timedelta(seconds=registration.cadence_seconds)
-            > datetime.now(UTC)
+            and next_eligible_at is not None
+            and next_eligible_at > datetime.now(UTC)
         ):
             return None
         pool = self._resources.postgres_pool

@@ -476,6 +476,16 @@ class OperatorService:
               FROM analysis_job_v4
               ORDER BY authorization_scope, topic_ids, requested_at DESC, job_id DESC
             ),
+            latest_search_job AS (
+              SELECT DISTINCT ON (
+                         principal_snapshot->>'principal_id', authorization_scope,
+                         plan::text
+                     )
+                     state, safe_error_summary, updated_at
+              FROM search_job_v4
+              ORDER BY principal_snapshot->>'principal_id', authorization_scope,
+                       plan::text, requested_at DESC, search_id DESC
+            ),
             current_detector AS (
               SELECT detector.*
               FROM detector_execution_v3 detector
@@ -506,6 +516,9 @@ class OperatorService:
                  AND updated_at >= now() - interval '24 hours') AS analysis_completed,
               (SELECT max(updated_at) FROM analysis_job_v4) AS analysis_last,
               (SELECT max(updated_at) FROM search_job_v4) AS search_last,
+              (SELECT safe_error_summary FROM latest_search_job
+               WHERE state='terminal_failed'
+               ORDER BY updated_at DESC LIMIT 1) AS search_error,
               (SELECT max(updated_at) FROM delivery_attempt_v4) AS delivery_last,
               (SELECT count(*) FROM current_detector
                WHERE finished_at IS NULL) AS detector_active,
@@ -1221,7 +1234,11 @@ class OperatorService:
                 stage="search",
                 label="9. On-demand analyst search",
                 status=search_status,
-                detail="Interactive questions run as durable governed search jobs.",
+                detail=(
+                    f"Latest search failed: {counts['search_error']}"
+                    if search_failed and counts["search_error"] is not None
+                    else "Interactive questions run as durable governed search jobs."
+                ),
                 active=search_active,
                 pending=search_pending + search_held,
                 completed=search_completed,
@@ -1423,6 +1440,20 @@ class OperatorService:
                      search_id, NULL::text, NULL::double precision, NULL::text
               FROM search_step_v4
               WHERE occurred_at >= now() - interval '7 days'
+
+              UNION ALL
+
+              SELECT 'search-job:' || search_id,
+                     updated_at, 'search', 'analyst search',
+                     CASE WHEN state='complete' THEN 'succeeded'
+                          WHEN state IN ('terminal_failed','retryable_failed') THEN 'failed'
+                          WHEN state='held' THEN 'attention'
+                          ELSE 'working' END,
+                     'Analyst search is ' || state || '.',
+                     search_id, lease_owner, NULL::double precision,
+                     safe_error_summary
+              FROM search_job_v4
+              WHERE updated_at >= now() - interval '7 days'
 
               UNION ALL
 
