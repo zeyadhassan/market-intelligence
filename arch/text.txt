@@ -1,75 +1,3997 @@
+{
+    "generated_at": "2026-09-03T08:03:40.482941Z",
+    "overall_status": "failed",
+    "poll_interval_seconds": 2,
+    "queue": {
+        "analysis_jobs": {
+            "deferred": 1
+        },
+        "search_jobs": {
+            "terminal_failed": 1
+        },
+        "document_jobs": {
+            "complete": 10
+        },
+        "outbox_pending": 0,
+        "dead_letters": 0,
+        "deliveries": {},
+        "retrieval_index_status": "missing",
+        "indexed_document_versions": 0,
+        "unindexed_document_versions": 10,
+        "embedding_calls_last_hour": {
+            "failed": 14,
+            "succeeded": 870
+        }
+    },
+    "workers": [
+        {
+            "worker_type": "scheduler",
+            "worker_id": "scheduler-cd0838c1-f674-4bd6-8eb1-3f9e7689a0ae",
+            "status": "idle",
+            "operation": "schedule subscribed topic analysis",
+            "heartbeat_at": "2026-09-03T08:03:32.243635Z",
+            "iteration_started_at": "2026-09-03T08:03:32.239459Z",
+            "iteration_finished_at": "2026-09-03T08:03:32.242553Z",
+            "last_success_at": "2026-09-03T08:03:32.242553Z",
+            "last_failure_at": null,
+            "safe_error_summary": null
+        },
+        {
+            "worker_type": "source",
+            "worker_id": "source-a5361db1-8b76-4b99-896a-b489a3a2e335",
+            "status": "idle",
+            "operation": "poll configured sources",
+            "heartbeat_at": "2026-09-03T08:03:32.720727Z",
+            "iteration_started_at": "2026-09-03T08:03:32.715608Z",
+            "iteration_finished_at": "2026-09-03T08:03:32.719612Z",
+            "last_success_at": "2026-09-03T08:03:32.719612Z",
+            "last_failure_at": null,
+            "safe_error_summary": null
+        },
+        {
+            "worker_type": "projection",
+            "worker_id": "projection-9b9350d6-9327-405d-b12c-12abf3d3d175",
+            "status": "working",
+            "operation": "project, extract, and index documents",
+            "heartbeat_at": "2026-09-03T08:03:39.877296Z",
+            "iteration_started_at": "2026-09-03T08:01:59.745786Z",
+            "iteration_finished_at": null,
+            "last_success_at": null,
+            "last_failure_at": null,
+            "safe_error_summary": null
+        },
+        {
+            "worker_type": "analysis",
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "status": "idle",
+            "operation": "detect and research opportunities",
+            "heartbeat_at": "2026-09-03T08:03:31.083118Z",
+            "iteration_started_at": "2026-09-03T08:03:31.051855Z",
+            "iteration_finished_at": "2026-09-03T08:03:31.080497Z",
+            "last_success_at": "2026-09-03T08:03:31.080497Z",
+            "last_failure_at": null,
+            "safe_error_summary": null
+        },
+        {
+            "worker_type": "search",
+            "worker_id": "search-e0370fcf-f61b-4ccd-9aa8-4e17c0f1ad14",
+            "status": "idle",
+            "operation": "execute analyst searches",
+            "heartbeat_at": "2026-09-03T08:03:31.975850Z",
+            "iteration_started_at": "2026-09-03T08:03:31.969149Z",
+            "iteration_finished_at": "2026-09-03T08:03:31.973678Z",
+            "last_success_at": "2026-09-03T08:03:31.973678Z",
+            "last_failure_at": null,
+            "safe_error_summary": null
+        },
+        {
+            "worker_type": "delivery",
+            "worker_id": "delivery-297bf76a-eb00-4022-bf0f-16ec8d36db6a",
+            "status": "idle",
+            "operation": "assemble and deliver digests",
+            "heartbeat_at": "2026-09-03T08:03:33.919473Z",
+            "iteration_started_at": "2026-09-03T08:03:33.911947Z",
+            "iteration_finished_at": "2026-09-03T08:03:33.917780Z",
+            "last_success_at": "2026-09-03T08:03:33.917780Z",
+            "last_failure_at": null,
+            "safe_error_summary": null
+        }
+    ],
+    "stages": [
+        {
+            "stage": "source",
+            "label": "1. Live source acquisition",
+            "status": "failed",
+            "detail": "0/1 configured sources passed their latest coverage check.",
+            "active": 0,
+            "pending": 0,
+            "completed": 0,
+            "failed": 1,
+            "last_activity_at": "2026-09-03T07:52:37.446389Z"
+        },
+        {
+            "stage": "ingestion",
+            "label": "2. Archive and canonical ingest",
+            "status": "complete",
+            "detail": "Raw assets are archived and converted into immutable document versions.",
+            "active": 0,
+            "pending": 0,
+            "completed": 70,
+            "failed": 0,
+            "last_activity_at": "2026-09-03T07:36:47.951658Z"
+        },
+        {
+            "stage": "projection",
+            "label": "3. Extraction and projection",
+            "status": "complete",
+            "detail": "Documents are extracted, entity-linked, and projected into governed state.",
+            "active": 0,
+            "pending": 0,
+            "completed": 10,
+            "failed": 0,
+            "last_activity_at": "2026-09-03T08:03:39.877296Z"
+        },
+        {
+            "stage": "indexing",
+            "label": "4. Chunking and retrieval index",
+            "status": "working",
+            "detail": "0 indexed; 10 still missing. 14 embedding attempt(s) failed in the last hour.",
+            "active": 1,
+            "pending": 10,
+            "completed": 0,
+            "failed": 0,
+            "last_activity_at": "2026-09-03T08:03:39.877296Z"
+        },
+        {
+            "stage": "analysis",
+            "label": "5. Analysis orchestration",
+            "status": "waiting",
+            "detail": "The durable job freezes coverage, policy, model, and index inputs.",
+            "active": 0,
+            "pending": 1,
+            "completed": 0,
+            "failed": 0,
+            "last_activity_at": "2026-09-03T08:03:31.073758Z"
+        },
+        {
+            "stage": "detection",
+            "label": "6. Signal detection",
+            "status": "waiting",
+            "detail": "Registered financial patterns identify candidates worth researching.",
+            "active": 0,
+            "pending": 0,
+            "completed": 0,
+            "failed": 0,
+            "last_activity_at": null
+        },
+        {
+            "stage": "research",
+            "label": "7. Agent research and model reasoning",
+            "status": "waiting",
+            "detail": "Hybrid retrieval, contradiction search, reranking, reasoning, and entailment run here.",
+            "active": 0,
+            "pending": 0,
+            "completed": 0,
+            "failed": 0,
+            "last_activity_at": null
+        },
+        {
+            "stage": "publication",
+            "label": "8. Validation and publication",
+            "status": "waiting",
+            "detail": "0 claim decisions and 0 result versions recorded in the last 24 hours; 0 claims were rejected by validation.",
+            "active": 0,
+            "pending": 0,
+            "completed": 0,
+            "failed": 0,
+            "last_activity_at": null
+        },
+        {
+            "stage": "search",
+            "label": "9. On-demand analyst search",
+            "status": "failed",
+            "detail": "Interactive questions run as durable governed search jobs.",
+            "active": 0,
+            "pending": 0,
+            "completed": 0,
+            "failed": 1,
+            "last_activity_at": "2026-09-03T06:41:03.864476Z"
+        },
+        {
+            "stage": "delivery",
+            "label": "10. Digest delivery",
+            "status": "waiting",
+            "detail": "Scheduled results are assembled and sent through the configured channel.",
+            "active": 0,
+            "pending": 0,
+            "completed": 0,
+            "failed": 0,
+            "last_activity_at": null
+        }
+    ],
+    "sources": [
+        {
+            "source_id": "sa_sama_news",
+            "display_name": "Saudi Central Bank news",
+            "country": "Saudi Arabia",
+            "status": "failed",
+            "run_id": "89ccc01f-47bf-54c5-9962-546616987f20",
+            "started_at": "2026-09-03T07:51:49.405578Z",
+            "finished_at": "2026-09-03T07:52:37.446389Z",
+            "discovered": 0,
+            "acquired": 0,
+            "committed": 0,
+            "unchanged": 0,
+            "quarantined": 0,
+            "detail": "RetryableSourceError: RetryableSourceError (reason=network_timeout, cause=ConnectTimeout, message_sha256=dadb49152b8ae564ef3930e45d07f846828cfec61878a186fe8b4c0d870ac51b)"
+        }
+    ],
+    "models": [
+        {
+            "component": "embedding",
+            "model": "nvidia/llama-3.2-nv-embedqa-1b-v2",
+            "status": "working",
+            "active_calls": 1,
+            "calls_last_hour": 884,
+            "succeeded_last_hour": 870,
+            "failed_last_hour": 14,
+            "input_tokens_last_hour": 491750,
+            "output_tokens_last_hour": 0,
+            "average_latency_ms": 2620.2378993480497,
+            "last_call_at": "2026-09-03T08:00:39.745015Z",
+            "last_outcome": "succeeded"
+        },
+        {
+            "component": "entailment",
+            "model": "openai/gpt-oss-120b",
+            "status": "not_started",
+            "active_calls": 0,
+            "calls_last_hour": 0,
+            "succeeded_last_hour": 0,
+            "failed_last_hour": 0,
+            "input_tokens_last_hour": 0,
+            "output_tokens_last_hour": 0,
+            "average_latency_ms": null,
+            "last_call_at": null,
+            "last_outcome": null
+        },
+        {
+            "component": "extract",
+            "model": "openai/gpt-oss-120b",
+            "status": "not_started",
+            "active_calls": 0,
+            "calls_last_hour": 0,
+            "succeeded_last_hour": 0,
+            "failed_last_hour": 0,
+            "input_tokens_last_hour": 0,
+            "output_tokens_last_hour": 0,
+            "average_latency_ms": null,
+            "last_call_at": null,
+            "last_outcome": null
+        },
+        {
+            "component": "reranker",
+            "model": "openai/gpt-oss-120b",
+            "status": "not_started",
+            "active_calls": 0,
+            "calls_last_hour": 0,
+            "succeeded_last_hour": 0,
+            "failed_last_hour": 0,
+            "input_tokens_last_hour": 0,
+            "output_tokens_last_hour": 0,
+            "average_latency_ms": null,
+            "last_call_at": null,
+            "last_outcome": null
+        },
+        {
+            "component": "research",
+            "model": "openai/gpt-oss-120b",
+            "status": "not_started",
+            "active_calls": 0,
+            "calls_last_hour": 0,
+            "succeeded_last_hour": 0,
+            "failed_last_hour": 0,
+            "input_tokens_last_hour": 0,
+            "output_tokens_last_hour": 0,
+            "average_latency_ms": null,
+            "last_call_at": null,
+            "last_outcome": null
+        }
+    ],
+    "events": [
+        {
+            "event_id": "analysis:74ef9ca9f2df1703e83a17854b52e7d79d4f861bf007090c1ba6c567212fd3c1",
+            "occurred_at": "2026-09-03T08:03:31.073758Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:71eb568a696964618dee5a7ec8f5fb4f88d2ffd83675c26fca6282fd1dc8cfc8",
+            "occurred_at": "2026-09-03T08:03:31.056443Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:170fbb9de0cffefe4da025edd0bd79246a0733eb9958efdfcd519e7c0c8f3d91",
+            "occurred_at": "2026-09-03T08:03:16.031724Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:9343dc7031f388144d34efc00bf6027ca376dee39186e4353eea05c39a4b5376",
+            "occurred_at": "2026-09-03T08:03:16.023000Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:b390d02f9449703adc7e009825a99f0de2357f300b85ab5171d0b3c4c2434a7f",
+            "occurred_at": "2026-09-03T08:03:00.999554Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:83070004bd104ea836dff0efcc5904f8f51d315a86a1443254383ec59ce6a040",
+            "occurred_at": "2026-09-03T08:03:00.988564Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:ddcb84219964e43ad8add6b4c94b69f3f8988d6813d36cfe71f0c8e47acfaeb0",
+            "occurred_at": "2026-09-03T08:02:45.963069Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:8fb8b1ac67f95470c569df01c63af17e5bb39ece8e2cc035027e6261504ba26e",
+            "occurred_at": "2026-09-03T08:02:45.951806Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:383d6bb2f6765622955992df35a6d215de8f5d34334482dff8eac392e63578d1",
+            "occurred_at": "2026-09-03T08:02:30.933853Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:b526866c15289cddb9112ccc7f1895eee9ba7b6be0666adb79d4655aa29d8aea",
+            "occurred_at": "2026-09-03T08:02:30.920699Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:75239e4b042c304cdc1ebf639b46a60427f5610d6c261e68b27268b846610a87",
+            "occurred_at": "2026-09-03T08:02:15.896716Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:c491cdbf613bb59bc650b79c739825ae9b995f1226d558876d138d4752da4dca",
+            "occurred_at": "2026-09-03T08:02:15.890021Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "runtime:2797",
+            "occurred_at": "2026-09-03T08:02:03.737638Z",
+            "stage": "delivery",
+            "operation": "assemble and deliver digests",
+            "status": "started",
+            "message": "Worker loop started.",
+            "run_id": "worker-loop:92aa5d85-e4cc-4fce-9c08-badb136f85e8",
+            "worker_id": "delivery-297bf76a-eb00-4022-bf0f-16ec8d36db6a",
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2796",
+            "occurred_at": "2026-09-03T08:02:01.823153Z",
+            "stage": "search",
+            "operation": "execute analyst searches",
+            "status": "started",
+            "message": "Worker loop started.",
+            "run_id": "worker-loop:3c4d9989-a293-4130-9bdd-7028423f8379",
+            "worker_id": "search-e0370fcf-f61b-4ccd-9aa8-4e17c0f1ad14",
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "analysis:4e680bc90d119583eed513b1dd5810d01d504104fa861c06d9eb842b664d5d2e",
+            "occurred_at": "2026-09-03T08:02:00.855566Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:730b18985e33a7511c1e6ca46777c5b98baa18876e0878a2b5bcd39752e8e038",
+            "occurred_at": "2026-09-03T08:02:00.786234Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "runtime:2795",
+            "occurred_at": "2026-09-03T08:02:00.777425Z",
+            "stage": "analysis",
+            "operation": "detect and research opportunities",
+            "status": "started",
+            "message": "Worker loop started.",
+            "run_id": "worker-loop:73f585a9-e36f-4810-b71d-8bfcd378b5ed",
+            "worker_id": "analysis-edd69021-d59a-4165-aca1-c3f90f65dacd",
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2794",
+            "occurred_at": "2026-09-03T08:01:59.821576Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-9b9350d6-9327-405d-b12c-12abf3d3d175:c8b97e3e-cab8-4098-a14b-091da1c1cf43",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2793",
+            "occurred_at": "2026-09-03T08:01:59.741457Z",
+            "stage": "projection",
+            "operation": "project, extract, and index documents",
+            "status": "started",
+            "message": "Worker loop started.",
+            "run_id": "worker-loop:2ffebbdf-2106-408e-8422-755596b2383d",
+            "worker_id": "projection-9b9350d6-9327-405d-b12c-12abf3d3d175",
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2792",
+            "occurred_at": "2026-09-03T08:01:47.527296Z",
+            "stage": "source",
+            "operation": "poll configured sources",
+            "status": "started",
+            "message": "Worker loop started.",
+            "run_id": "worker-loop:a5ebd2ec-39da-4780-8112-99ffc2f527fb",
+            "worker_id": "source-a5361db1-8b76-4b99-896a-b489a3a2e335",
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2791",
+            "occurred_at": "2026-09-03T08:01:47.055533Z",
+            "stage": "scheduler",
+            "operation": "schedule subscribed topic analysis",
+            "status": "started",
+            "message": "Worker loop started.",
+            "run_id": "worker-loop:cae4ac3d-76dd-4424-856b-562911fe47a4",
+            "worker_id": "scheduler-cd0838c1-f674-4bd6-8eb1-3f9e7689a0ae",
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2790",
+            "occurred_at": "2026-09-03T08:00:39.797225Z",
+            "stage": "projection",
+            "operation": "project, extract, and index documents",
+            "status": "failed",
+            "message": "Worker iteration failed; the loop will retry.",
+            "run_id": "worker-loop:8dd55581-e334-47f5-9f36-cef38846eeb9",
+            "worker_id": "projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b",
+            "duration_ms": 10057.516034008586,
+            "safe_error_summary": "RetrievalIndexBuildError (reason=database_error, cause=DatatypeMismatchError, message_sha256=0ff893c47812112f42bbb90e14c98d6ea9a6ab44d45ec34bfa243cf7219ccdca)"
+        },
+        {
+            "event_id": "runtime:2789",
+            "occurred_at": "2026-09-03T08:00:39.745015Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": 591.192918989691,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2788",
+            "occurred_at": "2026-09-03T08:00:39.153816Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2787",
+            "occurred_at": "2026-09-03T08:00:39.140613Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": 516.9381869927747,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2786",
+            "occurred_at": "2026-09-03T08:00:38.623665Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2785",
+            "occurred_at": "2026-09-03T08:00:38.613646Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": 863.0596769944532,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2784",
+            "occurred_at": "2026-09-03T08:00:37.750579Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2783",
+            "occurred_at": "2026-09-03T08:00:37.739639Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": 753.5821690107696,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2782",
+            "occurred_at": "2026-09-03T08:00:36.986050Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2781",
+            "occurred_at": "2026-09-03T08:00:36.981242Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": 1310.462773006293,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2780",
+            "occurred_at": "2026-09-03T08:00:35.670774Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2779",
+            "occurred_at": "2026-09-03T08:00:35.659598Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": 324.4163709896384,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2778",
+            "occurred_at": "2026-09-03T08:00:35.335170Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2777",
+            "occurred_at": "2026-09-03T08:00:35.325102Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": 2232.195597011014,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2776",
+            "occurred_at": "2026-09-03T08:00:33.092899Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2775",
+            "occurred_at": "2026-09-03T08:00:33.084826Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": 517.6470709993737,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2774",
+            "occurred_at": "2026-09-03T08:00:32.567171Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2773",
+            "occurred_at": "2026-09-03T08:00:32.561358Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": 851.7496429994935,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2772",
+            "occurred_at": "2026-09-03T08:00:31.709600Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2771",
+            "occurred_at": "2026-09-03T08:00:31.701055Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": 672.6550759922247,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2770",
+            "occurred_at": "2026-09-03T08:00:31.028396Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2769",
+            "occurred_at": "2026-09-03T08:00:31.018557Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": 135.18582099641208,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2768",
+            "occurred_at": "2026-09-03T08:00:30.883366Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2767",
+            "occurred_at": "2026-09-03T08:00:30.878065Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": 1125.3927950019715,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2766",
+            "occurred_at": "2026-09-03T08:00:29.752665Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:c3a23ca0-6d68-4fbc-9c34-9c6fe62cacb6",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2765",
+            "occurred_at": "2026-09-03T08:00:14.685574Z",
+            "stage": "projection",
+            "operation": "project, extract, and index documents",
+            "status": "failed",
+            "message": "Worker iteration failed; the loop will retry.",
+            "run_id": "worker-loop:8dd55581-e334-47f5-9f36-cef38846eeb9",
+            "worker_id": "projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b",
+            "duration_ms": 966877.9276390123,
+            "safe_error_summary": "RetrievalIndexBuildError (cause=ConnectError, message_sha256=0ff893c47812112f42bbb90e14c98d6ea9a6ab44d45ec34bfa243cf7219ccdca)"
+        },
+        {
+            "event_id": "runtime:2764",
+            "occurred_at": "2026-09-03T08:00:14.670707Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 798.6210739909438,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2763",
+            "occurred_at": "2026-09-03T08:00:13.872079Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2762",
+            "occurred_at": "2026-09-03T08:00:13.856660Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 1304.790371999843,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "analysis:40eee418837699d5c4e77a2c9e19a74a48b3c06204ff5a9ddf62a8ca925ca398",
+            "occurred_at": "2026-09-03T08:00:13.810308Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:54f35044c861fd1025e36f8eb5c8ca257f21e4cf852411800bad82d52a1d4a99",
+            "occurred_at": "2026-09-03T08:00:13.796207Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "runtime:2761",
+            "occurred_at": "2026-09-03T08:00:12.551863Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2760",
+            "occurred_at": "2026-09-03T08:00:12.533312Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 994.3295810080599,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2759",
+            "occurred_at": "2026-09-03T08:00:11.538972Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2758",
+            "occurred_at": "2026-09-03T08:00:11.509590Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 1599.5613690029131,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2757",
+            "occurred_at": "2026-09-03T08:00:09.910012Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2756",
+            "occurred_at": "2026-09-03T08:00:09.901564Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 850.8328030002303,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2755",
+            "occurred_at": "2026-09-03T08:00:09.050722Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2754",
+            "occurred_at": "2026-09-03T08:00:09.025766Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 270.6396970024798,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2753",
+            "occurred_at": "2026-09-03T08:00:08.755118Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2752",
+            "occurred_at": "2026-09-03T08:00:08.740775Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 825.0300220097415,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2751",
+            "occurred_at": "2026-09-03T08:00:07.915738Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2750",
+            "occurred_at": "2026-09-03T08:00:07.905378Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 707.3179919971153,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2749",
+            "occurred_at": "2026-09-03T08:00:07.198056Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2748",
+            "occurred_at": "2026-09-03T08:00:07.184982Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 640.0585770024918,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2747",
+            "occurred_at": "2026-09-03T08:00:06.544913Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2746",
+            "occurred_at": "2026-09-03T08:00:06.528972Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "succeeded",
+            "message": "Embedding model call succeeded.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 1155.7269829936558,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2745",
+            "occurred_at": "2026-09-03T08:00:05.373244Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2744",
+            "occurred_at": "2026-09-03T08:00:01.361930Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "failed",
+            "message": "Embedding model call failed.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 135213.81502099393,
+            "safe_error_summary": "ConnectError"
+        },
+        {
+            "event_id": "analysis:636a3274e6990f987e0d0e179f6ef70b4db3fa13825d46faea794b1fc11864d5",
+            "occurred_at": "2026-09-03T07:59:58.763688Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:4f22c86f3424886463e8589134a996d3c7e730e30d335f0a41cf21573812f378",
+            "occurred_at": "2026-09-03T07:59:58.735114Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:bb550b09a2fc8383f177dadcf054e6e3c3aaa58018ca0c308adeed96c26a9139",
+            "occurred_at": "2026-09-03T07:59:43.714048Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:3ad811597dc6a2126c5b1c9ea25a9e93a8be0f3bad1ba6802042e5f55d216962",
+            "occurred_at": "2026-09-03T07:59:43.701324Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:49baea44d4d2203b5fb6a210644076fe4bc2db71bfada75b69f52720f37095c8",
+            "occurred_at": "2026-09-03T07:59:28.677220Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:bec7b9711f5856c3595e87659639790d0143736cb7c64653cf840153a0a2a2da",
+            "occurred_at": "2026-09-03T07:59:28.667527Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:d8c7d9305662591f0de5f69f2d7fa5c797f5b801316138dad848410492aed3c0",
+            "occurred_at": "2026-09-03T07:59:13.637111Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:930706ab44d61aeba39efb5fa64e66ebb07c02a67ec80a97626f7ee8e4b4e94c",
+            "occurred_at": "2026-09-03T07:59:13.621878Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:dd52e70071741023d0fdfde1fcfa307f776d32b55b6e8d3da8b8ed706ded4c60",
+            "occurred_at": "2026-09-03T07:58:58.591370Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:c6b3cc4931461a706a6d16488dafb126a2ba8006797d2c2ea1d195775aec23bd",
+            "occurred_at": "2026-09-03T07:58:58.570599Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:5fdf6682e113918da6cb63850183cdecc1cb986ddd54b4e1c82a55b05fe32f70",
+            "occurred_at": "2026-09-03T07:58:43.536635Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:7d2459e7e057ded667443c19a66278da797c7e1e5d183b10d27d3696e5a59fd0",
+            "occurred_at": "2026-09-03T07:58:43.516294Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:50f4ee70bec169ac58cdc92cff56e13e49f0f6b31af3a4687482b967b5a8299a",
+            "occurred_at": "2026-09-03T07:58:28.494341Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:79f68235efc4f5cb6cea7bdce05da09e1d1cd0619ace32c2f198aa0172be1d46",
+            "occurred_at": "2026-09-03T07:58:28.485997Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:58b110cfc9a8b2c42940a4ad05cef30b1664334568e4922e9379bf48ce23efc3",
+            "occurred_at": "2026-09-03T07:58:13.457758Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:a04017c27c43afd9df49c38af770145d9569cd4b1a83c1b9e3b3425fac6ba542",
+            "occurred_at": "2026-09-03T07:58:13.441619Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:38a739a72f450272d650ea9bdaf1339e9b931dd5a6d0e20decb005ad3048ddfb",
+            "occurred_at": "2026-09-03T07:57:58.426884Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:8e0ede9b368fa4055cc42e440227d5f137b2f66eb76b5daf8ba835f5f3bb1a00",
+            "occurred_at": "2026-09-03T07:57:58.421222Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "runtime:2743",
+            "occurred_at": "2026-09-03T07:57:46.148111Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2742",
+            "occurred_at": "2026-09-03T07:57:44.141827Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "failed",
+            "message": "Embedding model call failed.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 134160.8116599964,
+            "safe_error_summary": "ConnectError"
+        },
+        {
+            "event_id": "analysis:7c9d9bd36520b9ae66388514f15aaa8faf86b4d47e8dcc682860af123ce66b0f",
+            "occurred_at": "2026-09-03T07:57:43.399200Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:a6119d322ee02d91d09e6d78ec8ed5c835a6a495e6e93f874de80c9aee959bde",
+            "occurred_at": "2026-09-03T07:57:43.393018Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:0ff8c6a9549fa6577fa288a285c49030a4d97d2af239b6a3ec67d28acfa2abfe",
+            "occurred_at": "2026-09-03T07:57:28.371782Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:ce4dc5639be3d2bacd644d23936a4f1821d950b76ad5ad2a55f48765de9e97f0",
+            "occurred_at": "2026-09-03T07:57:28.366147Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:4c7ba6c0086552f26674ef903ba5eb368fdbb4c7dd1fde159657e48d66fe5f09",
+            "occurred_at": "2026-09-03T07:57:13.343925Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:c60c4347d1409ed69f1d6701cc694efee06c80c48323f2b82d8f4419d1f2c21e",
+            "occurred_at": "2026-09-03T07:57:13.338938Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:1f96d239c1baf2a2f8e13de4d3b85b2c465d6e7cdbf8a7b27c818e09706c236c",
+            "occurred_at": "2026-09-03T07:56:58.317216Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:447107986bb718d7d279894afb18f2e3ef18b29b6721f0d63788d633656ef56f",
+            "occurred_at": "2026-09-03T07:56:58.312034Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:91dce223e5018c1092f687ceca1cf828335382c5f3a6f749a9fcd57e16744609",
+            "occurred_at": "2026-09-03T07:56:43.288553Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:92edc04e52876e9e8004297fc493a9824d8ad6d34150705ac5f3d0862f9d1191",
+            "occurred_at": "2026-09-03T07:56:43.280741Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:412b00871b2511cfd58920640e70f090f1738c1a87715f6aee43db4afb128ab8",
+            "occurred_at": "2026-09-03T07:56:28.253115Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:426706478c3f87aa61726ad3c5347ef0c956b2b244c6687dbb6d1f8c19f1f5b0",
+            "occurred_at": "2026-09-03T07:56:28.237864Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:805a7be267c0ddb7f17fb5da776b717ffbc0f8cf76a290b645112bf1f412e48d",
+            "occurred_at": "2026-09-03T07:56:13.208402Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:ffafa0113942665c319b42e0d13d8b3ac13749bc7586fec22b6877108717d71f",
+            "occurred_at": "2026-09-03T07:56:13.188817Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:8ec633d04252e92b435cbb70e078941c5730bcc45705af4404d09bd3db08a9e5",
+            "occurred_at": "2026-09-03T07:55:58.162752Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:5d0c66181a660e5c4ffcae78b3e0b713de64c6fe0f74f16d86a4374e7d14405a",
+            "occurred_at": "2026-09-03T07:55:58.151599Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:b5789d86cefa406a9fe96e2324c59f6d55e8930d6a75c01c5734f12be2488a91",
+            "occurred_at": "2026-09-03T07:55:43.125846Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:af9f7a4097e715a0284a7063c58d24480654f4a8046054b2b7e71e6e1e428241",
+            "occurred_at": "2026-09-03T07:55:43.118259Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "runtime:2741",
+            "occurred_at": "2026-09-03T07:55:29.981013Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2740",
+            "occurred_at": "2026-09-03T07:55:28.973694Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "failed",
+            "message": "Embedding model call failed.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 135165.28441400442,
+            "safe_error_summary": "ConnectError"
+        },
+        {
+            "event_id": "analysis:2072277dd139e04a4fba75099cb57e54226bff1eba701471aec5249b461b189c",
+            "occurred_at": "2026-09-03T07:55:28.090592Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:998fcb691b31f6fcf50ec5dc93946e442aedfa60ca1ba91bb9885de9c0b52db9",
+            "occurred_at": "2026-09-03T07:55:28.077267Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:e1d4bb4c47770d055d7465f7cc35b4a2e41ec1f7607b60196934d461312305c2",
+            "occurred_at": "2026-09-03T07:55:13.054133Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:2746a145b7493bcec0195a7699bc9e4a017b9e4c8f945b875f484e65657718d5",
+            "occurred_at": "2026-09-03T07:55:13.046039Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:a67fae162b5c1312debf4890e4cf8fc0d25d69a24fb97d1f0560fa020b5d0230",
+            "occurred_at": "2026-09-03T07:54:58.018910Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:e78ccdf8d197be49ac656ad9ae5b07f720eab77277f317320bdb61e79785ac17",
+            "occurred_at": "2026-09-03T07:54:58.004879Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:410da4edae7c10f68a8d5ea24e014d8d2fabba781ec6ef25f2ae722098611770",
+            "occurred_at": "2026-09-03T07:54:42.994429Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:70b6c33574c6c35ee81f4c7d911f583873d08b2ea3772d1efb4811e4ba53183a",
+            "occurred_at": "2026-09-03T07:54:42.987708Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:d99748cc6cffc3deaf2cd4011f6a42ecc25635fc024812c6338b935e12b58d3d",
+            "occurred_at": "2026-09-03T07:54:27.973587Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:d5b18d6d1f3922517369c4b31494483f3c1d7455b8e340b9a7716fcd490ed9e6",
+            "occurred_at": "2026-09-03T07:54:27.967559Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:e70ee98f0d9471435ad68955f5a0fa02a17830a2debacb806bb64e41cb6f1999",
+            "occurred_at": "2026-09-03T07:54:12.939971Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:f3bdfbb2cab798059ef7de53f166765395b055485dac52741fd642a07177f10f",
+            "occurred_at": "2026-09-03T07:54:12.933976Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:23cda022199c969bc5ba7c8239c5d8fa0fc338b4d9ef299ebef865b7ff85e1de",
+            "occurred_at": "2026-09-03T07:53:57.905417Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:d0cb75b9ffa3bce488009b4bf63e1f56966d33870ef29f3aa8ab2c0254e2faad",
+            "occurred_at": "2026-09-03T07:53:57.894849Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:a5928fa857cf8c3fb23cd5c1907ed7492414e4c065141568bfea8e55ffb58971",
+            "occurred_at": "2026-09-03T07:53:42.870039Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:1912e56f80fce76d01b1d4cbd9fb84dbc83290dc6adee1cc04cf970c702321ba",
+            "occurred_at": "2026-09-03T07:53:42.859022Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:d3fa395efa7f44e17a8e02222ff0499c391f08209fc7d67be06d9c9b80f5df37",
+            "occurred_at": "2026-09-03T07:53:27.835934Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:386a70d6f4bc1146067d2ccacad3e9b9eba83ac2d23b196f2434e61a2815fa9d",
+            "occurred_at": "2026-09-03T07:53:27.827444Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "runtime:2739",
+            "occurred_at": "2026-09-03T07:53:13.808405Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2738",
+            "occurred_at": "2026-09-03T07:53:13.805422Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "failed",
+            "message": "Embedding model call failed.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 135250.16580500233,
+            "safe_error_summary": "ConnectError"
+        },
+        {
+            "event_id": "analysis:ed00b2927fab494b836e427be734a279b3d9b45fcc075baa39047e9393fd2385",
+            "occurred_at": "2026-09-03T07:53:12.801217Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:69223041ddd1062905c4ab9d7b611fa8ff17c0b1a56fca0860ec6a75a5260d42",
+            "occurred_at": "2026-09-03T07:53:12.792993Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:743cd64b52b01a48af64e7d6cbbd7e6c1deba1d2b6c3f9169829235f58f76746",
+            "occurred_at": "2026-09-03T07:52:57.774250Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:576c6631c6b8204e71a6a2000083024748c55a08f897250f12db462be7dde691",
+            "occurred_at": "2026-09-03T07:52:57.763278Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:1fc21dc9bb45ffa29a83e5aec322a8745ee3e381d8208c037c0469792622581e",
+            "occurred_at": "2026-09-03T07:52:42.742712Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:d3cde5045bed89ae0090088e7b152061877a94df6b56df9956bb24418be5a457",
+            "occurred_at": "2026-09-03T07:52:42.733771Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "source:074f704b-a89a-5d06-8148-e3eb11b0e3b6",
+            "occurred_at": "2026-09-03T07:52:37.446389Z",
+            "stage": "source",
+            "operation": "sa_sama_news",
+            "status": "failed",
+            "message": "Source poll finished: 0 discovered, 0 committed, 0 quarantined.",
+            "run_id": "89ccc01f-47bf-54c5-9962-546616987f20",
+            "worker_id": null,
+            "duration_ms": 48040.811,
+            "safe_error_summary": "RetryableSourceError (reason=network_timeout, cause=ConnectTimeout, message_sha256=dadb49152b8ae564ef3930e45d07f846828cfec61878a186fe8b4c0d870ac51b)"
+        },
+        {
+            "event_id": "analysis:a56adad998c8c00af6e676a73f28233dd38881fdc77962cb1889da26812ee5cd",
+            "occurred_at": "2026-09-03T07:52:27.726452Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:1c0f81d7b9befefde076cb997e84ceccde24fddce7a5bcd44f89bb7c5a880810",
+            "occurred_at": "2026-09-03T07:52:27.720439Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:afd92217f1a220ae3f358da493dadb9b84712661925410fa1b2bcab4dfdcbf5b",
+            "occurred_at": "2026-09-03T07:52:12.696675Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:9e0657588288b8a39a36c6a52c4d5088d68f8c61a6e7671c3fcad1d1471297c9",
+            "occurred_at": "2026-09-03T07:52:12.685606Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:46f2ff0d9dd0f023084804aac3cffd951fb050e4bd656cc1d38eaee2f866a81d",
+            "occurred_at": "2026-09-03T07:51:57.661683Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:4a402b3496f3a4f6dcdfa0822c86ffa891dc46ce05cfaed2e16db2de11cca08c",
+            "occurred_at": "2026-09-03T07:51:57.652883Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:9978191a41cfcd7f19f4f6b7a74a26892de23b7e4f1f2306008e115ba516ef3c",
+            "occurred_at": "2026-09-03T07:51:42.627679Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:3b6ddef6cf42575db1707e1d1667cb8744975ee0154907d4dff19014ed8ee62e",
+            "occurred_at": "2026-09-03T07:51:42.619204Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:1c5469d2a5863b0f3af7bc3d0099b3b378c4bf0504adc6962ed3c065db86ac4e",
+            "occurred_at": "2026-09-03T07:51:27.605758Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:121526cb622e2a7c8e1a9da178e747b46e0ef0661b8970d1485daba6c34a9d70",
+            "occurred_at": "2026-09-03T07:51:27.596183Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:33dfd5b9e1465b44f8053a70e3b2af5de2d59d6a7cbfbd9f02513bc31a5d45b3",
+            "occurred_at": "2026-09-03T07:51:12.573564Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:a48bcdb838836def7caf5141b70247061e2259bcbe01570127e4c376fcc87f7c",
+            "occurred_at": "2026-09-03T07:51:12.566422Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "runtime:2737",
+            "occurred_at": "2026-09-03T07:50:58.555254Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "analysis:741c5413ce0dbe95aa82d6582bd89ef7b112ab7c2020343106dc884baaa13d0d",
+            "occurred_at": "2026-09-03T07:50:57.554771Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:d880aab0417c3936a3cc33ecbe1af908bef965696b1e2b444c89ed46ecd030dc",
+            "occurred_at": "2026-09-03T07:50:57.547773Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "runtime:2736",
+            "occurred_at": "2026-09-03T07:50:54.546905Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "failed",
+            "message": "Embedding model call failed.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 135215.01264499966,
+            "safe_error_summary": "ConnectError"
+        },
+        {
+            "event_id": "analysis:bd3e774f433015000cde205eae52ab0951abf0a9d6cac5c5982c5cdcb9b72993",
+            "occurred_at": "2026-09-03T07:50:42.524860Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:1d8c73e1f1ef8306d225d47f3fd722e582c1c098610e15926225f37619999c7d",
+            "occurred_at": "2026-09-03T07:50:42.514930Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:0bb691ee24760652347262d0e7e57b64e98a96682a059b26379c407301a2a408",
+            "occurred_at": "2026-09-03T07:50:27.504712Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:5ccd7bbd3f9d92f9f73494aeab0088e51a7a01bf7364ef092396cc929c7e6531",
+            "occurred_at": "2026-09-03T07:50:27.497287Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:89f597f246e5a287a02eb1b4974fc639f88f3d4db980e45b26da70c01c401fe9",
+            "occurred_at": "2026-09-03T07:50:12.474609Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:f373d2422071926374fc324d51774edadf842e072be96439034da5f3078eed2f",
+            "occurred_at": "2026-09-03T07:50:12.468959Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:bf194113a2b92342035c9f462acca91daea7f06f4a3acd8477e0f921b9b72886",
+            "occurred_at": "2026-09-03T07:49:57.445239Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:2c23a621f16cf4f7172bf96200e2ee03d2ed488a52e533f16d019fa801a3a098",
+            "occurred_at": "2026-09-03T07:49:57.437508Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:48a268b5caa4c7fb50f5c0f47a4459c89d6b105953ab938650608518a898c7cb",
+            "occurred_at": "2026-09-03T07:49:42.425804Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:623d175c104d6b654e421049e3e6e38037a1045ed159f39189c37a07579cba4f",
+            "occurred_at": "2026-09-03T07:49:42.418534Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:2d04a4886a1b1fb88961845b4f2637ff4b3dc7628ac525742f0209caececd0b9",
+            "occurred_at": "2026-09-03T07:49:27.396154Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:74b397e7f6d4fd2a518e90714d278b9dc9416821dd109506a1c6404c750c59e0",
+            "occurred_at": "2026-09-03T07:49:27.389434Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:6fd93e56faa0ed25b88cb2e163ddcc267ded04c725832e3f41ffa633ebbfb0d6",
+            "occurred_at": "2026-09-03T07:49:12.363399Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:022a2d5865597678b1e7f101b69ac0e1db6ce3f2ec1ed196a8cdc497c03321b5",
+            "occurred_at": "2026-09-03T07:49:12.353225Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:0547652b783e01ac62a774d19c1f7f2281415f11c0821fe03d21d076fff8b265",
+            "occurred_at": "2026-09-03T07:48:57.329874Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:b0537ab1ef06809aed1742de2bed8ca7592c90ff44e3434217a0cfcd709fbe20",
+            "occurred_at": "2026-09-03T07:48:57.312012Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:d081db00c01ead516b2874177d10d38f0c7e8d50902e7392e9fc5c9dea7156b8",
+            "occurred_at": "2026-09-03T07:48:42.289402Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:3f68e69b5e9c3a965174a1f999f10a7e1b71dc92b5a125dddefe9fdaa5af8eba",
+            "occurred_at": "2026-09-03T07:48:42.279914Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "runtime:2735",
+            "occurred_at": "2026-09-03T07:48:39.331890Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2734",
+            "occurred_at": "2026-09-03T07:48:37.325405Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "failed",
+            "message": "Embedding model call failed.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 134160.11708999577,
+            "safe_error_summary": "ConnectError"
+        },
+        {
+            "event_id": "analysis:37805c37b3355494430d698179232e991285aee1e13e28ed6a6fa042a37357f0",
+            "occurred_at": "2026-09-03T07:48:27.270432Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:54d6dc008468ecf5bc710652cf95264b6768069c4f9dd5819102259a9e7ecc21",
+            "occurred_at": "2026-09-03T07:48:27.264027Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:f2d9f113198963237c2ef3eefbaa9fb5c8b84b8c0709cc51d228adb315bccba8",
+            "occurred_at": "2026-09-03T07:48:12.241559Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:52cebb3fae5fd741f7a03a2945c1e9d3ac22389afcdfa74200b7b35419a5073c",
+            "occurred_at": "2026-09-03T07:48:12.236205Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:e773de23927c19b5cf6e18331f0ff5eae31ae0dadf7d5b0d614a363d43b2e185",
+            "occurred_at": "2026-09-03T07:47:57.213985Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:2575cba86f8365459dd7d49aaad354a5df3bebde1c264af723ade8239d589148",
+            "occurred_at": "2026-09-03T07:47:57.208260Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:ed9964eda0e70faf74e9b5cfaff92e31def018b872793cabb35213b55a596638",
+            "occurred_at": "2026-09-03T07:47:42.186356Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:0538b2b66415d51acbdadb439277926d5c80e09585b135fcdd56efd452b75b33",
+            "occurred_at": "2026-09-03T07:47:42.180357Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:bfbbaad28576bf0f017d243fe7e3923b315ae908af3d350c888ecafed5c5b7da",
+            "occurred_at": "2026-09-03T07:47:27.155231Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:1212d16bd0f1bac1879f56b987aeabc487eb2e73e48014882854c3a1b7ccf71e",
+            "occurred_at": "2026-09-03T07:47:27.147366Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:8a4ae62655547713ad56543473aec7e2ac361f06b329d6b1e2a674671f9f76f7",
+            "occurred_at": "2026-09-03T07:47:12.121072Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:c06832d402259decf92f7a1695feb07dbda230c0e385a6c77948772c0a18ee58",
+            "occurred_at": "2026-09-03T07:47:12.107728Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:409b68aaae1dcd5818e080b235818d6280fa39067f940bf9dfb226dc7ab12148",
+            "occurred_at": "2026-09-03T07:46:57.084284Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:bcfc76983af3cf8938508352fbdd6af8550816c47792b6c03cd2c97c1a41db28",
+            "occurred_at": "2026-09-03T07:46:57.065392Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:0b251bbb0eb34e1744e94dc6e43b474085099bd9fad1632aa32a48760f359d81",
+            "occurred_at": "2026-09-03T07:46:42.039080Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:c7c5f0ce772a322106f62acafc18217c13e40b822237a523e13a6ce168fd136d",
+            "occurred_at": "2026-09-03T07:46:42.025021Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:b5d63ac5213ec0b5c9d39abc422ddbded6a6039b0d17a5e072b465859dc5ca9c",
+            "occurred_at": "2026-09-03T07:46:27.003590Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:3fdf06afcc406d63a308e9bc695b89fc4fb785973396812e30cd500508a426d8",
+            "occurred_at": "2026-09-03T07:46:26.997822Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "runtime:2733",
+            "occurred_at": "2026-09-03T07:46:23.165283Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "started",
+            "message": "Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": null,
+            "safe_error_summary": null
+        },
+        {
+            "event_id": "runtime:2732",
+            "occurred_at": "2026-09-03T07:46:22.157756Z",
+            "stage": "indexing",
+            "operation": "model inference",
+            "status": "failed",
+            "message": "Embedding model call failed.",
+            "run_id": "projection:projection-3f9dcfb9-eb40-488f-b8b8-999e1c3dda0b:000d8bc6-5aea-42d2-8501-f1b8a863a59c",
+            "worker_id": null,
+            "duration_ms": 134328.20064500265,
+            "safe_error_summary": "ConnectError"
+        },
+        {
+            "event_id": "analysis:e58bc25449b0618c31935a546bd2ff89f03091a16747240b79ae2584dc823b7a",
+            "occurred_at": "2026-09-03T07:46:11.975264Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:0061683f0e6d2a4286b386d6c70fe70e395c6aefd80b8286118c27b856b6659d",
+            "occurred_at": "2026-09-03T07:46:11.968146Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:ab40e33b4ae4207506c6912d8ed33dab940779bdea6b15b87d5b6d551977b84d",
+            "occurred_at": "2026-09-03T07:45:56.943951Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:ed03143d0a8c7952f5e51c2727bd8b4de88554e02ac437635512b2784bc1a1ed",
+            "occurred_at": "2026-09-03T07:45:56.935834Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:4d50bc5f7c9e78b1b3783769c442e33ca4e0a7bd1fab5d5b596ed7516846db20",
+            "occurred_at": "2026-09-03T07:45:41.910995Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        },
+        {
+            "event_id": "analysis:26efd7822a2e8bb3373fab54d646fb48c82b851df753a64174d71c9f17f9ea81",
+            "occurred_at": "2026-09-03T07:45:41.902089Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "working",
+            "message": "Analysis job moved to running.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "claimed or recovered expired lease"
+        },
+        {
+            "event_id": "analysis:7209331cc941e113ad552b5aaf0c640b7b9137cb9f641b6a9c5fdeeffb7b3762",
+            "occurred_at": "2026-09-03T07:45:26.875591Z",
+            "stage": "analysis",
+            "operation": "analysis job",
+            "status": "attention",
+            "message": "Analysis job moved to deferred.",
+            "run_id": null,
+            "worker_id": "analysis-75de4166-9b3f-4812-9275-5401b2e9421d",
+            "duration_ms": null,
+            "safe_error_summary": "retrieval index is not ready; 10 current document versions are not indexed"
+        }
+    ]
+}
 
-╭─────────────────────────────────────────────────── Traceback (most recent call last) ───────────────────────────────────────────────────╮
-│ /usr/local/lib/python3.13/site-packages/fi_intel/cli.py:510 in db_migrate                                                               │
-│                                                                                                                                         │
-│   507 │   from fi_intel.db.migrations import PostgresMigrationRunner                                                                    │
-│   508 │                                                                                                                                 │
-│   509 │   settings = Settings()                                                                                                         │
-│ ❱ 510 │   applied = asyncio.run(PostgresMigrationRunner(settings.postgres_dsn).apply())                                                 │
-│   511 │   if not applied:                                                                                                               │
-│   512 │   │   print("postgres schema is current")  # noqa: T201                                                                         │
-│   513 │   │   return                                                                                                                    │
-│                                                                                                                                         │
-│ /usr/local/lib/python3.13/asyncio/runners.py:196 in run                                                                                 │
-│                                                                                                                                         │
-│   193 │   │   │   "asyncio.run() cannot be called from a running event loop")                                                           │
-│   194 │                                                                                                                                 │
-│   195 │   with Runner(debug=debug, loop_factory=loop_factory) as runner:                                                                │
-│ ❱ 196 │   │   return runner.run(main)                                                                                                   │
-│   197                                                                                                                                   │
-│   198                                                                                                                                   │
-│   199 def _cancel_all_tasks(loop):                                                                                                      │
-│                                                                                                                                         │
-│ /usr/local/lib/python3.13/asyncio/runners.py:119 in run                                                                                 │
-│                                                                                                                                         │
-│   116 │   │                                                                                                                             │
-│   117 │   │   self._interrupt_count = 0                                                                                                 │
-│   118 │   │   try:                                                                                                                      │
-│ ❱ 119 │   │   │   return self._loop.run_until_complete(task)                                                                            │
-│   120 │   │   except exceptions.CancelledError:                                                                                         │
-│   121 │   │   │   if self._interrupt_count > 0:                                                                                         │
-│   122 │   │   │   │   uncancel = getattr(task, "uncancel", None)                                                                        │
-│                                                                                                                                         │
-│ /usr/local/lib/python3.13/asyncio/base_events.py:726 in run_until_complete                                                              │
-│                                                                                                                                         │
-│    723 │   │   if not future.done():                                                                                                    │
-│    724 │   │   │   raise RuntimeError('Event loop stopped before Future completed.')                                                    │
-│    725 │   │                                                                                                                            │
-│ ❱  726 │   │   return future.result()                                                                                                   │
-│    727 │                                                                                                                                │
-│    728 │   def stop(self):                                                                                                              │
-│    729 │   │   """Stop running the event loop.                                                                                          │
-│                                                                                                                                         │
-│ /usr/local/lib/python3.13/site-packages/fi_intel/db/migrations.py:130 in apply                                                          │
-│                                                                                                                                         │
-│   127 │   │   │   await conn.close()                                                                                                    │
-│   128 │                                                                                                                                 │
-│   129 │   async def apply(self) -> list[AppliedMigration]:                                                                              │
-│ ❱ 130 │   │   plan = self.plan()                                                                                                        │
-│   131 │   │   conn = await asyncpg.connect(self._dsn)                                                                                   │
-│   132 │   │   applied_now: list[AppliedMigration] = []                                                                                  │
-│   133 │   │   try:                                                                                                                      │
-│                                                                                                                                         │
-│ /usr/local/lib/python3.13/site-packages/fi_intel/db/migrations.py:111 in plan                                                           │
-│                                                                                                                                         │
-│   108 │   │   self._deploy_directory = deploy_directory                                                                                 │
-│   109 │                                                                                                                                 │
-│   110 │   def plan(self) -> tuple[Migration, ...]:                                                                                      │
-│ ❱ 111 │   │   return discover_migrations(self._deploy_directory)                                                                        │
-│   112 │                                                                                                                                 │
-│   113 │   async def status(self) -> tuple[list[AppliedMigration], list[Migration]]:                                                     │
-│   114 │   │   plan = self.plan()                                                                                                        │
-│                                                                                                                                         │
-│ /usr/local/lib/python3.13/site-packages/fi_intel/db/migrations.py:57 in discover_migrations                                             │
-│                                                                                                                                         │
-│    54 │   baseline = deploy / "init.sql"                                                                                                │
-│    55 │   migration_directory = deploy / "migrations"                                                                                   │
-│    56 │   if not baseline.is_file():                                                                                                    │
-│ ❱  57 │   │   raise MigrationPlanError(f"baseline migration is missing: {baseline}")                                                    │
-│    58 │   if not migration_directory.is_dir():                                                                                          │
-│    59 │   │   raise MigrationPlanError(f"migration directory is missing: {migration_directory}")                                        │
-│    60                                                                                                                                   │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-MigrationPlanError: baseline migration is missing: /usr/local/lib/python3.13/site-packages/deploy/init.sql
-Error: executing C:\Users\zehassan\bin\podman-compose.BAT --file C:\Users\zehassan\source\repos\market-intelligence\deploy\compose.yml --env-file C:\Users\zehassan\source\repos\market-intelligence\deploy\app.env --profile app run --rm --no-deps projection-worker db migrate: exit status 1
-podman infrastructure error: Command '('C:\\Users\\zehassan\\AppData\\Local\\Programs\\Podman\\podman.EXE', 'compose', '--file', 'C:\\Users\\zehassan\\source\\repos\\market-intelligence\\deploy\\compose.yml', '--env-file', 'C:\\Users\\zehassan\\source\\repos\\market-intelligence\\deploy\\app.env', '--profile', 'app', 'run', '--rm', '--no-deps', 'projection-worker', 'db', 'migrate')' returned non-zero exit status 1.
+{
+    "topic_id": "upcoming-maturities",
+    "label": "Upcoming maturities",
+    "analysis_status": "deferred",
+    "coverage_state": "pending",
+    "as_of": "2026-09-03T04:33:22.939665Z",
+    "message": "Source data is ready; document extraction and indexing are finishing.",
+    "mode": "shadow",
+    "scope_notice": "retrieval index is not ready; 10 current document versions are not indexed",
+    "model_name": null,
+    "model_call_count": 0,
+    "model_failure_count": 0,
+    "run_id": null,
+    "analysis_job_id": "9617154479137b48a727e31a0ca45d0e156c0e8ed6722b5ee2e3d61902dd1abc",
+    "business_date": "2026-09-03",
+    "lifecycle_counts": {},
+    "required_source_count": 1,
+    "successful_source_count": 1,
+    "rejected_candidate_count": 0,
+    "source_statuses": [
+        {
+            "source_id": "sa_sama_news",
+            "display_name": "Saudi Central Bank news",
+            "country": "Saudi Arabia",
+            "source_type": "central_bank",
+            "source_url": "https://sama.gov.sa/en-US/MediaCenter/News/pages/allnews.aspx",
+            "status": "complete",
+            "fetched_at": "2026-09-03T04:29:59.317342Z",
+            "content_hash": null,
+            "candidate_count": 10,
+            "rejected_candidate_count": 0,
+            "detail": "Completed before the analysis pin."
+        }
+    ],
+    "results": []
+}
+
+Skip to pipeline status
+FI
+Intelligence Control Room
+Local GCC intelligence
+Runtime failed
+Updated 11:03:54 AM
+Pause live updates
+Official sources + configured models
+
+See exactly what the system is doing.
+Live worker state, source acquisition, indexing, model calls, agent steps, failures, and results in one place.
+
+Refresh now
+Active work
+1
+stages currently running
+Pending work
+11
+queued or blocked items
+Failures
+2
+current actionable failures
+Knowledge base
+0
+indexed document versions
+End-to-end pipeline
+
+Processing stages
+Working means the stage is active now. Waiting means it has not received ready input.
+
+1. Live source acquisition
+failed
+0/1 configured sources passed their latest coverage check.
+
+active: 0
+pending: 0
+done: 0
+failed: 1
+Last activity: Sep 3, 10:52:37 AM
+2. Archive and canonical ingest
+complete
+Raw assets are archived and converted into immutable document versions.
+
+active: 0
+pending: 0
+done: 70
+failed: 0
+Last activity: Sep 3, 10:36:47 AM
+3. Extraction and projection
+complete
+Documents are extracted, entity-linked, and projected into governed state.
+
+active: 0
+pending: 0
+done: 10
+failed: 0
+Last activity: Sep 3, 11:03:49 AM
+4. Chunking and retrieval index
+working
+0 indexed; 10 still missing. 14 embedding attempt(s) failed in the last hour.
+
+active: 1
+pending: 10
+done: 0
+failed: 0
+Last activity: Sep 3, 11:03:49 AM
+5. Analysis orchestration
+waiting
+The durable job freezes coverage, policy, model, and index inputs.
+
+active: 0
+pending: 1
+done: 0
+failed: 0
+Last activity: Sep 3, 11:03:46 AM
+6. Signal detection
+waiting
+Registered financial patterns identify candidates worth researching.
+
+active: 0
+pending: 0
+done: 0
+failed: 0
+Last activity: never
+7. Agent research and model reasoning
+waiting
+Hybrid retrieval, contradiction search, reranking, reasoning, and entailment run here.
+
+active: 0
+pending: 0
+done: 0
+failed: 0
+Last activity: never
+8. Validation and publication
+waiting
+0 claim decisions and 0 result versions recorded in the last 24 hours; 0 claims were rejected by validation.
+
+active: 0
+pending: 0
+done: 0
+failed: 0
+Last activity: never
+9. On-demand analyst search
+failed
+Interactive questions run as durable governed search jobs.
+
+active: 0
+pending: 0
+done: 0
+failed: 1
+Last activity: Sep 3, 09:41:03 AM
+10. Digest delivery
+waiting
+Scheduled results are assembled and sent through the configured channel.
+
+active: 0
+pending: 0
+done: 0
+failed: 0
+Last activity: never
+Processes
+
+Workers
+Worker	State	Current operation	Heartbeat
+scheduler
+schedule…89a0ae
+idle	
+schedule subscribed topic analysis
+11:03:47 AM
+source
+source-a…a2e335
+idle	
+poll configured sources
+11:03:47 AM
+projection
+projecti…d3d175
+working	
+project, extract, and index documents
+11:03:49 AM
+analysis
+analysis…65dacd
+idle	
+detect and research opportunities
+11:03:46 AM
+search
+search-e…f1ad14
+idle	
+execute analyst searches
+11:03:46 AM
+delivery
+delivery…36db6a
+idle	
+assemble and deliver digests
+11:03:48 AM
+Inference
+
+Model activity
+Role	State	Model	Calls / failures	Latency
+embedding
+1 active call(s)
+working	
+nvidia/llama-3.2-nv-embedqa-1b-v2
+last: succeeded
+884 / 14
+491750 tokens
+2.6s
+11:00:39 AM
+entailment
+not started	
+openai/gpt-oss-120b
+no completed calls
+0 / 0
+0 tokens
+—
+never
+extract
+not started	
+openai/gpt-oss-120b
+no completed calls
+0 / 0
+0 tokens
+—
+never
+reranker
+not started	
+openai/gpt-oss-120b
+no completed calls
+0 / 0
+0 tokens
+—
+never
+research
+not started	
+openai/gpt-oss-120b
+no completed calls
+0 / 0
+0 tokens
+—
+never
+Acquisition
+
+Live sources
+Every configured source is shown, including sources that have never run.
+
+Source	State	Last activity	Discovered	Committed	Quarantined	Detail
+Saudi Central Bank news
+Saudi Arabia · sa_sama_news
+failed	
+Sep 3, 10:52:37 AM
+run 89ccc01f…987f20
+0
+0 acquired
+0
+0 unchanged
+0
+RetryableSourceError: RetryableSourceError (reason=network_timeout, cause=ConnectTimeout, message_sha256=dadb49152b8ae564ef3930e45d07f846828cfec61878a186fe8b4c0d870ac51b)
+Debugging
+
+Activity log
+200 of 200 events
+Copy diagnostics
+Stage
+All stages
+Status
+All statuses
+Find
+operation, message, run ID
+11:03:46 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…65dacd · retrieval index is not ready; 10 current document versions are not indexed
+11:03:46 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…65dacd · claimed or recovered expired lease
+11:03:31 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…65dacd · retrieval index is not ready; 10 current document versions are not indexed
+11:03:31 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…65dacd · claimed or recovered expired lease
+11:03:16 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…65dacd · retrieval index is not ready; 10 current document versions are not indexed
+11:03:16 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…65dacd · claimed or recovered expired lease
+11:03:00 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…65dacd · retrieval index is not ready; 10 current document versions are not indexed
+11:03:00 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…65dacd · claimed or recovered expired lease
+11:02:45 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…65dacd · retrieval index is not ready; 10 current document versions are not indexed
+11:02:45 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…65dacd · claimed or recovered expired lease
+11:02:30 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…65dacd · retrieval index is not ready; 10 current document versions are not indexed
+11:02:30 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…65dacd · claimed or recovered expired lease
+11:02:15 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…65dacd · retrieval index is not ready; 10 current document versions are not indexed
+11:02:15 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…65dacd · claimed or recovered expired lease
+11:02:03 AM
+delivery
+started
+assemble and deliver digests: Worker loop started.
+run worker-l…6f85e8 · worker delivery…36db6a
+11:02:01 AM
+search
+started
+execute analyst searches: Worker loop started.
+run worker-l…3f8379 · worker search-e…f1ad14
+11:02:00 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…65dacd · retrieval index is not ready; 10 current document versions are not indexed
+11:02:00 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…65dacd · claimed or recovered expired lease
+11:02:00 AM
+analysis
+started
+detect and research opportunities: Worker loop started.
+run worker-l…78b5ed · worker analysis…65dacd
+11:01:59 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…c1cf43
+11:01:59 AM
+projection
+started
+project, extract, and index documents: Worker loop started.
+run worker-l…b2383d · worker projecti…d3d175
+11:01:47 AM
+source
+started
+poll configured sources: Worker loop started.
+run worker-l…f527fb · worker source-a…a2e335
+11:01:47 AM
+scheduler
+started
+schedule subscribed topic analysis: Worker loop started.
+run worker-l…fe47a4 · worker schedule…89a0ae
+11:00:39 AM
+projection
+failed
+project, extract, and index documents: Worker iteration failed; the loop will retry.
+run worker-l…46eeb9 · worker projecti…3dda0b · 10058 ms · RetrievalIndexBuildError (reason=database_error, cause=DatatypeMismatchError, message_sha256=0ff893c47812112f42bbb90e14c98d6ea9a6ab44d45ec34bfa243cf7219ccdca)
+11:00:39 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…2cacb6 · 591 ms
+11:00:39 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…2cacb6
+11:00:39 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…2cacb6 · 517 ms
+11:00:38 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…2cacb6
+11:00:38 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…2cacb6 · 863 ms
+11:00:37 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…2cacb6
+11:00:37 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…2cacb6 · 754 ms
+11:00:36 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…2cacb6
+11:00:36 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…2cacb6 · 1310 ms
+11:00:35 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…2cacb6
+11:00:35 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…2cacb6 · 324 ms
+11:00:35 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…2cacb6
+11:00:35 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…2cacb6 · 2232 ms
+11:00:33 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…2cacb6
+11:00:33 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…2cacb6 · 518 ms
+11:00:32 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…2cacb6
+11:00:32 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…2cacb6 · 852 ms
+11:00:31 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…2cacb6
+11:00:31 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…2cacb6 · 673 ms
+11:00:31 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…2cacb6
+11:00:31 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…2cacb6 · 135 ms
+11:00:30 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…2cacb6
+11:00:30 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…2cacb6 · 1125 ms
+11:00:29 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…2cacb6
+11:00:14 AM
+projection
+failed
+project, extract, and index documents: Worker iteration failed; the loop will retry.
+run worker-l…46eeb9 · worker projecti…3dda0b · 966878 ms · RetrievalIndexBuildError (cause=ConnectError, message_sha256=0ff893c47812112f42bbb90e14c98d6ea9a6ab44d45ec34bfa243cf7219ccdca)
+11:00:14 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…63a59c · 799 ms
+11:00:13 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+11:00:13 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…63a59c · 1305 ms
+11:00:13 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+11:00:13 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+11:00:12 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+11:00:12 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…63a59c · 994 ms
+11:00:11 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+11:00:11 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…63a59c · 1600 ms
+11:00:09 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+11:00:09 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…63a59c · 851 ms
+11:00:09 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+11:00:09 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…63a59c · 271 ms
+11:00:08 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+11:00:08 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…63a59c · 825 ms
+11:00:07 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+11:00:07 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…63a59c · 707 ms
+11:00:07 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+11:00:07 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…63a59c · 640 ms
+11:00:06 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+11:00:06 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…63a59c · 1156 ms
+11:00:05 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+11:00:01 AM
+indexing
+failed
+model inference: Embedding model call failed.
+run projecti…63a59c · 135214 ms · ConnectError
+10:59:58 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:59:58 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:59:43 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:59:43 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:59:28 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:59:28 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:59:13 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:59:13 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:58:58 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:58:58 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:58:43 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:58:43 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:58:28 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:58:28 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:58:13 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:58:13 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:57:58 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:57:58 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:57:46 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+10:57:44 AM
+indexing
+failed
+model inference: Embedding model call failed.
+run projecti…63a59c · 134161 ms · ConnectError
+10:57:43 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:57:43 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:57:28 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:57:28 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:57:13 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:57:13 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:56:58 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:56:58 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:56:43 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:56:43 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:56:28 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:56:28 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:56:13 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:56:13 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:55:58 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:55:58 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:55:43 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:55:43 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:55:29 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+10:55:28 AM
+indexing
+failed
+model inference: Embedding model call failed.
+run projecti…63a59c · 135165 ms · ConnectError
+10:55:28 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:55:28 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:55:13 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:55:13 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:54:58 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:54:58 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:54:42 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:54:42 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:54:27 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:54:27 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:54:12 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:54:12 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:53:57 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:53:57 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:53:42 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:53:42 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:53:27 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:53:27 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:53:13 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+10:53:13 AM
+indexing
+failed
+model inference: Embedding model call failed.
+run projecti…63a59c · 135250 ms · ConnectError
+10:53:12 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:53:12 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:52:57 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:52:57 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:52:42 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:52:42 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:52:37 AM
+source
+failed
+sa_sama_news: Source poll finished: 0 discovered, 0 committed, 0 quarantined.
+run 89ccc01f…987f20 · 48041 ms · RetryableSourceError (reason=network_timeout, cause=ConnectTimeout, message_sha256=dadb49152b8ae564ef3930e45d07f846828cfec61878a186fe8b4c0d870ac51b)
+10:52:27 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:52:27 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:52:12 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:52:12 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:51:57 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:51:57 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:51:42 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:51:42 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:51:27 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:51:27 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:51:12 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:51:12 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:50:58 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+10:50:57 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:50:57 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:50:54 AM
+indexing
+failed
+model inference: Embedding model call failed.
+run projecti…63a59c · 135215 ms · ConnectError
+10:50:42 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:50:42 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:50:27 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:50:27 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:50:12 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:50:12 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:49:57 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:49:57 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:49:42 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:49:42 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:49:27 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:49:27 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:49:12 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:49:12 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:48:57 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:48:57 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:48:42 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:48:42 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:48:39 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+10:48:37 AM
+indexing
+failed
+model inference: Embedding model call failed.
+run projecti…63a59c · 134160 ms · ConnectError
+10:48:27 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:48:27 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:48:12 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:48:12 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:47:57 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:47:57 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:47:42 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:47:42 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:47:27 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:47:27 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:47:12 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:47:12 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:46:57 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:46:57 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:46:42 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:46:42 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:46:27 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:46:26 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:46:23 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…63a59c
+10:46:22 AM
+indexing
+failed
+model inference: Embedding model call failed.
+run projecti…63a59c · 134328 ms · ConnectError
+10:46:11 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:46:11 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:45:56 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+10:45:56 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…e9421d · claimed or recovered expired lease
+10:45:41 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…e9421d · retrieval index is not ready; 10 current document versions are not indexed
+This log intentionally excludes prompts, credentials, private document text, and raw model payloads.
+
+On-demand
+
+Ask the knowledge base
+Runs governed hybrid retrieval and model reasoning over indexed evidence.
+
+Research question
+What upcoming funding needs or refinancing gaps are visible in the current indexed evidence?
+
+Run research
+No research request is running.
+Scheduled intelligence
+
+Choose what you want to follow
+Run selected topic
+Upcoming maturities
+Funding needs where complete coverage found no announced refinancing.
+Unfollow
+Inspect
+Rating and capital pressure
+Rating deterioration combined with a material capital movement.
+Follow
+Inspect
+Source data is ready; document extraction and indexing are finishing. · retrieval index is not ready; 10 current document versions are not indexed
+Sources 1/1 · analysis deferred
+No analysis model call recorded yet
+Today's opportunities
+The pipeline is still working. Follow its exact stage above.
