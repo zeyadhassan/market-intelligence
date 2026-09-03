@@ -36,6 +36,12 @@ library and Podman: it builds the application image, runs preflight and database
 migrations inside that image, and then starts the services. It applies
 the ordered migrations through `0029_retire_superseded_maturity_topic.sql` before
 starting the application workers.
+
+Migration `0029` preserves the append-only topic ledger and validates that the
+newest observation-only topic version exists. If an older image failed that
+migration with `analysis_topic_v4 records are immutable`, transfer the corrected
+file and rerun `app-up`; the failed migration transaction was not recorded as
+applied, so no database reset or manual schema edit is required.
 After startup, open `/` or `/stage-one`. The underlying authenticated snapshot
 is also available at `GET /v1/operations/dashboard?event_limit=200`.
 

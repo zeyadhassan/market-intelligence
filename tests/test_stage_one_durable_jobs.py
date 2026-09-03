@@ -162,10 +162,11 @@ def test_topic_model_usage_is_attributed_to_the_analysis_run_only() -> None:
     assert "subject_id = ANY" not in source
 
 
-def test_topic_migration_retires_superseded_active_versions() -> None:
+def test_topic_migration_preserves_append_only_history() -> None:
     migration = Path(
         "deploy/migrations/0029_retire_superseded_maturity_topic.sql"
     ).read_text(encoding="utf-8")
 
-    assert "SET active = FALSE" in migration
-    assert "version <> 'topic-v2'" in migration
+    assert "UPDATE analysis_topic_v4" not in migration
+    assert "version = 'topic-v2'" in migration
+    assert "RAISE EXCEPTION" in migration

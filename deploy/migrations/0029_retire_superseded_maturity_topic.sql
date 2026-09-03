@@ -1,8 +1,19 @@
--- Keep exactly one active governed version for the maturity topic. Historical
--- runs retain their recorded topic version and detector executions.
+-- analysis_topic_v4 is an append-only governance ledger. Historical topic
+-- versions must not be updated or deleted; PostgresTopicCatalog resolves the
+-- newest eligible version by created_at and version. Validate that the
+-- observation-only successor was installed, which logically supersedes v1
+-- while preserving the policy inputs recorded by historical runs.
 
-UPDATE analysis_topic_v4
-SET active = FALSE
-WHERE topic_id = 'upcoming-maturities'
-  AND version <> 'topic-v2'
-  AND active;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM analysis_topic_v4
+        WHERE topic_id = 'upcoming-maturities'
+          AND version = 'topic-v2'
+          AND active
+    ) THEN
+        RAISE EXCEPTION 'active upcoming-maturities topic-v2 is required';
+    END IF;
+END
+$$;
