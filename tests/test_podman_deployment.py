@@ -66,6 +66,13 @@ def test_podman_compose_uses_migration_only_bootstrap_and_qualified_images() -> 
 
     containerfile = Path("deploy/Containerfile").read_text(encoding="utf-8")
     assert 'ENTRYPOINT ["fi-intel"]' in containerfile
+    assert "COPY deploy/__init__.py deploy/init.sql /app/deploy/" in containerfile
+    assert "COPY deploy/migrations /app/deploy/migrations" in containerfile
+    assert "COPY deploy /app/deploy" not in containerfile
+
+    packaging = Path("pyproject.toml").read_text(encoding="utf-8")
+    assert 'include = ["fi_intel*", "evals*", "deploy*"]' in packaging
+    assert 'deploy = ["*.sql", "migrations/*.sql"]' in packaging
 
 
 def test_podman_launcher_enforces_infrastructure_suite() -> None:

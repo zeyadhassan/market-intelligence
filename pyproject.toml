@@ -52,10 +52,11 @@ dev = [
 fi-intel = "fi_intel.cli:app"
 
 [tool.setuptools.packages.find]
-include = ["fi_intel*", "evals*"]
+include = ["fi_intel*", "evals*", "deploy*"]
 
 [tool.setuptools.package-data]
 fi_intel = ["synth/data/*.json", "synth/data/*.xml"]
+deploy = ["*.sql", "migrations/*.sql"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -12,6 +12,9 @@ RUN groupadd --system fi-intel \
 COPY pyproject.toml README.md /app/
 COPY fi_intel /app/fi_intel
 COPY evals /app/evals
+# Package schema assets without ever copying the operator-owned deploy/app.env.
+COPY deploy/__init__.py deploy/init.sql /app/deploy/
+COPY deploy/migrations /app/deploy/migrations
 RUN python -m pip install --no-cache-dir .
 
 RUN mkdir -p /app/.fi-intel/archive && chown -R fi-intel:fi-intel /app
