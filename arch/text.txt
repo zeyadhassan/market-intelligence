@@ -1,8 +1,75 @@
-PS C:\Users\zehassan\source\repos\market-intelligence> python .\deploy\podman_infra.py app-up
-Traceback (most recent call last):
-  File "<frozen runpy>", line 203, in _run_module_as_main
-  File "<frozen runpy>", line 88, in _run_code
-  File "C:\Users\zehassan\source\repos\market-intelligence\fi_intel\cli.py", line 12, in <module>
-    import typer
-ModuleNotFoundError: No module named 'typer'
-podman infrastructure error: Command '('C:\\Program Files\\Python314\\python.exe', '-m', 'fi_intel.cli', 'preflight')' returned non-zero exit status 1.
+
+╭─────────────────────────────────────────────────── Traceback (most recent call last) ───────────────────────────────────────────────────╮
+│ /usr/local/lib/python3.13/site-packages/fi_intel/cli.py:510 in db_migrate                                                               │
+│                                                                                                                                         │
+│   507 │   from fi_intel.db.migrations import PostgresMigrationRunner                                                                    │
+│   508 │                                                                                                                                 │
+│   509 │   settings = Settings()                                                                                                         │
+│ ❱ 510 │   applied = asyncio.run(PostgresMigrationRunner(settings.postgres_dsn).apply())                                                 │
+│   511 │   if not applied:                                                                                                               │
+│   512 │   │   print("postgres schema is current")  # noqa: T201                                                                         │
+│   513 │   │   return                                                                                                                    │
+│                                                                                                                                         │
+│ /usr/local/lib/python3.13/asyncio/runners.py:196 in run                                                                                 │
+│                                                                                                                                         │
+│   193 │   │   │   "asyncio.run() cannot be called from a running event loop")                                                           │
+│   194 │                                                                                                                                 │
+│   195 │   with Runner(debug=debug, loop_factory=loop_factory) as runner:                                                                │
+│ ❱ 196 │   │   return runner.run(main)                                                                                                   │
+│   197                                                                                                                                   │
+│   198                                                                                                                                   │
+│   199 def _cancel_all_tasks(loop):                                                                                                      │
+│                                                                                                                                         │
+│ /usr/local/lib/python3.13/asyncio/runners.py:119 in run                                                                                 │
+│                                                                                                                                         │
+│   116 │   │                                                                                                                             │
+│   117 │   │   self._interrupt_count = 0                                                                                                 │
+│   118 │   │   try:                                                                                                                      │
+│ ❱ 119 │   │   │   return self._loop.run_until_complete(task)                                                                            │
+│   120 │   │   except exceptions.CancelledError:                                                                                         │
+│   121 │   │   │   if self._interrupt_count > 0:                                                                                         │
+│   122 │   │   │   │   uncancel = getattr(task, "uncancel", None)                                                                        │
+│                                                                                                                                         │
+│ /usr/local/lib/python3.13/asyncio/base_events.py:726 in run_until_complete                                                              │
+│                                                                                                                                         │
+│    723 │   │   if not future.done():                                                                                                    │
+│    724 │   │   │   raise RuntimeError('Event loop stopped before Future completed.')                                                    │
+│    725 │   │                                                                                                                            │
+│ ❱  726 │   │   return future.result()                                                                                                   │
+│    727 │                                                                                                                                │
+│    728 │   def stop(self):                                                                                                              │
+│    729 │   │   """Stop running the event loop.                                                                                          │
+│                                                                                                                                         │
+│ /usr/local/lib/python3.13/site-packages/fi_intel/db/migrations.py:130 in apply                                                          │
+│                                                                                                                                         │
+│   127 │   │   │   await conn.close()                                                                                                    │
+│   128 │                                                                                                                                 │
+│   129 │   async def apply(self) -> list[AppliedMigration]:                                                                              │
+│ ❱ 130 │   │   plan = self.plan()                                                                                                        │
+│   131 │   │   conn = await asyncpg.connect(self._dsn)                                                                                   │
+│   132 │   │   applied_now: list[AppliedMigration] = []                                                                                  │
+│   133 │   │   try:                                                                                                                      │
+│                                                                                                                                         │
+│ /usr/local/lib/python3.13/site-packages/fi_intel/db/migrations.py:111 in plan                                                           │
+│                                                                                                                                         │
+│   108 │   │   self._deploy_directory = deploy_directory                                                                                 │
+│   109 │                                                                                                                                 │
+│   110 │   def plan(self) -> tuple[Migration, ...]:                                                                                      │
+│ ❱ 111 │   │   return discover_migrations(self._deploy_directory)                                                                        │
+│   112 │                                                                                                                                 │
+│   113 │   async def status(self) -> tuple[list[AppliedMigration], list[Migration]]:                                                     │
+│   114 │   │   plan = self.plan()                                                                                                        │
+│                                                                                                                                         │
+│ /usr/local/lib/python3.13/site-packages/fi_intel/db/migrations.py:57 in discover_migrations                                             │
+│                                                                                                                                         │
+│    54 │   baseline = deploy / "init.sql"                                                                                                │
+│    55 │   migration_directory = deploy / "migrations"                                                                                   │
+│    56 │   if not baseline.is_file():                                                                                                    │
+│ ❱  57 │   │   raise MigrationPlanError(f"baseline migration is missing: {baseline}")                                                    │
+│    58 │   if not migration_directory.is_dir():                                                                                          │
+│    59 │   │   raise MigrationPlanError(f"migration directory is missing: {migration_directory}")                                        │
+│    60                                                                                                                                   │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+MigrationPlanError: baseline migration is missing: /usr/local/lib/python3.13/site-packages/deploy/init.sql
+Error: executing C:\Users\zehassan\bin\podman-compose.BAT --file C:\Users\zehassan\source\repos\market-intelligence\deploy\compose.yml --env-file C:\Users\zehassan\source\repos\market-intelligence\deploy\app.env --profile app run --rm --no-deps projection-worker db migrate: exit status 1
+podman infrastructure error: Command '('C:\\Users\\zehassan\\AppData\\Local\\Programs\\Podman\\podman.EXE', 'compose', '--file', 'C:\\Users\\zehassan\\source\\repos\\market-intelligence\\deploy\\compose.yml', '--env-file', 'C:\\Users\\zehassan\\source\\repos\\market-intelligence\\deploy\\app.env', '--profile', 'app', 'run', '--rm', '--no-deps', 'projection-worker', 'db', 'migrate')' returned non-zero exit status 1.
