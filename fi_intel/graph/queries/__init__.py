@@ -318,6 +318,77 @@ MATURITY_WALL = Pattern(
     ),
 )
 
+# The live developer topic uses an observation-only counterpart to the
+# negative-inference detector above.  It can surface a supported maturity
+# without turning the absence of a REFINANCES assertion into a factual claim.
+# MATURITY_WALL remains registered for deployments that provision the
+# entity-specific factual completeness contracts it requires.
+UPCOMING_MATURITY = Pattern(
+    name="upcoming_maturity_observed",
+    version="1.0.0",
+    precision_lineage="1",
+    hypothesis="A material near-term maturity can create a time-sensitive funding need.",
+    eligible_outcome_kinds=_MANDATE_OUTCOMES,
+    required_claim_types=frozenset({EdgeType.MATURES_ON, EdgeType.ISSUES}),
+    required_attributes=frozenset({"amount_usd_mn", "currency"}),
+    freshness_days=180,
+    prediction_horizon_days=395,
+    materiality_thresholds=(
+        MaterialityThreshold(
+            attribute="amount_usd_mn",
+            operator=MaterialityOperator.GREATER_THAN_OR_EQUAL,
+            value=250.0,
+            unit="USD million",
+            query_expression="a.fact_amount_usd_mn",
+        ),
+    ),
+    coverage_prerequisites=(
+        CoveragePrerequisite(
+            name="maturity-and-issuer-observed",
+            description="The maturity and issuing organization are explicitly asserted.",
+            required_attributes=frozenset({"amount_usd_mn", "currency"}),
+        ),
+    ),
+    material_arguments=("instrument", "currency"),
+    priority=80,
+    historical_precision=None,
+    allowed_currencies=_USD_AMOUNT_SCOPE,
+    owner=_OWNER,
+    reviewer=_REVIEWER,
+    deployment_state=PatternDeploymentState.PILOT,
+    authorization_domain=_AUTHORIZATION_DOMAIN,
+    query_fixture_ids=("gulf_meridian_dcm", "steady_state_decoy"),
+    cypher_template=(
+        """
+        MATCH (org:Entity {node_type: 'Organization'})
+        MATCH (a:Assertion {predicate: 'MATURES_ON'})-[:SUBJECT]->(inst:Entity)
+        MATCH (a)-[:OBJECT]->(mat:Entity)
+        MATCH (ai:Assertion {predicate: 'ISSUES'})-[:SUBJECT]->(org)
+        MATCH (ai)-[:OBJECT]->(inst)
+        WHERE {pin:a} AND {pin:ai} AND {fresh:a} AND {fresh:ai}
+          AND {access:a} AND {access:ai}
+          {materiality}
+          {currency_scope:a}
+          AND datetime(a.valid_from) <= datetime($as_of) + duration({days: $window_days})
+          AND datetime(a.valid_from) >= datetime($as_of)
+        RETURN org.key AS entity_key, org.display_name AS entity_name,
+               inst.key AS instrument, a.fact_currency AS currency,
+               a.fact_amount_usd_mn AS amount_usd_mn,
+               a.source_doc_id AS doc, a.properties_json AS props,
+               [a.assertion_id, ai.assertion_id] AS _assertion_ids,
+               [a.source_id, ai.source_id] AS _source_ids,
+               [a.source_doc_id, ai.source_doc_id] AS _source_doc_ids,
+               [a.barrier_side, ai.barrier_side] AS _barrier_sides,
+               CASE WHEN a.recorded_at >= ai.recorded_at
+                    THEN a.recorded_at ELSE ai.recorded_at END AS _latest_recorded_at,
+               CASE WHEN a.fact_amount_usd_mn >= $materiality_threshold_0 * 2.0 THEN 1.0
+                    ELSE a.fact_amount_usd_mn / ($materiality_threshold_0 * 2.0)
+                    END AS _materiality_score,
+               (a.confidence + ai.confidence) / 2.0 AS _evidence_confidence
+        """
+    ),
+)
+
 RATING_PLUS_CAPITAL = Pattern(
     name="negative_rating_action_with_capital_decline",
     version="3.1.0",
@@ -583,10 +654,80 @@ AT1_CALL = Pattern(
     ),
 )
 
+# Observation-only counterpart to AT1_CALL.  This reports the supported call
+# date and amount but deliberately makes no statement about missing
+# refinancing evidence.
+UPCOMING_AT1_CALL = Pattern(
+    name="at1_call_approaching_observed",
+    version="1.0.0",
+    precision_lineage="1",
+    hypothesis="A material approaching AT1 call can create a time-sensitive funding need.",
+    eligible_outcome_kinds=_MANDATE_OUTCOMES,
+    required_claim_types=frozenset({EdgeType.CALLABLE_ON, EdgeType.ISSUES}),
+    required_attributes=frozenset({"class", "amount_usd_mn", "currency"}),
+    freshness_days=180,
+    prediction_horizon_days=548,
+    materiality_thresholds=(
+        MaterialityThreshold(
+            attribute="amount_usd_mn",
+            operator=MaterialityOperator.GREATER_THAN_OR_EQUAL,
+            value=250.0,
+            unit="USD million",
+            query_expression="a.fact_amount_usd_mn",
+        ),
+    ),
+    coverage_prerequisites=(
+        CoveragePrerequisite(
+            name="at1-call-and-issuer-observed",
+            description="The AT1 call and issuing organization are explicitly asserted.",
+            required_attributes=frozenset({"class", "amount_usd_mn", "currency"}),
+        ),
+    ),
+    material_arguments=("instrument", "instrument_class", "currency"),
+    priority=65,
+    historical_precision=None,
+    allowed_currencies=_USD_AMOUNT_SCOPE,
+    owner=_OWNER,
+    reviewer=_REVIEWER,
+    deployment_state=PatternDeploymentState.PILOT,
+    authorization_domain=_AUTHORIZATION_DOMAIN,
+    query_fixture_ids=("gulf_meridian_dcm",),
+    cypher_template=(
+        """
+        MATCH (org:Entity {node_type: 'Organization'})
+        MATCH (a:Assertion {predicate: 'CALLABLE_ON'})-[:SUBJECT]->(inst:Entity)
+        MATCH (ai:Assertion {predicate: 'ISSUES'})-[:SUBJECT]->(org)
+        MATCH (ai)-[:OBJECT]->(inst)
+        WHERE {pin:a} AND {pin:ai} AND {fresh:a} AND {fresh:ai}
+          AND {access:a} AND {access:ai}
+          AND a.fact_class = 'at1'
+          {materiality}
+          {currency_scope:a}
+          AND datetime(a.valid_from) <= datetime($as_of) + duration({days: $window_days})
+          AND datetime(a.valid_from) >= datetime($as_of)
+        RETURN org.key AS entity_key, org.display_name AS entity_name,
+               inst.key AS instrument, a.fact_class AS instrument_class,
+               a.fact_currency AS currency, a.source_doc_id AS doc,
+               [a.assertion_id, ai.assertion_id] AS _assertion_ids,
+               [a.source_id, ai.source_id] AS _source_ids,
+               [a.source_doc_id, ai.source_doc_id] AS _source_doc_ids,
+               [a.barrier_side, ai.barrier_side] AS _barrier_sides,
+               CASE WHEN a.recorded_at >= ai.recorded_at
+                    THEN a.recorded_at ELSE ai.recorded_at END AS _latest_recorded_at,
+               CASE WHEN a.fact_amount_usd_mn >= $materiality_threshold_0 * 2.0 THEN 1.0
+                    ELSE a.fact_amount_usd_mn / ($materiality_threshold_0 * 2.0)
+                    END AS _materiality_score,
+               (a.confidence + ai.confidence) / 2.0 AS _evidence_confidence
+        """
+    ),
+)
+
 ALL_PATTERNS: tuple[Pattern, ...] = (
     MATURITY_WALL,
+    UPCOMING_MATURITY,
     RATING_PLUS_CAPITAL,
     LEADERSHIP,
     PROGRAMME,
     AT1_CALL,
+    UPCOMING_AT1_CALL,
 )

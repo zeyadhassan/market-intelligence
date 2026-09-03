@@ -260,6 +260,13 @@ class POCHeuristicReasoningModel:
             "The instrument is repaid from liquidity or a refinancing is announced "
             "without a mandate.",
         ),
+        "upcoming_maturity_observed": (
+            "Upcoming sukuk maturity warrants funding coverage",
+            "The observed USD 500 million maturity supports immediate DCM coverage.",
+            OpportunityClaimKind.TIMING,
+            ("matures", "500"),
+            "The instrument is repaid, refinanced, or the maturity record is corrected.",
+        ),
     }
 
     async def research(self, request: ResearchRequest) -> ResearchResponse:

@@ -224,7 +224,11 @@ def _evaluation(
         sorted({signal.pattern for signal in signals if signal.entity_key == GULF_MERIDIAN_LEI})
     )
     missing = tuple(sorted(set(expected) - set(observed)))
-    unexpected = tuple(sorted(set(observed) - set(expected)))
+    # The service-free fixture still measures the original labelled detector
+    # set. Observation-only derivatives are product-safe views of the same
+    # positive facts and are not additional labelled outcomes.
+    observation_only = {"upcoming_maturity_observed", "at1_call_approaching_observed"}
+    unexpected = tuple(sorted(set(observed) - set(expected) - observation_only))
     non_positive = [signal for signal in signals if signal.entity_key != GULF_MERIDIAN_LEI]
     docs_by_id = {(document.source_id, document.doc_id): document for document in documents}
     lookahead = sum(

@@ -97,8 +97,7 @@ def test_topic_subscription_analysis_and_evaluation_loop() -> None:
     assert len(payload["results"]) == 1
     result = payload["results"][0]
     assert result["title"] == (
-        "The USD 500 million maturity with no announced refinancing supports immediate "
-        "DCM coverage."
+        "The observed USD 500 million maturity supports immediate DCM coverage."
     )
     assert result["evidence"]
     assert result["latest_evaluation"] is None

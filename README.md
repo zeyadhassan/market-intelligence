@@ -29,7 +29,7 @@ python deploy/podman_infra.py diagnose
 project dependencies on first use. `app-up` itself needs only Python's standard
 library and Podman: it builds the application image, runs preflight and database
 migrations inside that image, and then starts the services. It applies
-`0027_runtime_observability.sql` before starting the application workers.
+`0028_observation_only_maturity_topic.sql` before starting the application workers.
 After startup, open `/` or `/stage-one`. The underlying authenticated snapshot
 is also available at `GET /v1/operations/dashboard?event_limit=200`.
 
@@ -73,3 +73,16 @@ When ready to restore the full governed source set, change:
 ```text
 FI_INTEL_COVERAGE_REQUIRED_SOURCE_IDS=
 ```
+
+The developer `Upcoming maturities` topic reports only maturities and AT1 calls
+that are positively asserted in governed evidence. The stronger
+`maturity_wall_no_refi` and `at1_call_approaching_no_refi` detectors remain
+registered, but are not enabled by this topic: they require predeclared,
+entity-and-instrument-specific rows in `factual_coverage_contract_v3`. A
+successful source poll alone is intentionally insufficient to claim that no
+refinancing was announced.
+
+An on-demand search identity includes the active retrieval-index revision. If a
+question failed while the index was missing or building, submitting the same
+question again after the index becomes ready creates new durable work instead
+of returning the earlier terminal failure.

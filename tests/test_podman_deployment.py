@@ -105,6 +105,17 @@ def test_podman_launcher_enforces_infrastructure_suite() -> None:
     assert "FI_INTEL_SOURCE_HTTP_PROXY" in bootstrap
 
 
+def test_latest_migration_selects_observation_only_maturity_detectors() -> None:
+    migration = Path(
+        "deploy/migrations/0028_observation_only_maturity_topic.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "'upcoming-maturities', 'topic-v2'" in migration
+    assert "upcoming_maturity_observed" in migration
+    assert "at1_call_approaching_observed" in migration
+    assert "refinancing absence is not inferred" in migration
+
+
 def test_podman_launcher_accepts_explicit_binary_override(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

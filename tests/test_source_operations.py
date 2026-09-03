@@ -27,6 +27,8 @@ def test_configured_source_scope_covers_every_stage_one_pattern() -> None:
     assert set(policy) == {
         "maturity_wall_no_refi",
         "at1_call_approaching_no_refi",
+        "upcoming_maturity_observed",
+        "at1_call_approaching_observed",
         "negative_rating_action_with_capital_decline",
     }
     assert set(policy.values()) == {frozenset({"sa_sama_news"})}

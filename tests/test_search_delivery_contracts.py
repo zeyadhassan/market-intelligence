@@ -1,7 +1,7 @@
 """Policy, injection, and restart contracts for search and development email."""
 
 import inspect
-from datetime import date
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -18,6 +18,8 @@ from fi_intel.application.delivery import (
 from fi_intel.application.search import (
     InteractiveRetrievalPlan,
     SearchRoute,
+    _patterns_for_query,
+    _search_identity,
     plan_search,
 )
 from fi_intel.config import Settings
@@ -28,6 +30,33 @@ def test_search_router_selects_all_four_typed_routes() -> None:
     assert plan_search("Example Bank profile").route is SearchRoute.ENTITY
     assert plan_search("upcoming maturity and refinancing").route is SearchRoute.PATTERN
     assert plan_search("Example Bank refinancing").route is SearchRoute.MIXED
+
+
+def test_maturity_search_uses_observed_facts_and_index_revision_identity() -> None:
+    patterns = _patterns_for_query("upcoming maturity and refinancing")
+    assert patterns == {
+        "upcoming_maturity_observed",
+        "at1_call_approaching_observed",
+    }
+
+    plan = plan_search("upcoming maturity and refinancing")
+    requested_at = datetime(2026, 9, 3, 8, tzinfo=UTC)
+    missing = _search_identity("analyst", "scope", plan, requested_at, None)
+    ready = _search_identity(
+        "analyst",
+        "scope",
+        plan,
+        requested_at,
+        {
+            "embed_model_version": "embed-v1",
+            "embedding_dim": 2048,
+            "chunker_version": "chunk-v1",
+            "status": "ready",
+            "indexed_at": "2026-09-03T08:04:16+00:00",
+        },
+    )
+
+    assert missing != ready
 
 
 def test_search_plan_rejects_arbitrary_relationships_and_unbounded_hops() -> None:

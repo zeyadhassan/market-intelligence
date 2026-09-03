@@ -23,7 +23,13 @@ from fi_intel.graph.coverage import (
     FactualCoverageState,
     SourceOperationsCoverageProvider,
 )
-from fi_intel.graph.queries import CoverageScope
+from fi_intel.graph.queries import (
+    AT1_CALL,
+    CoverageScope,
+    MATURITY_WALL,
+    UPCOMING_AT1_CALL,
+    UPCOMING_MATURITY,
+)
 from fi_intel.results.manifest import (
     CoverageManifest,
     ImmutableResultManifest,
@@ -206,6 +212,17 @@ async def test_negative_inference_requires_entity_specific_factual_contract() ->
     decision = await provider.assess(missing)
     assert decision.complete is False
     assert "no as-of factual completeness contract" in decision.reasons[0]
+
+
+def test_observation_only_maturity_patterns_do_not_make_absence_claims() -> None:
+    for observed, negative in (
+        (UPCOMING_MATURITY, MATURITY_WALL),
+        (UPCOMING_AT1_CALL, AT1_CALL),
+    ):
+        assert observed.computed_coverage_scopes == frozenset()
+        assert "REFINANCES" not in observed.cypher
+        assert CoverageScope.FACTUAL_ENTITY in negative.computed_coverage_scopes
+        assert "REFINANCES" in negative.cypher
 
 
 async def test_result_admission_uses_manifest_coverage_and_is_deterministic() -> None:

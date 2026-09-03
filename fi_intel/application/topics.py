@@ -20,8 +20,13 @@ TOPICS = (
     TopicDefinition(
         topic_id="upcoming-maturities",
         label="Upcoming maturities",
-        description="Funding needs where complete coverage found no announced refinancing.",
-        patterns=frozenset({"maturity_wall_no_refi", "at1_call_approaching_no_refi"}),
+        description=(
+            "Material maturities and AT1 calls explicitly supported by current evidence; "
+            "refinancing absence is not inferred."
+        ),
+        patterns=frozenset(
+            {"upcoming_maturity_observed", "at1_call_approaching_observed"}
+        ),
     ),
     TopicDefinition(
         topic_id="ratings-capital-pressure",

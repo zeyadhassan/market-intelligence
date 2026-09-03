@@ -304,5 +304,7 @@ def source_coverage_policy(source_ids: frozenset[str]) -> dict[str, frozenset[st
     return {
         "maturity_wall_no_refi": source_ids,
         "at1_call_approaching_no_refi": source_ids,
+        "upcoming_maturity_observed": source_ids,
+        "at1_call_approaching_observed": source_ids,
         "negative_rating_action_with_capital_decline": source_ids,
     }

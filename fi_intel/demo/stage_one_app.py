@@ -52,6 +52,14 @@ FIXTURE_NOTICE = "Synthetic deterministic fixture - not a production quality or 
 
 
 _FRESHNESS_REASONS = {
+    "upcoming_maturity_observed": (
+        "New in the selected analysis window: the maturity is explicitly supported and inside "
+        "the governed horizon; no inference is made from missing refinancing evidence."
+    ),
+    "at1_call_approaching_observed": (
+        "New in the selected analysis window: the AT1 call is explicitly supported and inside "
+        "the governed horizon; no inference is made from missing refinancing evidence."
+    ),
     "maturity_wall_no_refi": (
         "New in the selected analysis window: the maturity is inside the governed horizon and no "
         "refinancing announcement was found in the fixture evidence."

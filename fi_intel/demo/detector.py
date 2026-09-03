@@ -148,6 +148,8 @@ class POCAssertionDetector:
             "board_approved_issuance_programme": self._programme,
             "maturity_wall_no_refi": self._maturity,
             "at1_call_approaching_no_refi": self._at1_call,
+            "upcoming_maturity_observed": self._maturity_observed,
+            "at1_call_approaching_observed": self._at1_call_observed,
         }
         evaluator = evaluators.get(pattern.name)
         return [] if evaluator is None else evaluator(pattern, assertions, as_of)
@@ -289,6 +291,7 @@ class POCAssertionDetector:
             as_of,
             predicate=EdgeType.MATURES_ON,
             required_class=None,
+            exclude_refinanced=True,
         )
 
     @staticmethod
@@ -303,6 +306,37 @@ class POCAssertionDetector:
             as_of,
             predicate=EdgeType.CALLABLE_ON,
             required_class="at1",
+            exclude_refinanced=True,
+        )
+
+    @staticmethod
+    def _maturity_observed(
+        pattern: Pattern,
+        assertions: tuple[Assertion, ...],
+        as_of: datetime,
+    ) -> list[_Candidate]:
+        return POCAssertionDetector._instrument_event_candidates(
+            pattern,
+            assertions,
+            as_of,
+            predicate=EdgeType.MATURES_ON,
+            required_class=None,
+            exclude_refinanced=False,
+        )
+
+    @staticmethod
+    def _at1_call_observed(
+        pattern: Pattern,
+        assertions: tuple[Assertion, ...],
+        as_of: datetime,
+    ) -> list[_Candidate]:
+        return POCAssertionDetector._instrument_event_candidates(
+            pattern,
+            assertions,
+            as_of,
+            predicate=EdgeType.CALLABLE_ON,
+            required_class="at1",
+            exclude_refinanced=False,
         )
 
     @staticmethod
@@ -313,6 +347,7 @@ class POCAssertionDetector:
         *,
         predicate: EdgeType,
         required_class: str | None,
+        exclude_refinanced: bool,
     ) -> list[_Candidate]:
         threshold = _threshold(pattern, "amount_usd_mn")
         refinanced = {
@@ -327,7 +362,7 @@ class POCAssertionDetector:
             if (
                 event.predicate is not predicate
                 or not _fresh(event, pattern, as_of)
-                or event.subject.key in refinanced
+                or (exclude_refinanced and event.subject.key in refinanced)
                 or _number(properties, "amount_usd_mn") < threshold
                 or not _currency_allowed(pattern, currency)
                 or (required_class is not None and _text(properties, "class") != required_class)

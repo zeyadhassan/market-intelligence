@@ -149,6 +149,24 @@ def plan_search(query: str, seed_entity_ids: tuple[str, ...] = ()) -> Interactiv
     )
 
 
+def _search_identity(
+    principal_id: str,
+    authorization_scope: str,
+    plan: InteractiveRetrievalPlan,
+    requested_at: datetime,
+    index_revision: dict[str, object] | None,
+) -> list[object]:
+    """Bind same-day idempotency to the corpus revision available to the job."""
+
+    return [
+        principal_id,
+        authorization_scope,
+        plan.model_dump(mode="json"),
+        requested_at.date().isoformat(),
+        index_revision,
+    ]
+
+
 class PostgresSearchStore:
     def __init__(self, settings: Settings, *, pool: asyncpg.Pool) -> None:
         self._settings = settings
@@ -165,12 +183,32 @@ class PostgresSearchStore:
     ) -> SearchJob:
         now = requested_at or datetime.now(UTC)
         plan = plan_search(query, seed_entity_ids)
-        identity = [
+        index_row = await self._pool.fetchrow(
+            """
+            SELECT embed_model_version, embedding_dim, chunker_version,
+                   status, indexed_at
+            FROM retrieval_index_state
+            WHERE index_name='document_chunk'
+            """
+        )
+        index_revision = (
+            {
+                "embed_model_version": str(index_row["embed_model_version"]),
+                "embedding_dim": int(index_row["embedding_dim"]),
+                "chunker_version": str(index_row["chunker_version"]),
+                "status": str(index_row["status"]),
+                "indexed_at": index_row["indexed_at"].isoformat(),
+            }
+            if index_row is not None
+            else None
+        )
+        identity = _search_identity(
             principal.principal_id,
             authorization_scope,
-            plan.model_dump(mode="json"),
-            now.date().isoformat(),
-        ]
+            plan,
+            now,
+            index_revision,
+        )
         idempotency_key = f"search:{stable_digest(identity)}"
         search_id = stable_digest(idempotency_key)
         await self._pool.execute(
@@ -654,7 +692,10 @@ def _patterns_for_query(query: str) -> set[str]:
     lowered = query.casefold()
     selected: set[str] = set()
     if "matur" in lowered or "refinanc" in lowered:
-        selected |= {"maturity_wall_no_refi", "at1_call_approaching_no_refi"}
+        # Interactive retrieval may use observed maturity/call facts as graph
+        # seeds.  It must not turn a missing REFINANCES edge into an absence
+        # claim without a factual-completeness contract.
+        selected |= {"upcoming_maturity_observed", "at1_call_approaching_observed"}
     if "rating" in lowered or "capital" in lowered:
         selected.add("negative_rating_action_with_capital_decline")
     if "issuance" in lowered or "programme" in lowered:
