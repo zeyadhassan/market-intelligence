@@ -17,15 +17,19 @@ form over the governed knowledge base.
 
 On the connected server:
 
-```bash
+```powershell
 git pull origin main
-python deploy/product.py --configure-only
-python deploy/model_smoke.py --embedding-only
+.\run.cmd --configure-only
+.\.venv\Scripts\python.exe deploy\model_smoke.py --embedding-only
 python deploy/podman_infra.py app-up
 python deploy/podman_infra.py diagnose
 ```
 
-`app-up` applies `0027_runtime_observability.sql` before starting the services.
+`run.cmd` creates the repository-owned virtual environment and installs the
+project dependencies on first use. `app-up` itself needs only Python's standard
+library and Podman: it builds the application image, runs preflight and database
+migrations inside that image, and then starts the services. It applies
+`0027_runtime_observability.sql` before starting the application workers.
 After startup, open `/` or `/stage-one`. The underlying authenticated snapshot
 is also available at `GET /v1/operations/dashboard?event_limit=200`.
 

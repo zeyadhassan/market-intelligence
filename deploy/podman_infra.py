@@ -212,6 +212,22 @@ def _build_app_image(environment: dict[str, str]) -> None:
     _run(*arguments, env=_podman_environment(environment))
 
 
+def _run_app_cli(*arguments: str, environment: dict[str, str]) -> None:
+    """Run an application CLI command with the dependencies baked into its image."""
+
+    _compose(
+        "--profile",
+        "app",
+        "run",
+        "--rm",
+        "--no-deps",
+        "projection-worker",
+        *arguments,
+        env=environment,
+        app_config=True,
+    )
+
+
 def _load_app_environment(*, required: bool) -> dict[str, str]:
     """Load the one operator-owned env file without accepting shell syntax."""
 
@@ -428,12 +444,12 @@ def main() -> int:  # noqa: C901 - explicit bounded operator-action dispatch
             _migrate()
         elif action == "app-up":
             app_environment = _load_app_environment(required=True)
-            _run(sys.executable, "-m", "fi_intel.cli", "preflight", env=app_environment)
             container_environment = _container_source_proxy_environment(app_environment)
+            _build_app_image(container_environment)
+            _run_app_cli("preflight", environment=container_environment)
             _compose("up", "--detach", env=container_environment)
             _wait_healthy()
-            _migrate(app_environment)
-            _build_app_image(container_environment)
+            _run_app_cli("db", "migrate", environment=container_environment)
             _compose(
                 "--profile",
                 "app",

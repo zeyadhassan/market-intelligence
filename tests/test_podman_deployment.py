@@ -227,13 +227,13 @@ def test_app_up_builds_explicitly_and_passes_proxy_to_infrastructure_pulls(
 ) -> None:
     environment = {"FI_INTEL_SOURCE_HTTP_PROXY": "http://proxy.example:3128"}
     compose_calls: list[tuple[tuple[str, ...], dict[str, object]]] = []
+    app_cli_calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
     builds: list[dict[str, str]] = []
     monkeypatch.setattr(podman_infra.sys, "argv", ["podman_infra.py", "app-up"])
     monkeypatch.setattr(podman_infra, "_load_app_environment", lambda *, required: environment)
     monkeypatch.setattr(podman_infra, "_assert_engine", lambda: None)
     monkeypatch.setattr(podman_infra, "_run", lambda *arguments, **options: "")
     monkeypatch.setattr(podman_infra, "_wait_healthy", lambda: None)
-    monkeypatch.setattr(podman_infra, "_migrate", lambda env=None: None)
     monkeypatch.setattr(podman_infra, "_wait_for_application_identity", lambda env: None)
     monkeypatch.setattr(
         podman_infra,
@@ -246,10 +246,19 @@ def test_app_up_builds_explicitly_and_passes_proxy_to_infrastructure_pulls(
         lambda *arguments, **options: compose_calls.append((arguments, options)),
     )
     monkeypatch.setattr(podman_infra, "_build_app_image", builds.append)
+    monkeypatch.setattr(
+        podman_infra,
+        "_run_app_cli",
+        lambda *arguments, environment: app_cli_calls.append((arguments, environment)),
+    )
 
     assert podman_infra.main() == 0
 
     assert builds == [environment]
+    assert app_cli_calls == [
+        (("preflight",), environment),
+        (("db", "migrate"), environment),
+    ]
     assert compose_calls[0] == (("up", "--detach"), {"env": environment})
     assert compose_calls[1][0] == (
         "--profile",
@@ -260,6 +269,36 @@ def test_app_up_builds_explicitly_and_passes_proxy_to_infrastructure_pulls(
     )
     assert compose_calls[1][1]["env"] is environment
     assert "--build" not in compose_calls[1][0]
+
+
+def test_app_cli_uses_built_image_instead_of_host_python(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[tuple[str, ...], dict[str, object]]] = []
+    monkeypatch.setattr(
+        podman_infra,
+        "_compose",
+        lambda *arguments, **options: calls.append((arguments, options)),
+    )
+    environment = {"FI_INTEL_ANALYSIS_MODE": "shadow"}
+
+    podman_infra._run_app_cli("db", "migrate", environment=environment)
+
+    assert calls == [
+        (
+            (
+                "--profile",
+                "app",
+                "run",
+                "--rm",
+                "--no-deps",
+                "projection-worker",
+                "db",
+                "migrate",
+            ),
+            {"env": environment, "app_config": True},
+        )
+    ]
 
 
 def test_application_identity_check_rejects_another_service_on_the_port(
