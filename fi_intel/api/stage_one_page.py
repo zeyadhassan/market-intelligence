@@ -96,7 +96,7 @@ STAGE_ONE_HTML = """<!doctype html>
       </div>
       <form id="research-form" class="research-form">
         <label for="research-query">Research question</label>
-        <div class="research-input-row"><textarea id="research-query" rows="3" maxlength="2000" required placeholder="What upcoming funding needs or refinancing gaps are visible in the current indexed evidence?"></textarea><button id="research-submit" class="button primary" type="submit">Run research</button></div>
+        <div class="research-input-row"><textarea id="research-query" rows="3" maxlength="2000" required>What upcoming funding needs or refinancing gaps are visible in the current indexed evidence?</textarea><button id="research-submit" class="button primary" type="submit">Run research</button></div>
       </form>
       <div id="research-state" class="notice neutral" role="status">No research request is running.</div>
       <div id="research-answer" class="research-answer"></div>
@@ -298,7 +298,8 @@ __FI_INTEL_TOKEN_PROVIDER__
     topics: [],
     selectedTopic: null,
     analysisTimer: null,
-    searchTimer: null
+    searchTimer: null,
+    searchStarted: false
   };
 
   function statusClass(value) {
@@ -541,6 +542,11 @@ __FI_INTEL_TOKEN_PROVIDER__
       renderSources(dashboard.sources);
       populateStageFilter(dashboard.events);
       renderEvents();
+      const searchStage = (dashboard.stages || []).find((item) => item.stage === "search");
+      const recoveredIndexFailure = searchStage?.detail?.includes("RetrievalIndexNotReadyError");
+      if (!state.searchStarted && recoveredIndexFailure && dashboard.queue?.retrieval_index_status === "ready") {
+        setResearchNotice("attention", "A previous research job failed before the current ready index was available. Click Run research to create a fresh job.");
+      }
     } catch (error) {
       byId("runtime-status").textContent = "Dashboard unavailable";
       byId("runtime-dot").className = "status-dot failed";
@@ -780,7 +786,11 @@ __FI_INTEL_TOKEN_PROVIDER__
   async function runResearch(event) {
     event.preventDefault();
     const query = byId("research-query").value.trim();
-    if (!query) return;
+    if (!query) {
+      setResearchNotice("attention", "Enter a research question before running the search.");
+      return;
+    }
+    state.searchStarted = true;
     clearTimeout(state.searchTimer);
     byId("research-submit").disabled = true;
     byId("research-answer").replaceChildren();

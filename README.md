@@ -12,6 +12,9 @@ After a source poll fails, the source worker retries after 60 seconds, then
 120, 240, and so on, capped by that source's normal polling cadence. Successful
 polls continue to use the normal cadence. This keeps a transient source timeout
 from making the control room appear frozen for a full polling interval.
+The complete landing-page and detail-page poll is also capped at 120 seconds,
+so sequential detail retries cannot leave a source marked working for up to 20
+minutes on a degraded proxy connection.
 
 The main page is now an operations-first control room. It refreshes every two
 seconds and shows all ten application stages, every configured source, worker

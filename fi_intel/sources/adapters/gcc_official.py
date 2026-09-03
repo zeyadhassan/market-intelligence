@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -371,6 +372,16 @@ class OfficialGccRawAdapter:
         return self._source.source_id
 
     async def poll(  # noqa: C901
+        self, cursor: RawSourceCursor | None = None
+    ) -> RawSourcePoll:
+        # Individual HTTP attempts are bounded, but a landing page can lead to
+        # many sequential detail requests. Bound the complete poll as well so
+        # degraded connectivity becomes a durable failed observation instead
+        # of leaving the source stage working for many minutes.
+        async with asyncio.timeout(self._settings.source_poll_timeout_seconds):
+            return await self._poll_within_deadline(cursor)
+
+    async def _poll_within_deadline(  # noqa: C901
         self, cursor: RawSourceCursor | None = None
     ) -> RawSourcePoll:
         if cursor is not None and cursor.source_id != self.source_id:

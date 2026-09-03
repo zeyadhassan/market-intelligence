@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     source_http_timeout_seconds: float = 15.0
     source_http_max_attempts: int = 3
     source_http_max_redirects: int = 3
+    source_poll_timeout_seconds: float = Field(default=120.0, gt=0)
     source_max_feed_bytes: int = 2 * 1024 * 1024
     source_max_detail_bytes: int = 16 * 1024 * 1024
     source_cursor_history_limit: int = 1_000

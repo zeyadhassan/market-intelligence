@@ -1,8 +1,12 @@
 """Fail-closed contracts for the unified live GCC Stage 1 path."""
 
+import asyncio
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
+
+import pytest
 
 from fi_intel.api.stage_one_page import STAGE_ONE_HTML, STAGE_ONE_JS
 from fi_intel.application.preflight import canonical_configuration_errors
@@ -16,10 +20,27 @@ from fi_intel.sources.adapters.gcc_official import (
     OfficialGccRawAdapter,
 )
 from fi_intel.sources.canonical import BarrierSide
-from fi_intel.sources.transport import SourceTransportError
+from fi_intel.sources.transport import SourceTransportError, TransportResponse
 from tests.source_support import ScriptedSourceTransport, source_response
 
 NOW = datetime(2026, 8, 27, 10, tzinfo=UTC)
+
+
+class _BlockingSourceTransport:
+    async def send(
+        self,
+        url: str,
+        headers: Mapping[str, str],
+        *,
+        timeout_seconds: float,
+        max_bytes: int,
+    ) -> TransportResponse:
+        del url, headers, timeout_seconds, max_bytes
+        await asyncio.Event().wait()
+        raise AssertionError("blocking transport unexpectedly resumed")
+
+    async def close(self) -> None:
+        return None
 
 
 def test_live_matrix_has_two_official_pages_in_each_gcc_country() -> None:
@@ -57,6 +78,9 @@ def test_default_stage_one_page_describes_the_local_product_path() -> None:
     assert "Pause live updates" in STAGE_ONE_HTML
     assert "Activity log" in STAGE_ONE_HTML
     assert "Ask the knowledge base" in STAGE_ONE_HTML
+    assert "required>What upcoming funding needs" in STAGE_ONE_HTML
+    assert "Enter a research question before running the search" in STAGE_ONE_JS
+    assert "Click Run research to create a fresh job" in STAGE_ONE_JS
     assert "[FI Intel] source" in STAGE_ONE_JS
     assert (
         "backend logs: python deploy/podman_infra.py logs --no-follow --tail 500"
@@ -219,3 +243,30 @@ async def test_official_source_adapter_reports_failed_details_as_incomplete() ->
     assert len(poll.items) == 1
     assert poll.failed_count == 1
     transport.assert_exhausted()
+
+
+async def test_official_source_adapter_bounds_the_complete_poll() -> None:
+    source = GccOfficialSource(
+        source_id="example_official",
+        country="Example",
+        display_name="Example regulator",
+        source_type="regulator",
+        url="https://regulator.example/news",
+        allowed_origins=("https://regulator.example",),
+    )
+    policy = AccessPolicy(
+        policy_id=uuid4(),
+        barrier_side=BarrierSide.PUBLIC,
+        allowed_entitlement_groups=frozenset({"fi_gcc_public"}),
+        created_at=NOW - timedelta(days=1),
+    )
+    adapter = OfficialGccRawAdapter(
+        source,
+        Settings(source_http_max_attempts=1, source_poll_timeout_seconds=0.001),
+        policy,
+        transport=_BlockingSourceTransport(),
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(TimeoutError):
+        await adapter.poll()
