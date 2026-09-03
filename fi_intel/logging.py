@@ -67,10 +67,17 @@ def safe_error_summary(error: BaseException) -> str:
     )
     reason_field = f"reason={reason}, " if reason is not None else ""
     root = chain[-1]
-    cause_field = f"cause={type(root).__name__}, " if root is not error else ""
+    cause_field = (
+        "cause_chain="
+        + ">".join(type(item).__name__ for item in chain[1:])
+        + ", "
+        if root is not error
+        else ""
+    )
+    database_field = _safe_database_field(root)
     return (
         f"{type(error).__name__} "
-        f"({reason_field}{cause_field}message_sha256={digest})"
+        f"({reason_field}{cause_field}{database_field}message_sha256={digest})"
     )
 
 
@@ -168,3 +175,22 @@ def _error_chain(error: BaseException) -> tuple[BaseException, ...]:
         seen.add(id(current))
         chain.append(current)
     return tuple(chain)
+
+
+def _safe_database_field(error: BaseException) -> str:
+    """Expose only PostgreSQL diagnostic identifiers, never row/query values."""
+
+    sqlstate = getattr(error, "sqlstate", None)
+    if not isinstance(sqlstate, str) or not re.fullmatch(r"[0-9A-Z]{5}", sqlstate):
+        return ""
+    fields = [f"sqlstate={sqlstate}"]
+    for label, attribute in (
+        ("schema", "schema_name"),
+        ("table", "table_name"),
+        ("column", "column_name"),
+        ("constraint", "constraint_name"),
+    ):
+        value = getattr(error, attribute, None)
+        if isinstance(value, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_$]{0,62}", value):
+            fields.append(f"{label}={value}")
+    return ", ".join(fields) + ", "

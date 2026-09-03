@@ -140,12 +140,6 @@ def test_sql_contract_filters_before_bounded_lexical_and_vector_generation() -> 
     assert "d.source_id = any($5::text[])" in sql
     assert "d.published_at >= $6::date" in sql
     assert "d.published_at < ($7::date + 1)" in sql
-
-
-def test_incremental_index_does_not_delete_append_only_authority_links() -> None:
-    implementation = inspect.getsource(PostgresCorpusStore._commit_document_chunks)
-
-    assert "DELETE FROM document_chunk" not in implementation
     assert "c.embed_model_version = $10::text" in sql
     assert "c.normalized_search_vector as search_vector" in sql
     assert "c.canonical_lineage" in sql
@@ -153,9 +147,23 @@ def test_incremental_index_does_not_delete_append_only_authority_links() -> None
     assert "exists ( select 1 from document_chunk_assertion_v4" in sql
     assert "assertion.recorded_at <= $3::timestamptz" in sql
     assert "e.search_vector @@ websearch_to_tsquery" in sql
-    assert "e.embedding::halfvec(2048) <=> $9::halfvec(2048)" in sql
+    assert "e.embedding::halfvec(2048) <=> $9::text::halfvec(2048)" in sql
     assert sql.count("limit $11::int") == 2
     assert "select d.*" not in sql
+
+
+def test_incremental_index_uses_typed_append_only_writes() -> None:
+    commit = inspect.getsource(PostgresCorpusStore._commit_document_chunks)
+    chunk_write = inspect.getsource(PostgresCorpusStore._write_document_chunks)
+    authority_write = inspect.getsource(PostgresCorpusStore._link_chunk_authority)
+
+    assert "DELETE FROM document_chunk" not in commit
+    assert "$7::text::vector(2048)" in chunk_write
+    assert "$2::uuid" in authority_write
+    assert "1.0::double precision" in authority_write
+    assert "RetrievalEvidenceLinkWriteError" in authority_write
+    assert "RetrievalAssertionLinkWriteError" in authority_write
+    assert "RetrievalEntityLinkWriteError" in authority_write
 
 
 def test_migration_adds_version_metadata_before_version_index() -> None:
@@ -658,7 +666,7 @@ async def test_indexed_query_executes_against_postgres_with_all_optional_filters
                         (source_id, doc_id, chunk_index, char_start, char_end,
                          text, embedding, embed_model_version, document_version_id,
                          policy_id, chunker_version, content_hash, canonical_lineage)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8,
+                    VALUES ($1, $2, $3, $4, $5, $6, $7::text::vector(2048), $8,
                             $9, $10, $11, $12, TRUE)
                     ON CONFLICT (source_id, doc_id, chunk_index) DO UPDATE SET
                         text = EXCLUDED.text,

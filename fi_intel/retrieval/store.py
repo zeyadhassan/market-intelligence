@@ -152,6 +152,30 @@ class RetrievalIndexBuildError(RetrievalIndexError):
     """One or more documents failed while an incremental index pass continued."""
 
 
+class RetrievalChunkWriteError(RetrievalIndexBuildError):
+    """A typed document-chunk row could not be persisted."""
+
+
+class RetrievalAuthorityLinkWriteError(RetrievalIndexBuildError):
+    """A chunk-to-authority bridge could not be persisted."""
+
+
+class RetrievalEvidenceLinkWriteError(RetrievalAuthorityLinkWriteError):
+    """A chunk-to-evidence bridge could not be persisted."""
+
+
+class RetrievalAssertionLinkWriteError(RetrievalAuthorityLinkWriteError):
+    """A chunk-to-assertion bridge could not be persisted."""
+
+
+class RetrievalEntityLinkWriteError(RetrievalAuthorityLinkWriteError):
+    """A chunk-to-entity bridge could not be persisted."""
+
+
+class RetrievalIndexStateWriteError(RetrievalIndexBuildError):
+    """The completed retrieval-index identity could not be persisted."""
+
+
 _INDEX_STATE_SQL = """
 SELECT embed_model_version, embedding_dim, chunker_version, status
 FROM retrieval_index_state
@@ -248,11 +272,13 @@ lexical_ranked AS (
 ),
 vector_nearest AS (
     SELECT e.chunk_id,
-           1.0 - (e.embedding::halfvec(2048) <=> $9::halfvec(2048)) AS vector_score
+           1.0 - (
+             e.embedding::halfvec(2048) <=> $9::text::halfvec(2048)
+           ) AS vector_score
     FROM eligible e
     WHERE $12::text IN ('hybrid', 'vector')
       AND e.embedding IS NOT NULL
-    ORDER BY e.embedding::halfvec(2048) <=> $9::halfvec(2048)
+    ORDER BY e.embedding::halfvec(2048) <=> $9::text::halfvec(2048)
     LIMIT $11::int
 ),
 vector_candidates AS (
@@ -629,43 +655,52 @@ class PostgresCorpusStore:
     ) -> int:
         written = 0
         for chunk, embedding in zip(chunks, embeddings, strict=True):
-            chunk_id = await conn.fetchval(
-                """
-                INSERT INTO document_chunk
-                    (source_id, doc_id, chunk_index, char_start, char_end,
-                     text, embedding, embed_model_version, document_version_id,
-                     policy_id, chunker_version, section_path, content_hash,
-                     canonical_lineage)
-                VALUES ($1,$2,$3,$4,$5,$6,$7::vector,$8,$9,$10,$11,$12,$13,$14)
-                ON CONFLICT (source_id, doc_id, chunk_index) DO UPDATE SET
-                    char_start = EXCLUDED.char_start,
-                    char_end = EXCLUDED.char_end,
-                    text = EXCLUDED.text,
-                    embedding = EXCLUDED.embedding,
-                    embed_model_version = EXCLUDED.embed_model_version,
-                    document_version_id = EXCLUDED.document_version_id,
-                    policy_id = EXCLUDED.policy_id,
-                    chunker_version = EXCLUDED.chunker_version,
-                    section_path = EXCLUDED.section_path,
-                    content_hash = EXCLUDED.content_hash,
-                    canonical_lineage = EXCLUDED.canonical_lineage
-                RETURNING chunk_id
-                """,
-                chunk.source_id,
-                chunk.doc_id,
-                chunk.chunk_index,
-                chunk.char_start,
-                chunk.char_end,
-                chunk.text,
-                str(embedding),
-                embedder.model_version,
-                row["document_version_id"],
-                row["policy_id"],
-                CHUNKER_VERSION,
-                list(chunk.structure_path),
-                row["content_hash"],
-                row["document_version_id"] is not None,
-            )
+            try:
+                chunk_id = await conn.fetchval(
+                    """
+                    INSERT INTO document_chunk
+                        (source_id, doc_id, chunk_index, char_start, char_end,
+                         text, embedding, embed_model_version, document_version_id,
+                         policy_id, chunker_version, section_path, content_hash,
+                         canonical_lineage)
+                    VALUES (
+                        $1::text,$2::text,$3::integer,$4::integer,$5::integer,
+                        $6::text,$7::text::vector(2048),$8::text,$9::uuid,
+                        $10::uuid,$11::text,$12::text[],$13::char(64),$14::boolean
+                    )
+                    ON CONFLICT (source_id, doc_id, chunk_index) DO UPDATE SET
+                        char_start = EXCLUDED.char_start,
+                        char_end = EXCLUDED.char_end,
+                        text = EXCLUDED.text,
+                        embedding = EXCLUDED.embedding,
+                        embed_model_version = EXCLUDED.embed_model_version,
+                        document_version_id = EXCLUDED.document_version_id,
+                        policy_id = EXCLUDED.policy_id,
+                        chunker_version = EXCLUDED.chunker_version,
+                        section_path = EXCLUDED.section_path,
+                        content_hash = EXCLUDED.content_hash,
+                        canonical_lineage = EXCLUDED.canonical_lineage
+                    RETURNING chunk_id
+                    """,
+                    chunk.source_id,
+                    chunk.doc_id,
+                    chunk.chunk_index,
+                    chunk.char_start,
+                    chunk.char_end,
+                    chunk.text,
+                    str(embedding),
+                    embedder.model_version,
+                    row["document_version_id"],
+                    row["policy_id"],
+                    CHUNKER_VERSION,
+                    list(chunk.structure_path),
+                    row["content_hash"],
+                    row["document_version_id"] is not None,
+                )
+            except Exception as exc:
+                raise RetrievalChunkWriteError(
+                    "typed document-chunk upsert failed"
+                ) from exc
             if chunk_id is None:
                 raise RuntimeError("chunk upsert returned no identity")
             if row["document_version_id"] is not None:
@@ -681,24 +716,29 @@ class PostgresCorpusStore:
 
     @staticmethod
     async def _mark_index_ready(conn: asyncpg.Connection, embedder: Embedder) -> None:
-        await conn.execute(
-            """
-            INSERT INTO retrieval_index_state
-                (index_name, embed_model_version, embedding_dim,
-                 chunker_version, status, indexed_at)
-            VALUES ($1, $2, $3, $4, 'ready', now())
-            ON CONFLICT (index_name) DO UPDATE SET
-                embed_model_version = EXCLUDED.embed_model_version,
-                embedding_dim = EXCLUDED.embedding_dim,
-                chunker_version = EXCLUDED.chunker_version,
-                status = EXCLUDED.status,
-                indexed_at = EXCLUDED.indexed_at
-            """,
-            INDEX_STATE_NAME,
-            embedder.model_version,
-            embedder.dim,
-            CHUNKER_VERSION,
-        )
+        try:
+            await conn.execute(
+                """
+                INSERT INTO retrieval_index_state
+                    (index_name, embed_model_version, embedding_dim,
+                     chunker_version, status, indexed_at)
+                VALUES ($1::text, $2::text, $3::integer, $4::text, 'ready', now())
+                ON CONFLICT (index_name) DO UPDATE SET
+                    embed_model_version = EXCLUDED.embed_model_version,
+                    embedding_dim = EXCLUDED.embedding_dim,
+                    chunker_version = EXCLUDED.chunker_version,
+                    status = EXCLUDED.status,
+                    indexed_at = EXCLUDED.indexed_at
+                """,
+                INDEX_STATE_NAME,
+                embedder.model_version,
+                embedder.dim,
+                CHUNKER_VERSION,
+            )
+        except Exception as exc:
+            raise RetrievalIndexStateWriteError(
+                "retrieval index-state write failed"
+            ) from exc
 
     async def _commit_document_chunks(
         self,
@@ -748,58 +788,70 @@ class PostgresCorpusStore:
         char_start: int,
         char_end: int,
     ) -> None:
-        await conn.execute(
-            """
-            INSERT INTO document_chunk_evidence_v4 (chunk_id, evidence_span_id, policy_id)
-            SELECT $1, evidence_span_id, policy_id FROM evidence_span
-            WHERE document_version_id = $2
-              AND char_start < $4 AND char_end > $3
-            ON CONFLICT DO NOTHING
-            """,
-            chunk_id,
-            document_version_id,
-            char_start,
-            char_end,
+        statements = (
+            (
+                RetrievalEvidenceLinkWriteError,
+                """
+                INSERT INTO document_chunk_evidence_v4
+                    (chunk_id, evidence_span_id, policy_id)
+                SELECT $1::bigint, evidence_span_id::uuid, policy_id::uuid
+                FROM evidence_span
+                WHERE document_version_id = $2::uuid
+                  AND char_start < $4::integer AND char_end > $3::integer
+                ON CONFLICT DO NOTHING
+                """,
+            ),
+            (
+                RetrievalAssertionLinkWriteError,
+                """
+                INSERT INTO document_chunk_assertion_v4
+                    (chunk_id, assertion_id, policy_id)
+                SELECT DISTINCT $1::bigint, link.assertion_id::uuid,
+                       assertion.policy_id::uuid
+                FROM knowledge_assertion_evidence link
+                JOIN knowledge_assertion assertion USING (assertion_id)
+                JOIN evidence_span evidence USING (evidence_span_id)
+                WHERE evidence.document_version_id = $2::uuid
+                  AND evidence.char_start < $4::integer
+                  AND evidence.char_end > $3::integer
+                ON CONFLICT DO NOTHING
+                """,
+            ),
+            (
+                RetrievalEntityLinkWriteError,
+                """
+                INSERT INTO document_chunk_entity_v4 (
+                    chunk_id, entity_id, resolution_confidence, policy_id, recorded_at
+                )
+                SELECT DISTINCT $1::bigint, linked.entity_id::uuid,
+                       linked.confidence::double precision,
+                       linked.policy_id::uuid, linked.recorded_at::timestamptz
+                FROM (
+                  SELECT assertion.subject_entity_id AS entity_id,
+                         1.0::double precision AS confidence,
+                         assertion.policy_id, assertion.recorded_at
+                  FROM knowledge_assertion assertion
+                  JOIN knowledge_assertion_evidence ae USING (assertion_id)
+                  JOIN evidence_span evidence USING (evidence_span_id)
+                  WHERE evidence.document_version_id = $2::uuid
+                    AND evidence.char_start < $4::integer
+                    AND evidence.char_end > $3::integer
+                ) linked
+                ON CONFLICT DO NOTHING
+                """,
+            ),
         )
-        await conn.execute(
-            """
-            INSERT INTO document_chunk_assertion_v4 (chunk_id, assertion_id, policy_id)
-            SELECT DISTINCT $1, link.assertion_id, assertion.policy_id
-            FROM knowledge_assertion_evidence link
-            JOIN knowledge_assertion assertion USING (assertion_id)
-            JOIN evidence_span evidence USING (evidence_span_id)
-            WHERE evidence.document_version_id = $2
-              AND evidence.char_start < $4 AND evidence.char_end > $3
-            ON CONFLICT DO NOTHING
-            """,
-            chunk_id,
-            document_version_id,
-            char_start,
-            char_end,
-        )
-        await conn.execute(
-            """
-            INSERT INTO document_chunk_entity_v4 (
-                chunk_id, entity_id, resolution_confidence, policy_id, recorded_at
-            )
-            SELECT DISTINCT $1, linked.entity_id, linked.confidence,
-                   linked.policy_id, linked.recorded_at
-            FROM (
-              SELECT assertion.subject_entity_id AS entity_id, 1.0 AS confidence,
-                     assertion.policy_id, assertion.recorded_at
-              FROM knowledge_assertion assertion
-              JOIN knowledge_assertion_evidence ae USING (assertion_id)
-              JOIN evidence_span evidence USING (evidence_span_id)
-              WHERE evidence.document_version_id = $2
-                AND evidence.char_start < $4 AND evidence.char_end > $3
-            ) linked
-            ON CONFLICT DO NOTHING
-            """,
-            chunk_id,
-            document_version_id,
-            char_start,
-            char_end,
-        )
+        for error_type, statement in statements:
+            try:
+                await conn.execute(
+                    statement,
+                    chunk_id,
+                    document_version_id,
+                    char_start,
+                    char_end,
+                )
+            except Exception as exc:
+                raise error_type("typed authority-link write failed") from exc
 
     async def index_chunks(
         self,

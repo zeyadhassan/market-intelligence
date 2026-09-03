@@ -6,6 +6,7 @@ from typing import Any, cast
 import asyncpg
 
 from fi_intel.application.observability import PostgresRuntimeMonitor
+from fi_intel.logging import safe_error_summary
 
 
 class RecordingPool:
@@ -15,6 +16,14 @@ class RecordingPool:
     async def execute(self, statement: str, *arguments: Any) -> str:
         self.calls.append((statement, arguments))
         return "INSERT 0 1"
+
+
+class FakeDatabaseError(RuntimeError):
+    sqlstate = "42804"
+    schema_name = "public"
+    table_name = "document_chunk"
+    column_name = "embedding"
+    constraint_name = "unsafe name with values"
 
 
 async def test_worker_state_upsert_supplies_concrete_timestamps() -> None:
@@ -52,5 +61,25 @@ async def test_worker_failure_retains_safe_root_cause_type() -> None:
 
     _, state_arguments = pool.calls[0]
     summary = str(state_arguments[10])
-    assert "cause=ValueError" in summary
+    assert "cause_chain=ValueError" in summary
     assert "private source text" not in summary
+
+
+def test_database_summary_exposes_only_safe_structural_diagnostics() -> None:
+    summary = ""
+    try:
+        try:
+            raise FakeDatabaseError("private database row and query")
+        except FakeDatabaseError as cause:
+            raise RuntimeError("index write failed") from cause
+    except RuntimeError as error:
+        summary = safe_error_summary(error)
+
+    assert "reason=database_error" in summary
+    assert "cause_chain=FakeDatabaseError" in summary
+    assert "sqlstate=42804" in summary
+    assert "schema=public" in summary
+    assert "table=document_chunk" in summary
+    assert "column=embedding" in summary
+    assert "constraint=" not in summary
+    assert "private database row and query" not in summary
