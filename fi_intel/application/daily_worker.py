@@ -36,7 +36,7 @@ from fi_intel.application.policies import POLICY_NAMESPACE, public_source_policy
 from fi_intel.application.result_admission import DailyResultAdmission
 from fi_intel.application.runtime_resources import RuntimeResources
 from fi_intel.application.signal_authority import LedgerSignalAuthority
-from fi_intel.application.topics import PostgresTopicCatalog
+from fi_intel.application.topics import PostgresTopicCatalog, governed_topic_revision
 from fi_intel.governance.audit import PostgresAuditLog
 from fi_intel.governance.model_usage import ModelCapacityLimits, PostgresModelUsageLog
 from fi_intel.governance.policy import PostgresEntitlementResolver
@@ -61,7 +61,7 @@ from fi_intel.results.manifest import (
 from fi_intel.retrieval.corpus import CorpusSearch
 from fi_intel.retrieval.service import RetrievalService
 from fi_intel.retrieval.store import PostgresCorpusStore
-from fi_intel.sources.operations import PostgresSourceOperationsStore, SourceHealth
+from fi_intel.sources.operations import PostgresSourceOperationsStore
 from fi_intel.tools.research_tools import ResearchTools, ToolContext
 
 
@@ -103,6 +103,14 @@ class ProcessedDailyAnalysis:
         topics = await PostgresTopicCatalog(settings.postgres_dsn, pool=pool).require_many(
             job.topic_ids
         )
+        expected_topic_revisions = tuple(
+            sorted(str(item) for item in job.input_manifest.get("topic_revisions", ()))
+        )
+        actual_topic_revisions = tuple(
+            sorted(governed_topic_revision(topic) for topic in topics.values())
+        )
+        if expected_topic_revisions and expected_topic_revisions != actual_topic_revisions:
+            raise RuntimeError("governed topic revision changed before analysis execution")
         entitlement = PostgresEntitlementResolver(settings.postgres_dsn, pool=pool)
         access = await entitlement.resolve(job.principal.restore().principal, job.job_id)
         scope = signal_authorization_scope(
@@ -495,23 +503,29 @@ class ProcessedDailyAnalysis:
         pool = self._resources.postgres_pool
         observations = await pool.fetch(
             """
-            SELECT DISTINCT ON (source_id) * FROM source_observation_v2
-            WHERE source_id = ANY($1::text[]) AND finished_at <= $2
-            ORDER BY source_id, finished_at DESC, observation_id DESC
+            SELECT DISTINCT ON (observation.source_id) observation.*
+            FROM source_observation_v2 observation
+            JOIN source_registration_v2 registration
+              ON registration.source_id=observation.source_id
+             AND registration.catalog_version=observation.catalog_version
+            WHERE observation.source_id = ANY($1::text[])
+              AND observation.finished_at <= $2
+              AND observation.finished_at >= (
+                  $2 - registration.freshness_sla_seconds * INTERVAL '1 second'
+              )
+              AND observation.health = 'healthy'
+              AND observation.complete
+              AND observation.fresh
+              AND NOT observation.silent
+              AND observation.within_expected_volume
+            ORDER BY observation.source_id, observation.finished_at DESC,
+                     observation.observation_id DESC
             """,
             sorted(required_sources),
             job.temporal_pin,
         )
         by_source = {str(row["source_id"]): row for row in observations}
-        completed_sources = {
-            source_id
-            for source_id, row in by_source.items()
-            if row["health"] == SourceHealth.HEALTHY.value
-            and row["complete"]
-            and row["fresh"]
-            and not row["silent"]
-            and row["within_expected_volume"]
-        }
+        completed_sources = set(by_source)
         reasons = [
             f"required source {source_id} has no complete fresh observation before the pin"
             for source_id in sorted(required_sources - completed_sources)

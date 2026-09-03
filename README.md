@@ -29,7 +29,8 @@ python deploy/podman_infra.py diagnose
 project dependencies on first use. `app-up` itself needs only Python's standard
 library and Podman: it builds the application image, runs preflight and database
 migrations inside that image, and then starts the services. It applies
-`0028_observation_only_maturity_topic.sql` before starting the application workers.
+the ordered migrations through `0029_retire_superseded_maturity_topic.sql` before
+starting the application workers.
 After startup, open `/` or `/stage-one`. The underlying authenticated snapshot
 is also available at `GET /v1/operations/dashboard?event_limit=200`.
 

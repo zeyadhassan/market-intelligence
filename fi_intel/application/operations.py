@@ -383,11 +383,11 @@ class OperatorService:
 
     async def queue_status(self) -> RuntimeQueueStatus:
         pool = self._pool
-        analysis, search, documents, deliveries = await _state_counts(
+        analysis = await _latest_analysis_state_counts(pool)
+        search = await _latest_search_state_counts(pool)
+        documents, deliveries = await _state_counts(
             pool,
             (
-                ("analysis_job_v4", "state"),
-                ("search_job_v4", "state"),
                 ("document_processing_job_v4", "state"),
                 ("delivery_attempt_v4", "state"),
             ),
@@ -470,6 +470,20 @@ class OperatorService:
         models = await self._model_views()
         stage_counts = await pool.fetchrow(
             """
+            WITH latest_analysis_job AS (
+              SELECT DISTINCT ON (authorization_scope, topic_ids)
+                     run_id, topic_ids
+              FROM analysis_job_v4
+              ORDER BY authorization_scope, topic_ids, requested_at DESC, job_id DESC
+            ),
+            current_detector AS (
+              SELECT detector.*
+              FROM detector_execution_v3 detector
+              JOIN analysis_scope_job_v3 scope USING (job_id)
+              JOIN latest_analysis_job analysis
+                ON analysis.run_id=scope.run_id
+               AND scope.topic_id=ANY(analysis.topic_ids)
+            )
             SELECT
               (SELECT count(*) FROM ingest_job_v2
                WHERE status IN ('received','raw_archived','canonicalized')) AS ingest_pending,
@@ -493,19 +507,19 @@ class OperatorService:
               (SELECT max(updated_at) FROM analysis_job_v4) AS analysis_last,
               (SELECT max(updated_at) FROM search_job_v4) AS search_last,
               (SELECT max(updated_at) FROM delivery_attempt_v4) AS delivery_last,
-              (SELECT count(*) FROM detector_execution_v3
+              (SELECT count(*) FROM current_detector
                WHERE finished_at IS NULL) AS detector_active,
-              (SELECT count(*) FROM detector_execution_v3
+              (SELECT count(*) FROM current_detector
                WHERE state='completed'
                  AND finished_at >= now() - interval '24 hours') AS detector_completed,
-              (SELECT count(*) FROM detector_execution_v3
+              (SELECT count(*) FROM current_detector
                WHERE state LIKE 'failed%'
                  AND started_at >= now() - interval '24 hours') AS detector_failed,
-              (SELECT count(*) FROM detector_execution_v3
+              (SELECT count(*) FROM current_detector
                WHERE state IN ('held_coverage','deferred')
                  AND started_at >= now() - interval '24 hours') AS detector_attention,
               (SELECT max(COALESCE(finished_at, started_at))
-               FROM detector_execution_v3) AS detector_last,
+               FROM current_detector) AS detector_last,
               (SELECT count(*) FROM investigation_step_v3
                WHERE status IN ('succeeded','skipped_duplicate')
                  AND started_at >= now() - interval '24 hours') AS research_completed,
@@ -964,10 +978,15 @@ class OperatorService:
             else "waiting"
         )
 
-        analysis_active = int(counts["analysis_active"] or 0)
-        analysis_pending = int(counts["analysis_pending"] or 0)
-        analysis_failed = int(counts["analysis_failed"] or 0)
-        analysis_completed = int(counts["analysis_completed"] or 0)
+        analysis_active = int(queue.analysis_jobs.get("running", 0))
+        analysis_pending = sum(
+            queue.analysis_jobs.get(state, 0)
+            for state in ("queued", "deferred", "retryable_failed")
+        )
+        analysis_failed = int(queue.analysis_jobs.get("terminal_failed", 0))
+        analysis_completed = sum(
+            queue.analysis_jobs.get(state, 0) for state in ("complete", "partial", "held")
+        )
         analysis_status = (
             "failed"
             if analysis_failed
@@ -1475,6 +1494,38 @@ async def _state_counts(
         )
         results.append({str(row[column]): int(row["total"]) for row in rows})
     return results
+
+
+async def _latest_analysis_state_counts(pool: asyncpg.Pool) -> dict[str, int]:
+    rows = await pool.fetch(
+        """
+        WITH latest AS (
+          SELECT DISTINCT ON (authorization_scope, topic_ids) state
+          FROM analysis_job_v4
+          ORDER BY authorization_scope, topic_ids, requested_at DESC, job_id DESC
+        )
+        SELECT state, count(*) AS total FROM latest GROUP BY state
+        """
+    )
+    return {str(row["state"]): int(row["total"]) for row in rows}
+
+
+async def _latest_search_state_counts(pool: asyncpg.Pool) -> dict[str, int]:
+    rows = await pool.fetch(
+        """
+        WITH latest AS (
+          SELECT DISTINCT ON (
+              principal_snapshot->>'principal_id', authorization_scope,
+              plan::text
+          ) state
+          FROM search_job_v4
+          ORDER BY principal_snapshot->>'principal_id', authorization_scope,
+                   plan::text, requested_at DESC, search_id DESC
+        )
+        SELECT state, count(*) AS total FROM latest GROUP BY state
+        """
+    )
+    return {str(row["state"]): int(row["total"]) for row in rows}
 
 
 __all__ = [

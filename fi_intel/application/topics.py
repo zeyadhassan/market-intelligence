@@ -56,6 +56,20 @@ class GovernedTopic(BaseModel):
     display_order: int
 
 
+def governed_topic_revision(topic: GovernedTopic) -> str:
+    """Return the immutable policy identity that governs one topic run."""
+
+    return ":".join(
+        (
+            topic.topic_id,
+            topic.version,
+            topic.detector_policy_version,
+            topic.retrieval_policy_version,
+            topic.lifecycle_policy_version,
+        )
+    )
+
+
 class PostgresTopicCatalog:
     """Read the active versioned product catalog from PostgreSQL."""
 
@@ -143,4 +157,5 @@ __all__ = [
     "TOPICS_BY_ID",
     "TOPIC_BY_PATTERN",
     "TopicDefinition",
+    "governed_topic_revision",
 ]

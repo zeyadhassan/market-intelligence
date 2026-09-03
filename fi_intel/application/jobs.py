@@ -118,6 +118,7 @@ class AnalysisJob(BaseModel):
         source_ids: tuple[str, ...],
         *,
         requested_at: datetime | None = None,
+        topic_revisions: tuple[str, ...] = (),
         input_revision: tuple[str, ...] = (),
     ) -> AnalysisJob:
         if not topic_ids:
@@ -145,6 +146,10 @@ class AnalysisJob(BaseModel):
             "analysis_mode": settings.analysis_mode,
             "window_version": settings.daily_analysis_window_version,
         }
+        if topic_revisions:
+            # A new governed topic or policy version is new analytical work,
+            # even when it is deployed inside an existing business window.
+            manifest["topic_revisions"] = list(sorted(topic_revisions))
         if input_revision:
             # A forced refresh is still deterministic: it creates new work
             # only when the latest durable source observations have changed.

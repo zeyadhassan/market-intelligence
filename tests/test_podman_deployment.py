@@ -105,7 +105,7 @@ def test_podman_launcher_enforces_infrastructure_suite() -> None:
     assert "FI_INTEL_SOURCE_HTTP_PROXY" in bootstrap
 
 
-def test_latest_migration_selects_observation_only_maturity_detectors() -> None:
+def test_maturity_topic_migration_selects_observation_only_detectors() -> None:
     migration = Path(
         "deploy/migrations/0028_observation_only_maturity_topic.sql"
     ).read_text(encoding="utf-8")

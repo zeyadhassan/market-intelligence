@@ -1,11 +1,13 @@
 """Unit contracts for payload-safe worker heartbeat persistence."""
 
+import inspect
 from datetime import datetime
 from typing import Any, cast
 
 import asyncpg
 
 from fi_intel.application.observability import PostgresRuntimeMonitor
+from fi_intel.application.operations import OperatorService, _latest_search_state_counts
 from fi_intel.logging import safe_error_summary
 
 
@@ -83,3 +85,13 @@ def test_database_summary_exposes_only_safe_structural_diagnostics() -> None:
     assert "column=embedding" in summary
     assert "constraint=" not in summary
     assert "private database row and query" not in summary
+
+
+def test_runtime_counts_only_latest_logical_jobs_and_detectors() -> None:
+    queue_source = inspect.getsource(_latest_search_state_counts)
+    dashboard_source = inspect.getsource(OperatorService.dashboard)
+
+    assert "DISTINCT ON" in queue_source
+    assert "plan::text" in queue_source
+    assert "latest_analysis_job" in dashboard_source
+    assert "current_detector" in dashboard_source

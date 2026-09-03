@@ -7,9 +7,9 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from fi_intel.application.jobs import AnalysisJob, PostgresAnalysisJobStore
+from fi_intel.application.jobs import AnalysisJob, AnalysisJobState, PostgresAnalysisJobStore
 from fi_intel.application.runtime_resources import RuntimeResources
-from fi_intel.application.topics import PostgresTopicCatalog
+from fi_intel.application.topics import PostgresTopicCatalog, governed_topic_revision
 from fi_intel.governance.access import RequestPrincipal
 from fi_intel.graph.signals import signal_authorization_scope
 from fi_intel.retrieval.entitlement import Principal, Side
@@ -120,15 +120,84 @@ class CanonicalScheduler:
                     scope,
                     tuple(sorted(required_sources)),
                     requested_at=instant,
+                    topic_revisions=(governed_topic_revision(topic),),
                 )
                 await self._jobs.enqueue(job)
                 enqueued += 1
+                latest = await self._jobs.latest(topic_id, scope, job.business_date)
+                if (
+                    latest is not None
+                    and latest.state is AnalysisJobState.HELD
+                    and latest.safe_error_summary is not None
+                    and "no complete fresh observation" in latest.safe_error_summary
+                ):
+                    recovery_revision = await self._source_recovery_revision(
+                        tuple(sorted(required_sources)),
+                        after=latest.temporal_pin,
+                        as_of=instant,
+                    )
+                    if recovery_revision:
+                        recovery_job = AnalysisJob.request(
+                            self._resources.settings,
+                            principal,
+                            frozenset({topic_id}),
+                            scope,
+                            tuple(sorted(required_sources)),
+                            requested_at=instant,
+                            topic_revisions=(governed_topic_revision(topic),),
+                            input_revision=recovery_revision,
+                        )
+                        await self._jobs.enqueue(recovery_job)
+                        enqueued += 1
                 topic_total += 1
         return SchedulerReport(
             active_principals=len(principals),
             authorization_scopes=len(scope_entries),
             enqueued_jobs=enqueued,
             topic_count=topic_total,
+        )
+
+    async def _source_recovery_revision(
+        self,
+        source_ids: tuple[str, ...],
+        *,
+        after: datetime,
+        as_of: datetime,
+    ) -> tuple[str, ...]:
+        """Identify one complete fresh snapshot newer than a source-coverage hold."""
+
+        if not source_ids:
+            return ()
+        rows = await self._resources.postgres_pool.fetch(
+            """
+            SELECT DISTINCT ON (observation.source_id)
+                   observation.source_id, observation.observation_id,
+                   observation.finished_at
+            FROM source_observation_v2 observation
+            JOIN source_registration_v2 registration
+              ON registration.source_id=observation.source_id
+             AND registration.catalog_version=observation.catalog_version
+            WHERE observation.source_id = ANY($1::text[])
+              AND observation.finished_at <= $2
+              AND observation.finished_at >= (
+                  $2 - registration.freshness_sla_seconds * INTERVAL '1 second'
+              )
+              AND observation.health = 'healthy'
+              AND observation.complete
+              AND observation.fresh
+              AND NOT observation.silent
+              AND observation.within_expected_volume
+            ORDER BY observation.source_id, observation.finished_at DESC,
+                     observation.observation_id DESC
+            """,
+            list(source_ids),
+            as_of,
+        )
+        covered = {str(row["source_id"]) for row in rows}
+        if covered != set(source_ids) or not any(row["finished_at"] > after for row in rows):
+            return ()
+        return tuple(
+            sorted(f"{row['source_id']}:{row['observation_id']}" for row in rows)
         )
 
 

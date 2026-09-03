@@ -15,6 +15,8 @@ from fi_intel.sources.catalog import production_source_catalog
 from fi_intel.sources.operations import (
     InMemorySourceOperationsStore,
     SourceHealth,
+    SourceObservation,
+    SourceOperationalState,
     assess_source_poll,
 )
 
@@ -120,6 +122,92 @@ async def test_incomplete_corpus_suppresses_computed_detector_coverage() -> None
 
     assert decision.complete is False
     assert any("no as-of observation" in reason for reason in decision.reasons)
+
+
+async def test_later_retry_failure_does_not_invalidate_fresh_successful_snapshot() -> None:
+    operations = InMemorySourceOperationsStore()
+    source_id = "ratings-feed"
+    policy_id = uuid4()
+    successful_run = uuid4()
+    successful = SourceObservation(
+        observation_id=uuid4(),
+        run_id=successful_run,
+        source_id=source_id,
+        catalog_version="catalog-v1",
+        policy_id=policy_id,
+        health=SourceHealth.HEALTHY,
+        started_at=NOW - timedelta(minutes=31),
+        finished_at=NOW - timedelta(minutes=30),
+        feed_modified=False,
+        page_count=1,
+        discovered_count=10,
+        acquired_count=0,
+        unchanged_count=10,
+        committed_count=0,
+        not_novel_count=0,
+        quarantine_count=0,
+        complete=True,
+        fresh=True,
+        silent=False,
+        within_expected_volume=True,
+        latest_source_published_at=NOW - timedelta(hours=1),
+    )
+    failed = successful.model_copy(
+        update={
+            "observation_id": uuid4(),
+            "run_id": uuid4(),
+            "health": SourceHealth.FAILED,
+            "started_at": NOW - timedelta(minutes=6),
+            "finished_at": NOW - timedelta(minutes=5),
+            "page_count": 0,
+            "discovered_count": 0,
+            "unchanged_count": 0,
+            "complete": False,
+            "fresh": False,
+            "within_expected_volume": False,
+            "error_type": "ConnectTimeout",
+            "error_message": "safe timeout summary",
+        }
+    )
+    await operations.record(
+        successful,
+        SourceOperationalState(
+            source_id=source_id,
+            last_successful_poll_at=successful.finished_at,
+            latest_source_published_at=successful.latest_source_published_at,
+            consecutive_failures=0,
+            updated_at=successful.finished_at,
+        ),
+    )
+    await operations.record(
+        failed,
+        SourceOperationalState(
+            source_id=source_id,
+            last_successful_poll_at=successful.finished_at,
+            latest_source_published_at=successful.latest_source_published_at,
+            consecutive_failures=1,
+            updated_at=failed.finished_at,
+        ),
+    )
+    provider = SourceOperationsCoverageProvider(
+        operations,
+        required_source_ids={"maturity_wall_no_refi": frozenset({source_id})},
+        covered_entity_keys=frozenset(),
+    )
+
+    decision = await provider.assess(
+        CoverageRequest(
+            pattern_name="maturity_wall_no_refi",
+            entity_key="BANK-LEI",
+            as_of=NOW,
+            freshness_days=1,
+            allowed_source_ids=frozenset({source_id}),
+            scopes=frozenset({CoverageScope.SOURCE_OPERATIONS}),
+        )
+    )
+
+    assert decision.complete is True
+    assert decision.checked_source_ids == (source_id,)
 
 
 async def test_empty_coverage_configuration_is_visible_before_detector_query() -> None:

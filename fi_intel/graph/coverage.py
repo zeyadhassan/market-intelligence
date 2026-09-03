@@ -250,18 +250,22 @@ class SourceOperationsCoverageProvider:
                 if not visible:
                     reasons.append(f"source {source_id!r} has no as-of observation")
                     continue
-                latest = max(visible, key=lambda item: item.finished_at)
                 earliest_fresh = request.as_of - timedelta(days=request.freshness_days)
-                if latest.finished_at < earliest_fresh:
+                fresh = [item for item in visible if item.finished_at >= earliest_fresh]
+                if not fresh:
                     reasons.append(f"source {source_id!r} observation is outside freshness window")
-                if (
-                    latest.health is not SourceHealth.HEALTHY
-                    or not latest.complete
-                    or not latest.fresh
-                    or latest.silent
-                    or not latest.within_expected_volume
-                ):
-                    reasons.append(f"source {source_id!r} latest observation is incomplete")
+                    continue
+                eligible = [
+                    item
+                    for item in fresh
+                    if item.health is SourceHealth.HEALTHY
+                    and item.complete
+                    and item.fresh
+                    and not item.silent
+                    and item.within_expected_volume
+                ]
+                if not eligible:
+                    reasons.append(f"source {source_id!r} has no complete fresh observation")
 
         if CoverageScope.FACTUAL_ENTITY in request.scopes:
             contracts = await self._contracts(request)

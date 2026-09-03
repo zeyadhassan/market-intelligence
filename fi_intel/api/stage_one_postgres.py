@@ -34,7 +34,7 @@ from fi_intel.application.jobs import (
 from fi_intel.application.operations import OperatorService, RuntimeDashboardView
 from fi_intel.application.runtime_resources import PostgresPoolProvider
 from fi_intel.application.search import PostgresSearchStore
-from fi_intel.application.topics import PostgresTopicCatalog
+from fi_intel.application.topics import PostgresTopicCatalog, governed_topic_revision
 from fi_intel.config import Settings
 from fi_intel.graph.signals import signal_authorization_scope
 from fi_intel.results.manifest import ImmutableResultManifest
@@ -108,6 +108,7 @@ class PostgresStageOneService:
         *,
         refresh: bool = False,
     ) -> AnalysisJob:
+        requested_at = datetime.now(UTC)
         topics = await self._topics.require_many(tuple(sorted(topic_ids)))
         topic_sources = {
             source_id for topic in topics.values() for source_id in topic.required_source_ids
@@ -121,13 +122,28 @@ class PostgresStageOneService:
             pool = await self._get_pool()
             rows = await pool.fetch(
                 """
-                SELECT DISTINCT ON (source_id)
-                       source_id, observation_id, run_id
-                FROM source_observation_v2
-                WHERE source_id = ANY($1::text[])
-                ORDER BY source_id, finished_at DESC, observation_id DESC
+                SELECT DISTINCT ON (observation.source_id)
+                       observation.source_id, observation.observation_id,
+                       observation.run_id
+                FROM source_observation_v2 observation
+                JOIN source_registration_v2 registration
+                  ON registration.source_id=observation.source_id
+                 AND registration.catalog_version=observation.catalog_version
+                WHERE observation.source_id = ANY($1::text[])
+                  AND observation.finished_at <= $2
+                  AND observation.finished_at >= (
+                      $2 - registration.freshness_sla_seconds * INTERVAL '1 second'
+                  )
+                  AND observation.health = 'healthy'
+                  AND observation.complete
+                  AND observation.fresh
+                  AND NOT observation.silent
+                  AND observation.within_expected_volume
+                ORDER BY observation.source_id, observation.finished_at DESC,
+                         observation.observation_id DESC
                 """,
                 list(required_source_ids),
+                requested_at,
             )
             revisions = [f"{row['source_id']}:{row['observation_id']}" for row in rows]
             run_ids = [row["run_id"] for row in rows]
@@ -161,6 +177,11 @@ class PostgresStageOneService:
             topic_ids,
             scope,
             required_source_ids,
+            requested_at=requested_at,
+            topic_revisions=tuple(
+                governed_topic_revision(topic)
+                for topic in sorted(topics.values(), key=lambda item: item.topic_id)
+            ),
             input_revision=input_revision,
         )
         if self._telemetry is None:
