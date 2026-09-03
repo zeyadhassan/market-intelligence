@@ -1,61 +1,1261 @@
-{
-    "topic_id": "upcoming-maturities",
-    "label": "Upcoming maturities",
-    "analysis_status": "deferred",
-    "coverage_state": "pending",
-    "as_of": "2026-09-03T04:33:22.939665Z",
-    "message": "Source data is ready; document extraction and indexing are finishing.",
-    "mode": "shadow",
-    "scope_notice": "retrieval index is not ready; 10 current document versions are not indexed",
-    "model_name": null,
-    "model_call_count": 0,
-    "model_failure_count": 0,
-    "run_id": null,
-    "analysis_job_id": "9617154479137b48a727e31a0ca45d0e156c0e8ed6722b5ee2e3d61902dd1abc",
-    "business_date": "2026-09-03",
-    "lifecycle_counts": {},
-    "required_source_count": 0,
-    "successful_source_count": 0,
-    "rejected_candidate_count": 0,
-    "source_statuses": [],
-    "results": []
-}
-
+Skip to pipeline status
 FI
-Opportunity Watch
-Fresh signals for the topics you follow
+Intelligence Control Room
 Local GCC intelligence
-Demo analyst
-Your daily market-intelligence watchlist
-
-Choose what you want to follow.
-Select a topic to save it and run today's analysis. New opportunities appear below with the exact evidence used to produce them.
-
-Live analysis on demand
+Runtime failed
+Updated 09:37:14 AM
+Pause live updates
 Official sources + configured models
-Step 1
 
-Topics
-Following a topic saves it for the next daily run.
+See exactly what the system is doing.
+Live worker state, source acquisition, indexing, model calls, agent steps, failures, and results in one place.
 
+Refresh now
+Active work
+0
+stages currently running
+Pending work
+12
+queued or blocked items
+Failures
+18
+current actionable failures
+Knowledge base
+0
+indexed document versions
+End-to-end pipeline
 
+Processing stages
+Working means the stage is active now. Waiting means it has not received ready input.
+
+1. Live source acquisition
+complete
+1/1 configured sources passed their latest coverage check.
+
+active: 0
+pending: 0
+done: 1
+failed: 0
+Last activity: Sep 3, 09:36:03 AM
+2. Archive and canonical ingest
+complete
+Raw assets are archived and converted into immutable document versions.
+
+active: 0
+pending: 0
+done: 30
+failed: 0
+Last activity: Sep 3, 09:36:03 AM
+3. Extraction and projection
+complete
+Documents are extracted, entity-linked, and projected into governed state.
+
+active: 0
+pending: 0
+done: 10
+failed: 0
+Last activity: never
+4. Chunking and retrieval index
+failed
+0 indexed; 10 still missing.
+
+active: 1
+pending: 10
+done: 0
+failed: 18
+Last activity: Sep 3, 09:37:03 AM
+5. Analysis orchestration
+waiting
+The durable job freezes coverage, policy, model, and index inputs.
+
+active: 0
+pending: 1
+done: 0
+failed: 0
+Last activity: Sep 3, 09:37:01 AM
+6. Signal detection
+waiting
+Registered financial patterns identify candidates worth researching.
+
+active: 0
+pending: 0
+done: 0
+failed: 0
+Last activity: never
+7. Agent research and model reasoning
+waiting
+Hybrid retrieval, contradiction search, reranking, reasoning, and entailment run here.
+
+active: 0
+pending: 0
+done: 0
+failed: 0
+Last activity: never
+8. Validation and publication
+waiting
+0 claim decisions and 0 result versions recorded in the last 24 hours; 0 claims were rejected by validation.
+
+active: 0
+pending: 0
+done: 0
+failed: 0
+Last activity: never
+9. On-demand analyst search
+waiting
+Interactive questions run as durable governed search jobs.
+
+active: 0
+pending: 1
+done: 0
+failed: 0
+Last activity: Sep 3, 09:37:03 AM
+10. Digest delivery
+waiting
+Scheduled results are assembled and sent through the configured channel.
+
+active: 0
+pending: 0
+done: 0
+failed: 0
+Last activity: never
+Processes
+
+Workers
+Worker	State	Current operation	Heartbeat
+scheduler
+—
+offline	
+schedule subscribed topic analysis
+No heartbeat has been recorded.
+never
+source
+—
+offline	
+poll configured sources
+No heartbeat has been recorded.
+never
+projection
+—
+offline	
+project, extract, and index documents
+No heartbeat has been recorded.
+never
+analysis
+—
+offline	
+detect and research opportunities
+No heartbeat has been recorded.
+never
+search
+—
+offline	
+execute analyst searches
+No heartbeat has been recorded.
+never
+delivery
+—
+offline	
+assemble and deliver digests
+No heartbeat has been recorded.
+never
+Inference
+
+Model activity
+Role	State	Model	Calls / failures	Latency
+embedding
+1 active call(s)
+working	
+nvidia/llama-3.2-nv-embedqa-1b-v2
+last: succeeded
+108 / 18
+59168 tokens
+22.7s
+09:37:03 AM
+entailment
+not started	
+openai/gpt-oss-120b
+no completed calls
+0 / 0
+0 tokens
+—
+never
+extract
+not started	
+openai/gpt-oss-120b
+no completed calls
+0 / 0
+0 tokens
+—
+never
+reranker
+not started	
+openai/gpt-oss-120b
+no completed calls
+0 / 0
+0 tokens
+—
+never
+research
+not started	
+openai/gpt-oss-120b
+no completed calls
+0 / 0
+0 tokens
+—
+never
+Acquisition
+
+Live sources
+Every configured source is shown, including sources that have never run.
+
+Source	State	Last activity	Discovered	Committed	Quarantined	Detail
+Saudi Central Bank news
+Saudi Arabia · sa_sama_news
+complete	
+Sep 3, 09:36:03 AM
+run be986bba…e46867
+10
+10 acquired
+0
+0 unchanged
+0
+Latest source observation passed coverage checks.
+Debugging
+
+Activity log
+200 of 200 events
+Copy diagnostics
+Stage
+All stages
+Status
+All statuses
+Find
+operation, message, run ID
+09:37:13 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…cf4aa5
+09:37:03 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run 9c2fed72…f51cd4 · 134 ms
+09:37:03 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run 9c2fed72…f51cd4 · 77 ms
+09:37:03 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run 9c2fed72…f51cd4
+09:37:03 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run 9c2fed72…f51cd4
+09:37:01 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…34b6f3 · retrieval index is not ready; 10 current document versions are not indexed
+09:37:01 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…34b6f3 · claimed or recovered expired lease
+09:36:57 AM
+projection
+failed
+project, extract, and index documents: Worker iteration failed; the loop will retry.
+run worker-l…66e713 · worker projecti…81cb13 · 9588 ms · RetrievalIndexBuildError (message_sha256=0ff893c47812112f42bbb90e14c98d6ea9a6ab44d45ec34bfa243cf7219ccdca)
+09:36:57 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…c46277 · 1272 ms
+09:36:56 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…c46277
+09:36:56 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…c46277 · 266 ms
+09:36:56 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…c46277
+09:36:56 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…c46277 · 884 ms
+09:36:55 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…c46277
+09:36:55 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…c46277 · 2155 ms
+09:36:53 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…c46277
+09:36:53 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…c46277 · 629 ms
+09:36:52 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…c46277
+09:36:52 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…c46277 · 420 ms
+09:36:52 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…c46277
+09:36:52 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…c46277 · 943 ms
+09:36:51 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…c46277
+09:36:51 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…c46277 · 812 ms
+09:36:50 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…c46277
+09:36:50 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…c46277 · 306 ms
+09:36:50 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…c46277
+09:36:50 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…c46277 · 853 ms
+09:36:49 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…c46277
+09:36:49 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…c46277 · 173 ms
+09:36:49 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…c46277
+09:36:49 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…c46277 · 749 ms
+09:36:48 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…c46277
+09:36:46 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…34b6f3 · retrieval index is not ready; 10 current document versions are not indexed
+09:36:46 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…34b6f3 · claimed or recovered expired lease
+09:36:33 AM
+projection
+failed
+project, extract, and index documents: Worker iteration failed; the loop will retry.
+run worker-l…66e713 · worker projecti…81cb13 · 1449 ms · RetrievalIndexBuildError (message_sha256=0ff893c47812112f42bbb90e14c98d6ea9a6ab44d45ec34bfa243cf7219ccdca)
+09:36:33 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…99586b · 135 ms
+09:36:33 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…99586b
+09:36:33 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…99586b · 81 ms
+09:36:33 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…99586b
+09:36:33 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…99586b · 198 ms
+09:36:32 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…99586b
+09:36:32 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…99586b · 178 ms
+09:36:32 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…99586b
+09:36:32 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…99586b · 206 ms
+09:36:32 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…99586b
+09:36:32 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…99586b · 87 ms
+09:36:32 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…99586b
+09:36:32 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…99586b · 79 ms
+09:36:32 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…99586b
+09:36:32 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…99586b · 86 ms
+09:36:32 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…99586b
+09:36:32 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…99586b · 65 ms
+09:36:32 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…99586b
+09:36:32 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…99586b · 67 ms
+09:36:32 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…99586b
+09:36:32 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…99586b · 40 ms
+09:36:32 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…99586b
+09:36:32 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…99586b · 98 ms
+09:36:31 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…99586b
+09:36:31 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…34b6f3 · retrieval index is not ready; 10 current document versions are not indexed
+09:36:31 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…34b6f3 · claimed or recovered expired lease
+09:36:19 AM
+delivery
+started
+assemble and deliver digests: Worker loop started.
+run worker-l…3e8f7e · worker delivery…bb6edf
+09:36:17 AM
+search
+started
+execute analyst searches: Worker loop started.
+run worker-l…0baeab · worker search-1…1c05d4
+09:36:16 AM
+projection
+failed
+project, extract, and index documents: Worker iteration failed; the loop will retry.
+run worker-l…66e713 · worker projecti…81cb13 · 1850 ms · RetrievalIndexBuildError (message_sha256=0ff893c47812112f42bbb90e14c98d6ea9a6ab44d45ec34bfa243cf7219ccdca)
+09:36:16 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…fda876 · 165 ms
+09:36:16 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…fda876
+09:36:16 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…fda876 · 114 ms
+09:36:16 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…34b6f3 · retrieval index is not ready; 10 current document versions are not indexed
+09:36:16 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…fda876
+09:36:16 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…34b6f3 · claimed or recovered expired lease
+09:36:16 AM
+analysis
+started
+detect and research opportunities: Worker loop started.
+run worker-l…aabe7c · worker analysis…34b6f3
+09:36:16 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…fda876 · 170 ms
+09:36:16 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…fda876
+09:36:16 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…fda876 · 165 ms
+09:36:16 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…fda876
+09:36:16 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…fda876 · 211 ms
+09:36:15 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…fda876
+09:36:15 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…fda876 · 121 ms
+09:36:15 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…fda876
+09:36:15 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…fda876 · 73 ms
+09:36:15 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…fda876
+09:36:15 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…fda876 · 66 ms
+09:36:15 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…fda876
+09:36:15 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…fda876 · 65 ms
+09:36:15 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…fda876
+09:36:15 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…fda876 · 57 ms
+09:36:15 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…fda876
+09:36:15 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…fda876 · 36 ms
+09:36:15 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…fda876
+09:36:15 AM
+indexing
+succeeded
+model inference: Embedding model call succeeded.
+run projecti…fda876 · 119 ms
+09:36:15 AM
+indexing
+started
+model inference: Calling embedding model nvidia/llama-3.2-nv-embedqa-1b-v2.
+run projecti…fda876
+09:36:15 AM
+projection
+started
+project, extract, and index documents: Worker loop started.
+run worker-l…66e713 · worker projecti…81cb13
+09:36:03 AM
+source
+succeeded
+sa_sama_news: Source poll finished: 10 discovered, 0 committed, 0 quarantined.
+run be986bba…e46867 · 7070 ms
+09:36:03 AM
+ingestion
+succeeded
+document ingest: Document ingest moved to not_novel.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to canonicalized.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to raw_archived.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to received.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+succeeded
+document ingest: Document ingest moved to not_novel.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to canonicalized.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to raw_archived.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to received.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+succeeded
+document ingest: Document ingest moved to not_novel.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to canonicalized.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to raw_archived.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to received.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+succeeded
+document ingest: Document ingest moved to not_novel.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to canonicalized.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to raw_archived.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to received.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+succeeded
+document ingest: Document ingest moved to not_novel.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to canonicalized.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to raw_archived.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to received.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+succeeded
+document ingest: Document ingest moved to not_novel.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to canonicalized.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to raw_archived.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to received.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+succeeded
+document ingest: Document ingest moved to not_novel.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to canonicalized.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to raw_archived.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to received.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+succeeded
+document ingest: Document ingest moved to not_novel.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to canonicalized.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to raw_archived.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to received.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+succeeded
+document ingest: Document ingest moved to not_novel.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to canonicalized.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to raw_archived.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to received.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+succeeded
+document ingest: Document ingest moved to not_novel.
+run be986bba…e46867
+09:36:03 AM
+ingestion
+working
+document ingest: Document ingest moved to canonicalized.
+run be986bba…e46867
+09:36:02 AM
+ingestion
+working
+document ingest: Document ingest moved to raw_archived.
+run be986bba…e46867
+09:36:02 AM
+ingestion
+working
+document ingest: Document ingest moved to received.
+run be986bba…e46867
+09:35:56 AM
+source
+started
+poll configured sources: Worker loop started.
+run worker-l…2515db · worker source-4…8efc0b
+09:35:55 AM
+scheduler
+started
+schedule subscribed topic analysis: Worker loop started.
+run worker-l…725dd8 · worker schedule…952f3c
+09:34:27 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:34:27 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:34:12 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:34:12 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:33:57 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:33:57 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:33:42 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:33:42 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:33:27 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:33:27 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:33:12 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:33:12 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:32:57 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:32:57 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:32:42 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:32:42 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:32:27 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:32:27 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:32:12 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:32:12 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:31:57 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:31:57 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:31:42 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:31:42 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:31:27 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:31:27 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:31:11 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:31:11 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:30:56 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:30:56 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:30:41 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:30:41 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:30:26 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:30:26 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:30:11 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:30:11 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:29:56 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:29:56 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:29:41 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:29:41 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:29:26 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:29:26 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:29:11 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:29:11 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:28:56 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:28:56 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:28:41 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:28:41 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:28:26 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:28:26 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:28:11 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:28:11 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:27:56 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:27:56 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:27:41 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:27:41 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:27:26 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:27:26 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:27:11 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:27:11 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:26:56 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:26:56 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:26:41 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+09:26:41 AM
+analysis
+working
+analysis job: Analysis job moved to running.
+worker analysis…56cbec · claimed or recovered expired lease
+09:26:26 AM
+analysis
+attention
+analysis job: Analysis job moved to deferred.
+worker analysis…56cbec · retrieval index is not ready; 10 current document versions are not indexed
+This log intentionally excludes prompts, credentials, private document text, and raw model payloads.
+
+On-demand
+
+Ask the knowledge base
+Runs governed hybrid retrieval and model reasoning over indexed evidence.
+
+Research question
+what upcoming funds exist
+Run research
+Research retryable_failed · route thematic · job 9c2fed72…f51cd4 · RetrievalIndexNotReadyError (message_sha256=ba1e1b9680536b4addf3c5d0e9594a9a3d1f195a1093d29de1fa94088ef4cb9b)
+Scheduled intelligence
+
+Choose what you want to follow
+Run selected topic
 Upcoming maturities
-Following
 Funding needs where complete coverage found no announced refinancing.
-Viewing results
-
+Unfollow
+Inspect
 Rating and capital pressure
-Follow
 Rating deterioration combined with a material capital movement.
-View results
-Step 2
-
-Upcoming maturities
-Refresh analysis
-Source data is ready; document extraction and indexing are finishing.
-Analysis as of Sep 3, 2026, 7:33 AM · pending coverage
-Live source ledger: 0/0 completed
-Model waiting for document processing · run unknown · 0 unsupported candidate(s) rejected
-Finishing document processing
-The source run completed. Extraction, projection, and indexing are still active.
-Live-source scope
+Follow
+Inspect
+Source data is ready; document extraction and indexing are finishing. · retrieval index is not ready; 10 current document versions are not indexed
+Sources 1/1 · analysis deferred
+No analysis model call recorded yet
+Today's opportunities
+The pipeline is still working. Follow its exact stage above.
